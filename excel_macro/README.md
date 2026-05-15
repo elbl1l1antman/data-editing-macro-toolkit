@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.3.0`
+`0.4.0`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -51,8 +51,8 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.3.0/DataEditingMacroToolkit_v0.3.0.xlam`
-- `release/v0.3.0/DataEditingMacroToolkit_v0.3.0.xlsm`
+- `release/v0.4.0/DataEditingMacroToolkit_v0.4.0.xlam`
+- `release/v0.4.0/DataEditingMacroToolkit_v0.4.0.xlsm`
 - `release/v0.3.0/MacroToolkit.bas`
 - `release/v0.3.0/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
@@ -64,6 +64,13 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 파일 > 옵션 > 추가 기능 > Excel 추가 기능 > 이동 > 찾아보기
 
+
+설치 후 Excel 상단 리본의 `보기` 탭 옆에 `데이터 툴킷` 탭이 추가됩니다. 기능은 이 탭의 버튼으로 실행합니다.
+
+- `숫자 변환`: 선택 영역, 현재 시트, 범위 선택
+- `전화번호`: 선택 영역, 범위 선택
+- `이상치 탐지`: 설정, 실행
+- `정보`: 버전 정보
 설치 대상 파일:
 
 `release/latest/DataEditingMacroToolkit_latest.xlam`
@@ -75,3 +82,4 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 파일 > 옵션 > 보안 센터 > 보안 센터 설정 > 매크로 설정 > VBA 프로젝트 개체 모델에 안전하게 액세스할 수 있음
 
 이 옵션이 꺼져 있으면 `.xlsm`에는 실행 가능한 VBA 모듈이 없을 수 있습니다. 이 경우 `src/MacroToolkit.bas`를 VBA 편집기에서 직접 가져오면 됩니다.
+

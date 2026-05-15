@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.3.0"
+Public Const TOOLKIT_VERSION As String = "0.4.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -930,4 +930,39 @@ Private Function OD_CleanName(s As String) As String
     Next ch
     OD_CleanName = result
 End Function
+' ============================================================
+' Ribbon callbacks
+' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
+' ============================================================
+Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
+    Toolkit_About
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)
+    ConvertTextNumbersInSelection
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInUsedRange(control As IRibbonControl)
+    ConvertTextNumbersInUsedRange
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInColumns(control As IRibbonControl)
+    ConvertTextNumbersInColumns
+End Sub
+
+Public Sub Ribbon_NormalizePhonesInSelection(control As IRibbonControl)
+    NormalizePhonesInSelection
+End Sub
+
+Public Sub Ribbon_NormalizePhonesInColumns(control As IRibbonControl)
+    NormalizePhonesInColumns
+End Sub
+
+Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)
+    OutlierDetect_Setup
+End Sub
+
+Public Sub Ribbon_OutlierDetectRun(control As IRibbonControl)
+    OutlierDetect_Run
+End Sub
 
