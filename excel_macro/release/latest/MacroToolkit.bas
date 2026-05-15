@@ -1,4 +1,4 @@
-Attribute VB_Name = "MacroToolkit"
+﻿Attribute VB_Name = "MacroToolkit"
 ' ============================================================
 ' 모듈명  : MacroToolkit
 ' 설  명  : 엑셀 데이터 편집을 위한 매크로 도구 모음
@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.2.0"
+Public Const TOOLKIT_VERSION As String = "0.3.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -930,3 +930,4 @@ Private Function OD_CleanName(s As String) As String
     Next ch
     OD_CleanName = result
 End Function
+

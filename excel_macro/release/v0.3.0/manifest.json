@@ -1,0 +1,13 @@
+﻿{
+    "name":  "Data Editing Macro Toolkit",
+    "version":  "0.3.0",
+    "versionTag":  "v0.3.0",
+    "publishedAt":  "2026-05-15 15:03:37 +09:00",
+    "gitCommit":  "651d761-dirty",
+    "addin":  "DataEditingMacroToolkit_v0.3.0.xlam",
+    "workbook":  "DataEditingMacroToolkit_v0.3.0.xlsm",
+    "sourceModule":  "MacroToolkit.bas",
+    "installFile":  "DataEditingMacroToolkit_v0.3.0.xlam",
+    "containsVbaModule":  true,
+    "notes":  "Install the .xlam file as an Excel add-in. The .xlsm file is kept for workbook inspection and development review."
+}
