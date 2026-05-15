@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.4.0"
+Public Const TOOLKIT_VERSION As String = "0.5.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -487,58 +487,18 @@ End Sub
 '             원본 시트는 수정하지 않는다.
 ' ============================================================
 Public Sub OutlierDetect_Run()
-    ' ── 설정값 읽기 ──────────────────────────────────────
-    Dim cfg As Worksheet
-    On Error Resume Next
-    Set cfg = ThisWorkbook.Worksheets(OD_CFG_SHEET)
-    On Error GoTo 0
-
-    If cfg Is Nothing Then
-        MsgBox "설정 시트가 없습니다. OutlierDetect_Setup 을 먼저 실행하세요.", _
-               vbExclamation, "이상치 탐지"
-        Exit Sub
-    End If
-
-    Dim srcName  As String: srcName  = Trim$(cfg.Range(OD_C_SRC).Value)
-    Dim varName  As String: varName  = Trim$(cfg.Range(OD_C_VAR).Value)
-    Dim criteria As String: criteria = Trim$(cfg.Range(OD_C_CRIT).Value)
-    Dim method   As String: method   = Trim$(cfg.Range(OD_C_METH).Value)
-    Dim memo     As String: memo     = Trim$(cfg.Range(OD_C_MEMO).Value)
-
-    If Len(srcName) = 0 Or Len(varName) = 0 Or _
-       Len(criteria) = 0 Or Len(method) = 0 Then
-        MsgBox "B3~B6 항목을 모두 입력한 후 실행하세요.", vbExclamation, "이상치 탐지"
-        Exit Sub
-    End If
-
-    ' ── 소스 시트 / 분석 컬럼 확인 ───────────────────────
+    ' ── 실행 입력값 수집 ─────────────────────────────────
     Dim srcWs As Worksheet
-    On Error Resume Next
-    Set srcWs = ThisWorkbook.Worksheets(srcName)
-    On Error GoTo 0
+    Dim dataArea As Range
+    Dim analysisCol As Long
+    Dim varName As String
+    Dim criteria As String
+    Dim method As String
+    Dim memo As String
+    Dim srcName As String
 
-    If srcWs Is Nothing Then
-        MsgBox "소스 시트 '" & srcName & "'를 찾을 수 없습니다.", _
-               vbExclamation, "이상치 탐지"
-        Exit Sub
-    End If
-
-    Dim dataArea   As Range: Set dataArea = srcWs.UsedRange
-    Dim analysisCol As Long: analysisCol = 0
-
-    Dim hdrCell As Range
-    For Each hdrCell In dataArea.Rows(1).Cells
-        If Trim$(CStr(hdrCell.Value)) = varName Then
-            analysisCol = hdrCell.Column
-            Exit For
-        End If
-    Next hdrCell
-
-    If analysisCol = 0 Then
-        MsgBox "'" & varName & "' 컬럼을 소스 시트에서 찾을 수 없습니다.", _
-               vbExclamation, "이상치 탐지"
-        Exit Sub
-    End If
+    If Not OD_CollectRunInputs(srcWs, dataArea, analysisCol, varName, criteria, method, memo) Then Exit Sub
+    srcName = srcWs.Name
 
     ' ── 보이는 데이터 행 수집 ────────────────────────────
     Dim firstData As Long: firstData = dataArea.Row + 1
@@ -815,6 +775,134 @@ End Sub
 ' OutlierDetector 내부 헬퍼
 ' ──────────────────────────────────────────────────────────────
 
+
+Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
+                                     ByRef dataArea As Range, _
+                                     ByRef analysisCol As Long, _
+                                     ByRef varName As String, _
+                                     ByRef criteria As String, _
+                                     ByRef method As String, _
+                                     ByRef memo As String) As Boolean
+    Dim selectedRange As Range
+    On Error Resume Next
+    Set selectedRange = Application.InputBox( _
+        "① 헤더 행을 포함한 분석 범위를 선택하세요." & vbCrLf & vbCrLf & _
+        "예: A1:H500 처럼 첫 행에 변수명이 있는 범위" & vbCrLf & _
+        "필터가 적용된 경우 보이는 행만 분석합니다.", _
+        "이상치 탐지 - 데이터 범위", Type:=8)
+    On Error GoTo 0
+    If selectedRange Is Nothing Then Exit Function
+
+    If selectedRange.Rows.Count < 2 Then
+        MsgBox "헤더 1행과 데이터 1행 이상을 포함해서 선택하세요.", vbExclamation, "이상치 탐지"
+        Exit Function
+    End If
+
+    Set dataArea = selectedRange
+    Set srcWs = dataArea.Worksheet
+
+    Dim headerList As String
+    Dim defaultIndex As Long: defaultIndex = 0
+    Dim c As Long
+    For c = 1 To dataArea.Columns.Count
+        Dim headerText As String
+        headerText = Trim$(CStr(dataArea.Cells(1, c).Value))
+        If Len(headerText) = 0 Then headerText = "열" & c
+        headerList = headerList & c & ". " & headerText & vbCrLf
+        If defaultIndex = 0 And OD_ColumnHasNumericValue(dataArea, c) Then defaultIndex = c
+    Next c
+    If defaultIndex = 0 Then defaultIndex = 1
+
+    Dim varInput As String
+    varInput = InputBox( _
+        "② 이상치를 탐지할 분석 변수를 선택하세요." & vbCrLf & vbCrLf & _
+        "아래 목록에서 번호 또는 변수명을 입력하세요." & vbCrLf & vbCrLf & headerList, _
+        "이상치 탐지 - 분석 변수", CStr(defaultIndex))
+    If Len(Trim$(varInput)) = 0 Then Exit Function
+
+    Dim varIndex As Long
+    If IsNumeric(varInput) Then
+        varIndex = CLng(varInput)
+        If varIndex < 1 Or varIndex > dataArea.Columns.Count Then
+            MsgBox "분석 변수 번호가 범위를 벗어났습니다.", vbExclamation, "이상치 탐지"
+            Exit Function
+        End If
+    Else
+        For c = 1 To dataArea.Columns.Count
+            If Trim$(CStr(dataArea.Cells(1, c).Value)) = Trim$(varInput) Then
+                varIndex = c
+                Exit For
+            End If
+        Next c
+        If varIndex = 0 Then
+            MsgBox "입력한 변수명을 선택 범위의 첫 행에서 찾을 수 없습니다.", vbExclamation, "이상치 탐지"
+            Exit Function
+        End If
+    End If
+
+    analysisCol = dataArea.Columns(varIndex).Column
+    varName = Trim$(CStr(dataArea.Cells(1, varIndex).Value))
+    If Len(varName) = 0 Then varName = "열" & varIndex
+
+    Dim criteriaInput As String
+    criteriaInput = InputBox( _
+        "③ 이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_IQR15 & vbCrLf & _
+        "2. " & OD_IQR20 & vbCrLf & _
+        "3. " & OD_P95 & vbCrLf & _
+        "4. " & OD_P99, _
+        "이상치 탐지 - 기준", "1")
+    If Len(Trim$(criteriaInput)) = 0 Then Exit Function
+
+    Select Case Trim$(criteriaInput)
+        Case "1", OD_IQR15: criteria = OD_IQR15
+        Case "2", OD_IQR20: criteria = OD_IQR20
+        Case "3", OD_P95: criteria = OD_P95
+        Case "4", OD_P99: criteria = OD_P99
+        Case Else
+            MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 탐지"
+            Exit Function
+    End Select
+
+    Dim methodInput As String
+    methodInput = InputBox( _
+        "④ 이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_CAP & vbCrLf & _
+        "2. " & OD_MEDIAN & vbCrLf & _
+        "3. " & OD_MEAN, _
+        "이상치 탐지 - 대체 방식", "1")
+    If Len(Trim$(methodInput)) = 0 Then Exit Function
+
+    Select Case Trim$(methodInput)
+        Case "1", OD_CAP: method = OD_CAP
+        Case "2", OD_MEDIAN: method = OD_MEDIAN
+        Case "3", OD_MEAN: method = OD_MEAN
+        Case Else
+            MsgBox "대체 방식은 1~3 중 하나를 입력하세요.", vbExclamation, "이상치 탐지"
+            Exit Function
+    End Select
+
+    memo = InputBox( _
+        "⑤ 결과 시트명에 붙일 메모를 입력하세요." & vbCrLf & vbCrLf & _
+        "비워두어도 됩니다. 예: 1차검토, 매출, 쿼터A", _
+        "이상치 탐지 - 메모", "")
+
+    OD_CollectRunInputs = True
+End Function
+
+Private Function OD_ColumnHasNumericValue(ByVal dataArea As Range, ByVal relativeCol As Long) As Boolean
+    Dim r As Long
+    For r = 2 To dataArea.Rows.Count
+        If Not dataArea.Worksheet.Rows(dataArea.Row + r - 1).Hidden Then
+            Dim v As Variant
+            v = dataArea.Cells(r, relativeCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                OD_ColumnHasNumericValue = True
+                Exit Function
+            End If
+        End If
+    Next r
+End Function
 Private Function OD_EnsureConfigSheet() As Worksheet
     On Error Resume Next
     Set OD_EnsureConfigSheet = ThisWorkbook.Worksheets(OD_CFG_SHEET)
@@ -965,4 +1053,5 @@ End Sub
 Public Sub Ribbon_OutlierDetectRun(control As IRibbonControl)
     OutlierDetect_Run
 End Sub
+
 
