@@ -1,6 +1,6 @@
 param(
-    [string]$OutputPath = "C:\Users\COM\Documents\Codex\2026-05-15\xlsm\DataEditingMacroToolkit_v0.1.0.xlsm",
-    [string]$ModulePath = "C:\Users\COM\Documents\Codex\2026-05-15\xlsm\MacroToolkit.bas"
+    [string]$OutputPath = "C:\Users\COM\OneDrive\Program\excel_macro\DataEditingMacroToolkit_v0.1.0.xlsm",
+    [string]$ModulePath = "C:\Users\COM\OneDrive\Program\excel_macro\MacroToolkit.bas"
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,3 +50,4 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
