@@ -20,6 +20,13 @@ The source of truth is `TOOLKIT_VERSION` in `src/MacroToolkit.bas`.
 - Convert text-formatted numbers to real numeric values.
 - Normalize mixed Korean phone number formats into a consistent hyphenated format.
 
+## Inspecting the Workbook
+
+Open `dev/DataEditingMacroToolkit_dev.xlsm` and check these sheets:
+
+- `README`: where the implementation lives and how to install it.
+- `Macro List`: available macros and their purpose.
+- `VBA Source Preview`: readable copy of `src/MacroToolkit.bas` inside the workbook.
 ## Build Development Workbook
 
 Run:
@@ -68,3 +75,4 @@ If Excel blocks automatic module import, enable:
 File > Options > Trust Center > Trust Center Settings > Macro Settings > Trust access to the VBA project object model.
 
 Alternatively, open the VBA editor with `Alt+F11`, choose File > Import File, and import `src/MacroToolkit.bas`.
+

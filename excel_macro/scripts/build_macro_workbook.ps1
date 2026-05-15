@@ -57,6 +57,11 @@ try {
     $workbook.SaveAs($OutputPath, 52)
     $workbook.Close($true)
     Write-Output "Created: $OutputPath"
+
+    $DocScript = Join-Path $ScriptDir "update_workbook_docs.ps1"
+    if (Test-Path -LiteralPath $DocScript) {
+        & $DocScript -WorkbookPath $OutputPath -ModulePath $ModulePath
+    }
 }
 finally {
     if ($null -ne $workbook) {
@@ -65,3 +70,5 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
+
