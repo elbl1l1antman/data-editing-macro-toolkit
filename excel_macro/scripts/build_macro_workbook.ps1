@@ -1,17 +1,31 @@
 param(
-    [string]$OutputPath = "C:\Users\COM\OneDrive\Program\excel_macro\DataEditingMacroToolkit_v0.1.0.xlsm",
-    [string]$ModulePath = "C:\Users\COM\OneDrive\Program\excel_macro\MacroToolkit.bas"
+    [string]$OutputPath,
+    [string]$ModulePath
 )
 
 $ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = Split-Path -Parent $ScriptDir
+
+if (-not $OutputPath) {
+    $OutputPath = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
+}
+
+if (-not $ModulePath) {
+    $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
+}
 
 if (-not (Test-Path -LiteralPath $ModulePath)) {
     throw "VBA module not found: $ModulePath"
 }
 
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
+$workbook = $null
 
 try {
     $workbook = $excel.Workbooks.Add()
@@ -24,7 +38,7 @@ try {
     $sheet.Range("B4").Value = "Pending VBA import"
     $sheet.Range("A6").Value = "How to finish installation"
     $sheet.Range("A7").Value = "1. In Excel, enable Trust access to the VBA project object model."
-    $sheet.Range("A8").Value = "2. Run this script again, or import MacroToolkit.bas in the VBA editor."
+    $sheet.Range("A8").Value = "2. Run this script again, or import src\MacroToolkit.bas in the VBA editor."
     $sheet.Range("A10").Value = "Included macros"
     $sheet.Range("A11").Value = "ConvertTextNumbersInSelection"
     $sheet.Range("A12").Value = "ConvertTextNumbersInUsedRange"
@@ -39,6 +53,7 @@ try {
         $workbook.Worksheets.Item("_MacroToolkit").Visible = 2
         $sheet.Range("B4").Value = "VBA imported"
     }
+
     $workbook.SaveAs($OutputPath, 52)
     $workbook.Close($true)
     Write-Output "Created: $OutputPath"
@@ -50,4 +65,3 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
-

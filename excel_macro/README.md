@@ -1,39 +1,70 @@
-# Data Editing Macro Toolkit v0.1.0
+# Data Editing Macro Toolkit
 
-This folder contains a macro-enabled Excel workbook shell and the VBA module for the toolkit.
+Excel data editing macro toolkit.
 
-## Files
+## Project Structure
 
-- `DataEditingMacroToolkit_v0.1.0.xlsm`: macro-enabled workbook shell.
-- `MacroToolkit.bas`: VBA module containing the toolkit macros.
-- `build_macro_workbook.ps1`: rebuild script that imports the VBA module when Excel allows programmatic VBA access.
+- `src/`: VBA source files. Edit macro code here first.
+- `dev/`: development workbook used while building and testing.
+- `release/`: published version snapshots.
+- `scripts/`: build and publish automation.
+
+## Current Version
+
+`0.1.0`
+
+The source of truth is `TOOLKIT_VERSION` in `src/MacroToolkit.bas`.
 
 ## Current Features
 
 - Convert text-formatted numbers to real numeric values.
 - Normalize mixed Korean phone number formats into a consistent hyphenated format.
 
-## Macros
+## Build Development Workbook
 
-- `Toolkit_About`
-- `Toolkit_SetupWorkbook`
-- `ConvertTextNumbersInSelection`
-- `ConvertTextNumbersInUsedRange`
-- `ConvertTextNumbersInColumns`
-- `NormalizePhonesInSelection`
-- `NormalizePhonesInColumns`
+Run:
 
-## Installation Note
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_macro_workbook.ps1
+```
 
-The local Excel security setting currently blocks programmatic VBA project access. To import the module automatically:
+This creates or replaces `dev/DataEditingMacroToolkit_dev.xlsm`.
 
-1. Open Excel.
-2. Go to File > Options > Trust Center > Trust Center Settings > Macro Settings.
-3. Enable "Trust access to the VBA project object model".
-4. Run `build_macro_workbook.ps1` again.
+## Publish Release
 
-Alternatively, open the VBA editor with `Alt+F11`, choose File > Import File, and import `MacroToolkit.bas`.
+Run:
 
-## Versioning
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
+```
 
-The first version is `0.1.0`. Future reviewed feature additions should increment the version and update `TOOLKIT_VERSION` in `MacroToolkit.bas`.
+This reads `TOOLKIT_VERSION` and creates:
+
+- `release/v0.1.0/DataEditingMacroToolkit_v0.1.0.xlsm`
+- `release/v0.1.0/MacroToolkit.bas`
+- `release/v0.1.0/manifest.json`
+- `release/latest/DataEditingMacroToolkit_latest.xlsm`
+
+## Versioning Policy
+
+Use semantic versioning:
+
+- Patch: small fixes with no workflow change, such as `0.1.1`.
+- Minor: new reviewed features, such as `0.2.0`.
+- Major: breaking changes to macro names, behavior, or workbook structure, such as `1.0.0`.
+
+Recommended workflow:
+
+1. Edit `src/MacroToolkit.bas`.
+2. Build and test `dev/DataEditingMacroToolkit_dev.xlsm`.
+3. Update `TOOLKIT_VERSION` when ready.
+4. Run `scripts/publish_release.ps1`.
+5. Commit the source and release snapshot.
+
+## Excel VBA Access Note
+
+If Excel blocks automatic module import, enable:
+
+File > Options > Trust Center > Trust Center Settings > Macro Settings > Trust access to the VBA project object model.
+
+Alternatively, open the VBA editor with `Alt+F11`, choose File > Import File, and import `src/MacroToolkit.bas`.
