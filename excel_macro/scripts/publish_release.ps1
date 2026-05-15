@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Version,
     [string]$ProjectRoot
 )
@@ -50,6 +50,8 @@ Copy-Item -Path $ModulePath -Destination (Join-Path $LatestDir "MacroToolkit.bas
 $commit = "unknown"
 try {
     $commit = (git -C $ProjectRoot rev-parse --short HEAD).Trim()
+    $dirty = (git -C $ProjectRoot status --short)
+    if ($dirty) { $commit = "$commit-dirty" }
 } catch {}
 
 $manifest = [ordered]@{
@@ -67,3 +69,4 @@ $manifest | ConvertTo-Json | Set-Content -Path (Join-Path $LatestDir "manifest.j
 
 Write-Output "Published: $ReleaseWorkbook"
 Write-Output "Updated latest: $LatestWorkbook"
+

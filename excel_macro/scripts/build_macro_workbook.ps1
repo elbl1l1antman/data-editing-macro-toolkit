@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$OutputPath,
     [string]$ModulePath
 )
@@ -22,6 +22,12 @@ if (-not (Test-Path -LiteralPath $ModulePath)) {
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
 
+$ToolkitVersion = "unknown"
+$ModuleText = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
+if ($ModuleText -match 'TOOLKIT_VERSION\s+As\s+String\s*=\s*"([^"]+)"') {
+    $ToolkitVersion = $Matches[1]
+}
+
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
@@ -33,7 +39,7 @@ try {
     $sheet.Name = "MacroToolkit"
     $sheet.Range("A1").Value = "Data Editing Macro Toolkit"
     $sheet.Range("A2").Value = "Version"
-    $sheet.Range("B2").Value = "0.1.0"
+    $sheet.Range("B2").Value = $ToolkitVersion
     $sheet.Range("A4").Value = "Install status"
     $sheet.Range("B4").Value = "Pending VBA import"
     $sheet.Range("A6").Value = "How to finish installation"
@@ -45,6 +51,8 @@ try {
     $sheet.Range("A13").Value = "ConvertTextNumbersInColumns"
     $sheet.Range("A14").Value = "NormalizePhonesInSelection"
     $sheet.Range("A15").Value = "NormalizePhonesInColumns"
+    $sheet.Range("A16").Value = "OutlierDetect_Setup"
+    $sheet.Range("A17").Value = "OutlierDetect_Run"
     $sheet.Columns("A:B").AutoFit()
 
     if ($null -ne $workbook.VBProject) {
@@ -70,5 +78,6 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
 
 
