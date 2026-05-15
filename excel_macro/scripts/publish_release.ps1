@@ -54,11 +54,18 @@ $ReleaseWorkbook = Join-Path $VersionDir $ReleaseWorkbookName
 $ReleaseAddin = Join-Path $VersionDir $ReleaseAddinName
 $LatestWorkbook = Join-Path $LatestDir $LatestWorkbookName
 $LatestAddin = Join-Path $LatestDir $LatestAddinName
+$ImportModulePath = Join-Path $VersionDir "_tmp_MacroToolkit_cp949.bas"
 
 Copy-Item -Path $DevWorkbook -Destination $ReleaseWorkbook -Force
 Copy-Item -Path $DevWorkbook -Destination $LatestWorkbook -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $VersionDir "MacroToolkit.bas") -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $LatestDir "MacroToolkit.bas") -Force
+
+# Excel VBE imports .bas files using the local ANSI code page, not UTF-8.
+# Keep the repository source as UTF-8, but import a temporary CP949 copy.
+$moduleSource = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
+$cp949 = [System.Text.Encoding]::GetEncoding(949)
+[System.IO.File]::WriteAllText($ImportModulePath, $moduleSource, $cp949)
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -73,7 +80,7 @@ try {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
-        $imported = $workbook.VBProject.VBComponents.Import($ModulePath)
+        $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
     }
     catch {
@@ -99,6 +106,9 @@ finally {
     }
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
+    if (Test-Path -LiteralPath $ImportModulePath) {
+        Remove-Item -LiteralPath $ImportModulePath -Force
+    }
 }
 
 if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
@@ -114,6 +124,7 @@ $manifest = [ordered]@{
     sourceModule = "MacroToolkit.bas"
     installFile = $ReleaseAddinName
     containsVbaModule = $true
+    vbaImportEncoding = "CP949"
     notes = "Install the .xlam file as an Excel add-in. The .xlsm file is kept for workbook inspection and development review."
 }
 
@@ -123,4 +134,3 @@ $manifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $Latest
 Write-Output "Published add-in: $ReleaseAddin"
 Write-Output "Published workbook: $ReleaseWorkbook"
 Write-Output "Updated latest add-in: $LatestAddin"
-
