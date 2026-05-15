@@ -37,15 +37,15 @@ try {
     $workbook = $excel.Workbooks.Add()
     $sheet = $workbook.Worksheets.Item(1)
     $sheet.Name = "MacroToolkit"
-    $sheet.Range("A1").Value = "Data Editing Macro Toolkit"
-    $sheet.Range("A2").Value = "Version"
+    $sheet.Range("A1").Value = "데이터 편집 매크로 툴킷"
+    $sheet.Range("A2").Value = "버전"
     $sheet.Range("B2").Value = $ToolkitVersion
-    $sheet.Range("A4").Value = "Install status"
-    $sheet.Range("B4").Value = "Pending VBA import"
-    $sheet.Range("A6").Value = "How to finish installation"
-    $sheet.Range("A7").Value = "1. In Excel, enable Trust access to the VBA project object model."
-    $sheet.Range("A8").Value = "2. Run this script again, or import src\MacroToolkit.bas in the VBA editor."
-    $sheet.Range("A10").Value = "Included macros"
+    $sheet.Range("A4").Value = "설치 상태"
+    $sheet.Range("B4").Value = "VBA 모듈 자동 삽입 대기"
+    $sheet.Range("A6").Value = "설치 마무리 방법"
+    $sheet.Range("A7").Value = "1. Excel에서 'VBA 프로젝트 개체 모델 접근 신뢰' 옵션을 켭니다."
+    $sheet.Range("A8").Value = "2. 이 스크립트를 다시 실행하거나, VBA 편집기에서 src\MacroToolkit.bas를 가져옵니다."
+    $sheet.Range("A10").Value = "포함 매크로"
     $sheet.Range("A11").Value = "ConvertTextNumbersInSelection"
     $sheet.Range("A12").Value = "ConvertTextNumbersInUsedRange"
     $sheet.Range("A13").Value = "ConvertTextNumbersInColumns"
@@ -55,15 +55,27 @@ try {
     $sheet.Range("A17").Value = "OutlierDetect_Run"
     $sheet.Columns("A:B").AutoFit()
 
-    if ($null -ne $workbook.VBProject) {
-        $workbook.VBProject.VBComponents.Import($ModulePath) | Out-Null
-        $excel.Run("'" + $workbook.Name + "'!Toolkit_SetupWorkbook")
-        $workbook.Worksheets.Item("_MacroToolkit").Visible = 2
-        $sheet.Range("B4").Value = "VBA imported"
+    try {
+        if ($null -ne $workbook.VBProject) {
+            $workbook.VBProject.VBComponents.Import($ModulePath) | Out-Null
+            $excel.Run("'" + $workbook.Name + "'!Toolkit_SetupWorkbook")
+            $workbook.Worksheets.Item("_MacroToolkit").Visible = 2
+            $sheet.Range("B4").Value = "VBA 모듈 삽입 완료"
+        }
+    }
+    catch {
+        $sheet.Range("B4").Value = "Excel 보안 설정으로 VBA 모듈 자동 삽입 차단"
     }
 
-    $workbook.SaveAs($OutputPath, 52)
+    $OutputDir = Split-Path -Parent $OutputPath
+    $TempOutput = Join-Path $OutputDir ("_tmp_" + [System.IO.Path]::GetFileName($OutputPath))
+    if (Test-Path -LiteralPath $TempOutput) { Remove-Item -LiteralPath $TempOutput -Force }
+
+    $workbook.SaveAs($TempOutput, 52)
     $workbook.Close($true)
+    $workbook = $null
+    Copy-Item -Path $TempOutput -Destination $OutputPath -Force
+    Remove-Item -LiteralPath $TempOutput -Force
     Write-Output "Created: $OutputPath"
 
     $DocScript = Join-Path $ScriptDir "update_workbook_docs.ps1"
@@ -78,6 +90,4 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
-
-
 
