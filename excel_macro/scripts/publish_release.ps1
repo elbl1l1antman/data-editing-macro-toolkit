@@ -14,6 +14,14 @@ $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
 $DevWorkbook = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
 
+$commit = "unknown"
+$wasDirtyBeforePublish = $false
+try {
+    $commit = (git -C $ProjectRoot rev-parse --short HEAD).Trim()
+    $prePublishStatus = (git -C $ProjectRoot status --short)
+    if ($prePublishStatus) { $wasDirtyBeforePublish = $true }
+} catch {}
+
 if (-not (Test-Path -LiteralPath $ModulePath)) {
     throw "VBA module not found: $ModulePath"
 }
@@ -93,12 +101,7 @@ finally {
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
 
-$commit = "unknown"
-try {
-    $commit = (git -C $ProjectRoot rev-parse --short HEAD).Trim()
-    $dirty = (git -C $ProjectRoot status --short)
-    if ($dirty) { $commit = "$commit-dirty" }
-} catch {}
+if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
 
 $manifest = [ordered]@{
     name = "Data Editing Macro Toolkit"
@@ -120,3 +123,4 @@ $manifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $Latest
 Write-Output "Published add-in: $ReleaseAddin"
 Write-Output "Published workbook: $ReleaseWorkbook"
 Write-Output "Updated latest add-in: $LatestAddin"
+
