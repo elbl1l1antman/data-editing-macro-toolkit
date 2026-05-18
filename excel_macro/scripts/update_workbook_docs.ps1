@@ -74,7 +74,8 @@ try {
         @("NormalizePhonesInSelection", "선택한 셀의 한국 전화번호 형식을 정규화합니다.", "현재 선택 영역"),
         @("NormalizePhonesInColumns", "마우스로 지정한 범위의 한국 전화번호 형식을 정규화합니다.", "범위 선택, 예: B:B / C1:C100"),
         @("OutlierDetect_Setup", "이상치 탐지 설정 시트를 생성하고 드롭다운을 준비합니다.", "현재 통합문서의 데이터 시트"),
-        @("OutlierDetect_Run", "설정값에 따라 이상치를 탐지하고 대체 결과 시트를 생성합니다.", "_이상치탐지_설정 시트")
+        @("OutlierDetect_Run", "설정값에 따라 이상치를 탐지하고 대체 결과 시트를 생성합니다.", "_이상치탐지_설정 시트"),
+        @("SPSS_DeleteSelectedBanner", "선택한 SPSS 가로/세로 배너 블록을 삭제하고 남은 열/행을 당겨 붙입니다.", "선택한 ◐ 또는 ▣ 배너 셀")
     )
     for ($r = 0; $r -lt $rows.Count; $r++) {
         for ($c = 0; $c -lt $rows[$r].Count; $c++) {
@@ -111,4 +112,5 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
 

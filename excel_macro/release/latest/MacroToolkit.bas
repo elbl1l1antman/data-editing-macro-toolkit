@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.5.0"
+Public Const TOOLKIT_VERSION As String = "0.6.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -22,7 +22,8 @@ Public Sub Toolkit_About()
            "버전: " & TOOLKIT_VERSION & vbCrLf & vbCrLf & _
            "주요 기능:" & vbCrLf & _
            "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
-           "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화", _
+           "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
+           "- SPSS 내보내기 표의 선택 배너 블록 삭제", _
            vbInformation, "매크로 툴킷"
 End Sub
 
@@ -54,6 +55,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A11").Value = "NormalizePhonesInColumns"
     ws.Range("A12").Value = "OutlierDetect_Setup"
     ws.Range("A13").Value = "OutlierDetect_Run"
+    ws.Range("A14").Value = "SPSS_DeleteSelectedBanner"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1018,6 +1020,222 @@ Private Function OD_CleanName(s As String) As String
     Next ch
     OD_CleanName = result
 End Function
+
+' ============================================================
+' SPSS table banner tools
+' 설  명  : SPSS 내보내기 통계표에서 선택한 가로/세로 배너 블록을 삭제하고
+'           남은 열/행을 자동으로 당겨 붙인다.
+' ============================================================
+Public Sub SPSS_DeleteSelectedBanner()
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "삭제할 배너 셀을 먼저 선택하세요." & vbCrLf & _
+               "예: ◐ 지역별, ◐ 성별, ▣ 지역별", vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim selectedCell As Range
+    Set selectedCell = Selection.Cells(1, 1)
+
+    Dim bannerCell As Range
+    Set bannerCell = SPSS_FindBannerCell(selectedCell)
+    If bannerCell Is Nothing Then
+        MsgBox "선택한 셀 주변에서 배너를 찾지 못했습니다." & vbCrLf & vbCrLf & _
+               "가로 배너는 '◐ 지역별'처럼 ◐ 표시가 있는 셀을 선택하세요." & vbCrLf & _
+               "세로 배너는 '▣ 지역별'처럼 ▣ 표시가 있는 셀을 선택하세요.", _
+               vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim bannerText As String
+    bannerText = Trim$(CStr(bannerCell.Value))
+
+    If Left$(bannerText, 1) = "◐" Then
+        SPSS_DeleteHorizontalBannerBlocks bannerCell.Worksheet, SPSS_NormalizeBannerName(bannerText)
+    ElseIf Left$(bannerText, 1) = "▣" Then
+        SPSS_DeleteVerticalBannerBlocks bannerCell.Worksheet, SPSS_NormalizeBannerName(bannerText)
+    Else
+        MsgBox "지원하는 배너 표식이 아닙니다: " & bannerText, vbExclamation, "SPSS 배너 삭제"
+    End If
+End Sub
+
+Private Function SPSS_FindBannerCell(ByVal selectedCell As Range) As Range
+    Dim textValue As String
+    textValue = Trim$(CStr(selectedCell.Value))
+
+    If Left$(textValue, 1) = "◐" Or Left$(textValue, 1) = "▣" Then
+        Set SPSS_FindBannerCell = selectedCell
+        Exit Function
+    End If
+
+    ' 하위 항목 셀을 선택한 경우: 바로 위 같은 열의 가로 배너를 우선 탐색
+    Dim r As Long
+    For r = selectedCell.Row To Application.WorksheetFunction.Max(1, selectedCell.Row - 5) Step -1
+        textValue = Trim$(CStr(selectedCell.Worksheet.Cells(r, selectedCell.Column).Value))
+        If Left$(textValue, 1) = "◐" Then
+            Set SPSS_FindBannerCell = selectedCell.Worksheet.Cells(r, selectedCell.Column)
+            Exit Function
+        End If
+    Next r
+
+    ' 행 항목을 선택한 경우: 같은 행 왼쪽의 세로 배너를 탐색
+    Dim c As Long
+    For c = selectedCell.Column To 1 Step -1
+        textValue = Trim$(CStr(selectedCell.Worksheet.Cells(selectedCell.Row, c).Value))
+        If Left$(textValue, 1) = "▣" Then
+            Set SPSS_FindBannerCell = selectedCell.Worksheet.Cells(selectedCell.Row, c)
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Sub SPSS_DeleteHorizontalBannerBlocks(ByVal ws As Worksheet, ByVal targetName As String)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim cellText As String
+            cellText = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(cellText, 1) = "◐" And SPSS_NormalizeBannerName(cellText) = targetName Then
+                Dim endCol As Long
+                endCol = SPSS_FindHorizontalBannerEnd(ws, r, c, usedRange.Column + usedRange.Columns.Count - 1)
+                ranges(CStr(c) & ":" & CStr(endCol)) = Array(c, endCol)
+            End If
+        Next c
+    Next r
+
+    If ranges.Count = 0 Then
+        MsgBox "삭제할 가로 배너를 찾지 못했습니다: " & targetName, vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim msg As String
+    msg = "가로 배너 '" & targetName & "' 열 구간 " & ranges.Count & "개를 삭제합니다." & vbCrLf & _
+          "삭제 후 오른쪽 열은 자동으로 당겨 붙습니다." & vbCrLf & vbCrLf & _
+          "계속하시겠습니까?"
+    If MsgBox(msg, vbQuestion + vbYesNo, "SPSS 배너 삭제") = vbNo Then Exit Sub
+
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortColumnRangesDescending items
+
+    Application.ScreenUpdating = False
+    For r = LBound(items) To UBound(items)
+        ws.Range(ws.Columns(CLng(items(r)(0))), ws.Columns(CLng(items(r)(1)))).Delete Shift:=xlToLeft
+    Next r
+    Application.ScreenUpdating = True
+
+    MsgBox "완료: 가로 배너 '" & targetName & "' 삭제", vbInformation, "SPSS 배너 삭제"
+End Sub
+
+Private Function SPSS_FindHorizontalBannerEnd(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal startCol As Long, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = startCol + 1 To lastCol
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(headerRow, c).Value))
+        If Left$(textValue, 1) = "◐" Then
+            SPSS_FindHorizontalBannerEnd = c - 1
+            Exit Function
+        End If
+    Next c
+    SPSS_FindHorizontalBannerEnd = lastCol
+End Function
+
+Private Sub SPSS_DeleteVerticalBannerBlocks(ByVal ws As Worksheet, ByVal targetName As String)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim cellText As String
+        cellText = Trim$(CStr(ws.Cells(r, usedRange.Column).Value))
+        If Left$(cellText, 1) = "▣" And SPSS_NormalizeBannerName(cellText) = targetName Then
+            Dim endRow As Long
+            endRow = SPSS_FindVerticalBannerEnd(ws, r, usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column)
+            ranges(CStr(r) & ":" & CStr(endRow)) = Array(r, endRow)
+        End If
+    Next r
+
+    If ranges.Count = 0 Then
+        MsgBox "삭제할 세로 배너를 찾지 못했습니다: " & targetName, vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim msg As String
+    msg = "세로 배너 '" & targetName & "' 행 구간 " & ranges.Count & "개를 삭제합니다." & vbCrLf & _
+          "삭제 후 아래 행은 자동으로 당겨 붙습니다." & vbCrLf & vbCrLf & _
+          "계속하시겠습니까?"
+    If MsgBox(msg, vbQuestion + vbYesNo, "SPSS 배너 삭제") = vbNo Then Exit Sub
+
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortRowRangesDescending items
+
+    Application.ScreenUpdating = False
+    For r = LBound(items) To UBound(items)
+        ws.Rows(CLng(items(r)(0)) & ":" & CLng(items(r)(1))).Delete Shift:=xlUp
+    Next r
+    Application.ScreenUpdating = True
+
+    MsgBox "완료: 세로 배너 '" & targetName & "' 삭제", vbInformation, "SPSS 배너 삭제"
+End Sub
+
+Private Function SPSS_FindVerticalBannerEnd(ByVal ws As Worksheet, ByVal startRow As Long, ByVal lastRow As Long, ByVal markerCol As Long) As Long
+    Dim r As Long
+    For r = startRow + 1 To lastRow
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(r, markerCol).Value))
+        If Left$(textValue, 1) = "▣" Or Left$(textValue, 1) = "[" Then
+            SPSS_FindVerticalBannerEnd = r - 1
+            Exit Function
+        End If
+    Next r
+    SPSS_FindVerticalBannerEnd = lastRow
+End Function
+
+Private Function SPSS_NormalizeBannerName(ByVal bannerText As String) As String
+    Dim result As String
+    result = Trim$(bannerText)
+    If Len(result) > 0 Then
+        If Left$(result, 1) = "◐" Or Left$(result, 1) = "▣" Then result = Mid$(result, 2)
+    End If
+    SPSS_NormalizeBannerName = Trim$(result)
+End Function
+
+Private Sub SPSS_SortColumnRangesDescending(ByRef items As Variant)
+    Dim i As Long, j As Long
+    For i = LBound(items) To UBound(items) - 1
+        For j = i + 1 To UBound(items)
+            If CLng(items(i)(0)) < CLng(items(j)(0)) Then
+                Dim temp As Variant
+                temp = items(i)
+                items(i) = items(j)
+                items(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
+Private Sub SPSS_SortRowRangesDescending(ByRef items As Variant)
+    Dim i As Long, j As Long
+    For i = LBound(items) To UBound(items) - 1
+        For j = i + 1 To UBound(items)
+            If CLng(items(i)(0)) < CLng(items(j)(0)) Then
+                Dim temp As Variant
+                temp = items(i)
+                items(i) = items(j)
+                items(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
 ' ============================================================
 ' Ribbon callbacks
 ' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
@@ -1053,5 +1271,13 @@ End Sub
 Public Sub Ribbon_OutlierDetectRun(control As IRibbonControl)
     OutlierDetect_Run
 End Sub
+
+Public Sub Ribbon_SPSSDeleteSelectedBanner(control As IRibbonControl)
+    SPSS_DeleteSelectedBanner
+End Sub
+
+
+
+
 
 

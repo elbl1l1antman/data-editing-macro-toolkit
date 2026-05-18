@@ -53,6 +53,7 @@ try {
     $sheet.Range("A15").Value = "NormalizePhonesInColumns"
     $sheet.Range("A16").Value = "OutlierDetect_Setup"
     $sheet.Range("A17").Value = "OutlierDetect_Run"
+    $sheet.Range("A18").Value = "SPSS_DeleteSelectedBanner"
     $sheet.Columns("A:B").AutoFit()
 
     try {
@@ -90,4 +91,5 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
 

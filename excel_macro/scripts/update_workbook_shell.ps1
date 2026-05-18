@@ -38,7 +38,8 @@ try {
         "NormalizePhonesInSelection",
         "NormalizePhonesInColumns",
         "OutlierDetect_Setup",
-        "OutlierDetect_Run"
+        "OutlierDetect_Run",
+        "SPSS_DeleteSelectedBanner"
     )
     for ($i = 0; $i -lt $macros.Count; $i++) {
         $sheet.Cells.Item(11 + $i, 1).Value2 = [string]$macros[$i]
@@ -54,3 +55,4 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
 }
+
