@@ -341,6 +341,15 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
             Case Else
                 Exit Function
         End Select
+    ElseIf Left$(digits, 2) Like "10" Then
+        ' ── 휴대전화: 엑셀 숫자 처리로 선행 0이 제거된 경우 (010… → 10…) ──
+        digits = "0" & digits   ' 제거된 선행 0 복원
+        Select Case Len(digits)
+         Case 11
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
     ElseIf Left$(digits, 3) Like "0##" Then
         ' ── 기타 지역번호 (031, 032, 051, 052 … 등) ─────────
         ' 10자리: 0XX-XXX-XXXX
@@ -997,7 +1006,7 @@ Private Sub OD_WriteKV(ws As Worksheet, ByRef row As Long, key As String, val As
 End Sub
 
 Private Function OD_IsInternal(name As String) As Boolean
-    OD_IsInternal = (Left$(name, 1) = "_") Or (Left$(name, 5) = "이상치")
+    OD_IsInternal = (Left$(name, 1) = "_") Or (Left$(name, 3) = "이상치")
 End Function
 
 Private Function OD_SheetExists(name As String) As Boolean

@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.6.0"
+Public Const TOOLKIT_VERSION As String = "0.6.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -338,6 +338,15 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
         Select Case Len(digits)
             Case 10
                 valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 3) & "-" & Right$(digits, 4)
+            Case 11
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
+    ElseIf Left$(digits, 2) = "10" Then
+        ' 엑셀이 숫자로 읽으며 휴대전화의 선행 0을 제거한 경우 복원
+        digits = "0" & digits
+        Select Case Len(digits)
             Case 11
                 valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
             Case Else
@@ -999,7 +1008,7 @@ Private Sub OD_WriteKV(ws As Worksheet, ByRef row As Long, key As String, val As
 End Sub
 
 Private Function OD_IsInternal(name As String) As Boolean
-    OD_IsInternal = (Left$(name, 1) = "_") Or (Left$(name, 5) = "이상치")
+    OD_IsInternal = (Left$(name, 1) = "_") Or (Left$(name, 3) = "이상치")
 End Function
 
 Private Function OD_SheetExists(name As String) As Boolean
