@@ -52,9 +52,15 @@ function Add-RibbonCustomUi {
           <button id="btnPhoneSelection" label="선택 영역" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInSelection" screentip="선택 영역 전화번호 정리" supertip="선택한 셀의 한국 전화번호 형식을 하이픈 포함 표준 형식으로 정규화합니다." />
           <button id="btnPhoneRange" label="범위 선택" imageMso="AddressBook" onAction="Ribbon_NormalizePhonesInColumns" screentip="범위 지정 전화번호 정리" supertip="마우스로 선택하거나 직접 입력한 범위의 전화번호를 정규화합니다." />
         </group>
+        <group id="grpBusinessNoTools" label="사업자등록">
+          <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
+          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
+          <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
+        </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssDeleteBanner" label="선택 배너 삭제" size="large" imageMso="DeleteTableRows" onAction="Ribbon_SPSSDeleteSelectedBanner" screentip="SPSS 배너 삭제" supertip="선택한 ◐ 가로 배너의 열 블록 또는 ▣ 세로 배너의 행 블록을 삭제하고 남은 셀을 당겨 붙입니다." />
-        </group>        <group id="grpOutlierTools" label="이상치 탐지">
+        </group>
+        <group id="grpOutlierTools" label="이상치 탐지">
           <button id="btnOutlierSetup" label="설정" size="large" imageMso="ControlsGallery" onAction="Ribbon_OutlierDetectSetup" screentip="이상치 탐지 설정" supertip="이상치 탐지 및 대체 기준을 지정하는 설정 시트를 만듭니다." />
           <button id="btnOutlierRun" label="실행" imageMso="CalculateNow" onAction="Ribbon_OutlierDetectRun" screentip="이상치 탐지 실행" supertip="설정값에 따라 이상치를 탐지하고 대체 결과 시트를 생성합니다." />
         </group>

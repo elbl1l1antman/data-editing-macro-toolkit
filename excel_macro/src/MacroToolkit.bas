@@ -8,10 +8,14 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.6.1"
+Public Const TOOLKIT_VERSION As String = "0.7.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
+Private Const BIZ_API_BASE_URL As String = "https://api.odcloud.kr/api/nts-businessman/v1/status"
+Private Const BIZ_APP_NAME As String = "DataEditingMacroToolkit"
+Private Const BIZ_APP_SECTION As String = "BusinessApi"
+Private Const BIZ_APP_KEY As String = "ServiceKey"
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -23,7 +27,8 @@ Public Sub Toolkit_About()
            "주요 기능:" & vbCrLf & _
            "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
-           "- SPSS 내보내기 표의 선택 배너 블록 삭제", _
+           "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
+           "- 사업자등록번호 병합 및 국세청 상태조회 API 연동", _
            vbInformation, "매크로 툴킷"
 End Sub
 
@@ -56,6 +61,9 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A12").Value = "OutlierDetect_Setup"
     ws.Range("A13").Value = "OutlierDetect_Run"
     ws.Range("A14").Value = "SPSS_DeleteSelectedBanner"
+    ws.Range("A15").Value = "BizNo_SetApiKey"
+    ws.Range("A16").Value = "BizNo_MergeThreeColumns"
+    ws.Range("A17").Value = "BizNo_QueryStatusForSelection"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -386,6 +394,367 @@ Private Function DigitsOnly(ByVal source As String) As String
         ch = Mid$(source, i, 1)
         If ch >= "0" And ch <= "9" Then DigitsOnly = DigitsOnly & ch
     Next i
+End Function
+
+' ============================================================
+' 사업자등록번호 정리 및 국세청 상태조회 API
+' ============================================================
+Public Sub BizNo_SetApiKey()
+    Dim currentKey As String
+    Dim newKey As Variant
+
+    currentKey = Biz_GetApiKey()
+    newKey = Application.InputBox( _
+        "공공데이터포털 일반 인증키를 입력하세요." & vbCrLf & _
+        "Encoding 키와 Decoding 키 모두 사용할 수 있습니다.", _
+        "사업자등록 API 인증키 설정", currentKey, Type:=2)
+
+    If VarType(newKey) = vbBoolean Then Exit Sub
+    If Len(Trim$(CStr(newKey))) = 0 Then
+        MsgBox "인증키가 비어 있어 저장하지 않았습니다.", vbExclamation, "사업자등록 API"
+        Exit Sub
+    End If
+
+    SaveSetting BIZ_APP_NAME, BIZ_APP_SECTION, BIZ_APP_KEY, Trim$(CStr(newKey))
+    MsgBox "인증키를 저장했습니다.", vbInformation, "사업자등록 API"
+End Sub
+
+Public Sub BizNo_MergeThreeColumns()
+    Dim targetRange As Range
+    Dim ws As Worksheet
+    Dim outputCol As Long
+    Dim r As Long
+    Dim firstRow As Long
+    Dim lastRow As Long
+    Dim dataStartRow As Long
+    Dim formatted As String
+
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "사업자등록번호가 나뉜 3개 열 범위를 먼저 선택하세요.", vbExclamation, "사업자등록번호 병합"
+        Exit Sub
+    End If
+
+    Set targetRange = Selection
+    If targetRange.Columns.Count < 3 Then
+        MsgBox "3개 열로 나뉜 범위를 선택해야 합니다." & vbCrLf & _
+               "예: 123 / 45 / 67890 형태의 세 열", vbExclamation, "사업자등록번호 병합"
+        Exit Sub
+    End If
+
+    Set ws = targetRange.Worksheet
+    firstRow = targetRange.Row
+    lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    outputCol = targetRange.Column + targetRange.Columns.Count
+    dataStartRow = firstRow
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) <> 3 Or _
+       Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column + 1).Value))) <> 2 Or _
+       Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column + 2).Value))) <> 5 Then
+        dataStartRow = firstRow + 1
+    End If
+
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+    If dataStartRow > firstRow Then
+        ws.Cells(firstRow, outputCol).Value = "사업자등록번호"
+        ws.Cells(firstRow, outputCol).NumberFormat = "@"
+    End If
+
+    For r = dataStartRow To lastRow
+        formatted = Biz_FormatNoFromParts( _
+            CStr(ws.Cells(r, targetRange.Column).Value), _
+            CStr(ws.Cells(r, targetRange.Column + 1).Value), _
+            CStr(ws.Cells(r, targetRange.Column + 2).Value))
+        ws.Cells(r, outputCol).NumberFormat = "@"
+        ws.Cells(r, outputCol).Value = formatted
+    Next r
+
+    ws.Columns(outputCol).AutoFit
+    MsgBox "사업자등록번호 병합을 완료했습니다." & vbCrLf & _
+           "형식: 000-00-00000", vbInformation, "사업자등록번호 병합"
+End Sub
+
+Public Sub BizNo_QueryStatusForSelection()
+    Dim targetRange As Range
+    Dim apiKey As String
+    Dim ws As Worksheet
+    Dim firstRow As Long
+    Dim lastRow As Long
+    Dim dataStartRow As Long
+    Dim headerRow As Long
+    Dim outputCol As Long
+    Dim rowIndex As Long
+    Dim requestCount As Long
+    Dim successCount As Long
+    Dim failCount As Long
+    Dim batchNos(1 To 100) As String
+    Dim batchRows(1 To 100) As Long
+    Dim batchCount As Long
+
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "조회할 사업자등록번호 범위를 먼저 선택하세요.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    Set targetRange = Selection.Areas(1)
+    If targetRange.Columns.Count > 1 Then
+        Set targetRange = targetRange.Columns(1)
+    End If
+
+    apiKey = Biz_GetApiKey()
+    If Len(apiKey) = 0 Then
+        MsgBox "저장된 인증키가 없습니다. 먼저 [인증키 설정]을 실행하세요.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    Set ws = targetRange.Worksheet
+    firstRow = targetRange.Row
+    lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    dataStartRow = firstRow
+    headerRow = firstRow
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) = 10 Then
+        If firstRow > 1 Then
+            headerRow = firstRow - 1
+        Else
+            headerRow = 0
+        End If
+    Else
+        dataStartRow = firstRow + 1
+    End If
+
+    If dataStartRow > lastRow Then
+        MsgBox "조회할 사업자등록번호가 없습니다.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    outputCol = targetRange.Column + targetRange.Columns.Count
+    ws.Columns(outputCol).Resize(, Biz_OutputFieldCount()).Insert Shift:=xlToRight
+    If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol
+
+    Application.ScreenUpdating = False
+    On Error GoTo CleanFail
+
+    For rowIndex = dataStartRow To lastRow
+        Dim bizNo As String
+        bizNo = DigitsOnly(CStr(ws.Cells(rowIndex, targetRange.Column).Value))
+        If Len(bizNo) = 10 Then
+            batchCount = batchCount + 1
+            batchNos(batchCount) = bizNo
+            batchRows(batchCount) = rowIndex
+            requestCount = requestCount + 1
+
+            If batchCount = 100 Then
+                Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+                batchCount = 0
+            End If
+        ElseIf Len(Trim$(CStr(ws.Cells(rowIndex, targetRange.Column).Value))) > 0 Then
+            failCount = failCount + 1
+            Biz_WriteStatusError ws, rowIndex, outputCol, CStr(ws.Cells(rowIndex, targetRange.Column).Value), "사업자등록번호는 숫자 10자리여야 합니다."
+        End If
+    Next rowIndex
+
+    If batchCount > 0 Then
+        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+    End If
+
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + Biz_OutputFieldCount() - 1)).EntireColumn.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "사업자등록 상태조회를 완료했습니다." & vbCrLf & _
+           "요청: " & requestCount & "건" & vbCrLf & _
+           "성공: " & successCount & "건" & vbCrLf & _
+           "확인 필요: " & failCount & "건", vbInformation, "사업자등록 상태조회"
+    Exit Sub
+
+CleanFail:
+    Application.ScreenUpdating = True
+    MsgBox "조회 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "사업자등록 상태조회"
+End Sub
+
+Private Function Biz_GetApiKey() As String
+    Biz_GetApiKey = GetSetting(BIZ_APP_NAME, BIZ_APP_SECTION, BIZ_APP_KEY, "")
+End Function
+
+Private Function Biz_FormatNoFromParts(ByVal part1 As String, ByVal part2 As String, ByVal part3 As String) As String
+    Dim p1 As String, p2 As String, p3 As String
+    p1 = Right$("000" & DigitsOnly(part1), 3)
+    p2 = Right$("00" & DigitsOnly(part2), 2)
+    p3 = Right$("00000" & DigitsOnly(part3), 5)
+    Biz_FormatNoFromParts = p1 & "-" & p2 & "-" & p3
+End Function
+
+Private Function Biz_FormatNo(ByVal valueIn As String) As String
+    Dim digits As String
+    digits = DigitsOnly(valueIn)
+    If Len(digits) = 10 Then
+        Biz_FormatNo = Left$(digits, 3) & "-" & Mid$(digits, 4, 2) & "-" & Right$(digits, 5)
+    Else
+        Biz_FormatNo = valueIn
+    End If
+End Function
+
+Private Function Biz_OutputFieldCount() As Long
+    Biz_OutputFieldCount = 13
+End Function
+
+Private Sub Biz_WriteStatusHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
+    Dim headers As Variant
+    headers = Array( _
+        "status_code(응답상태코드)", _
+        "requested_b_no(요청 사업자등록번호)", _
+        "b_no(사업자등록번호)", _
+        "b_stt(납세자상태)", _
+        "b_stt_cd(납세자상태코드)", _
+        "tax_type(과세유형)", _
+        "tax_type_cd(과세유형코드)", _
+        "end_dt(폐업일자)", _
+        "utcc_yn(단위과세전환폐업여부)", _
+        "tax_type_change_dt(과세유형전환일자)", _
+        "invoice_apply_dt(세금계산서적용일자)", _
+        "rbf_tax_type(직전과세유형)", _
+        "rbf_tax_type_cd(직전과세유형코드)")
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    Next i
+End Sub
+
+Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByRef successCount As Long, ByRef failCount As Long)
+    Dim responseText As String
+    Dim statusCode As String
+    Dim dataObjects As Collection
+    Dim i As Long
+
+    responseText = Biz_PostStatus(batchNos, batchCount, apiKey)
+    statusCode = Biz_JsonString(responseText, "status_code")
+    If Len(statusCode) = 0 Then statusCode = "UNKNOWN"
+
+    Set dataObjects = Biz_ExtractDataObjects(responseText)
+    For i = 1 To batchCount
+        If i <= dataObjects.Count Then
+            Biz_WriteStatusRow ws, batchRows(i), outputCol, statusCode, batchNos(i), CStr(dataObjects(i))
+            successCount = successCount + 1
+        Else
+            failCount = failCount + 1
+            Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "응답 데이터가 없습니다. status_code=" & statusCode
+        End If
+    Next i
+End Sub
+
+Private Function Biz_PostStatus(ByRef batchNos() As String, ByVal batchCount As Long, ByVal apiKey As String) As String
+    Dim http As Object
+    Dim url As String
+    Dim body As String
+    Dim i As Long
+
+    body = "{""b_no"":["
+    For i = 1 To batchCount
+        If i > 1 Then body = body & ","
+        body = body & """" & batchNos(i) & """"
+    Next i
+    body = body & "]}"
+
+    url = BIZ_API_BASE_URL & "?serviceKey=" & Biz_ServiceKeyForUrl(apiKey)
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.Open "POST", url, False
+    http.setRequestHeader "Content-Type", "application/json; charset=utf-8"
+    http.setRequestHeader "Accept", "application/json"
+    http.send body
+
+    If http.Status < 200 Or http.Status >= 300 Then
+        Err.Raise vbObjectError + 701, "Biz_PostStatus", "HTTP " & http.Status & ": " & http.responseText
+    End If
+    Biz_PostStatus = CStr(http.responseText)
+End Function
+
+Private Function Biz_ServiceKeyForUrl(ByVal apiKey As String) As String
+    If InStr(1, apiKey, "%", vbBinaryCompare) > 0 Then
+        Biz_ServiceKeyForUrl = apiKey
+    Else
+        Biz_ServiceKeyForUrl = Replace(Replace(Replace(apiKey, "+", "%2B"), "/", "%2F"), "=", "%3D")
+    End If
+End Function
+
+Private Sub Biz_WriteStatusRow(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal statusCode As String, ByVal requestedNo As String, ByVal dataObject As String)
+    ws.Cells(rowIndex, outputCol).Value = statusCode
+    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
+    ws.Cells(rowIndex, outputCol + 2).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 2).Value = Biz_FormatNo(Biz_JsonString(dataObject, "b_no"))
+    ws.Cells(rowIndex, outputCol + 3).Value = Biz_JsonString(dataObject, "b_stt")
+    ws.Cells(rowIndex, outputCol + 4).Value = Biz_JsonString(dataObject, "b_stt_cd")
+    ws.Cells(rowIndex, outputCol + 5).Value = Biz_JsonString(dataObject, "tax_type")
+    ws.Cells(rowIndex, outputCol + 6).Value = Biz_JsonString(dataObject, "tax_type_cd")
+    ws.Cells(rowIndex, outputCol + 7).Value = Biz_JsonString(dataObject, "end_dt")
+    ws.Cells(rowIndex, outputCol + 8).Value = Biz_JsonString(dataObject, "utcc_yn")
+    ws.Cells(rowIndex, outputCol + 9).Value = Biz_JsonString(dataObject, "tax_type_change_dt")
+    ws.Cells(rowIndex, outputCol + 10).Value = Biz_JsonString(dataObject, "invoice_apply_dt")
+    ws.Cells(rowIndex, outputCol + 11).Value = Biz_JsonString(dataObject, "rbf_tax_type")
+    ws.Cells(rowIndex, outputCol + 12).Value = Biz_JsonString(dataObject, "rbf_tax_type_cd")
+End Sub
+
+Private Sub Biz_WriteStatusError(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal requestedNo As String, ByVal message As String)
+    ws.Cells(rowIndex, outputCol).Value = "ERROR"
+    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
+    ws.Cells(rowIndex, outputCol + 3).Value = message
+End Sub
+
+Private Function Biz_ExtractDataObjects(ByVal jsonText As String) As Collection
+    Dim result As New Collection
+    Dim dataPos As Long
+    Dim arrStart As Long
+    Dim i As Long
+    Dim depth As Long
+    Dim objStart As Long
+    Dim inString As Boolean
+    Dim ch As String
+    Dim prevCh As String
+
+    dataPos = InStr(1, jsonText, """data""", vbTextCompare)
+    If dataPos = 0 Then
+        Set Biz_ExtractDataObjects = result
+        Exit Function
+    End If
+
+    arrStart = InStr(dataPos, jsonText, "[")
+    If arrStart = 0 Then
+        Set Biz_ExtractDataObjects = result
+        Exit Function
+    End If
+
+    For i = arrStart + 1 To Len(jsonText)
+        ch = Mid$(jsonText, i, 1)
+        If ch = """" And prevCh <> "\" Then inString = Not inString
+        If Not inString Then
+            If ch = "{" Then
+                If depth = 0 Then objStart = i
+                depth = depth + 1
+            ElseIf ch = "}" Then
+                depth = depth - 1
+                If depth = 0 And objStart > 0 Then result.Add Mid$(jsonText, objStart, i - objStart + 1)
+            ElseIf ch = "]" And depth = 0 Then
+                Exit For
+            End If
+        End If
+        prevCh = ch
+    Next i
+
+    Set Biz_ExtractDataObjects = result
+End Function
+
+Private Function Biz_JsonString(ByVal jsonText As String, ByVal key As String) As String
+    Dim re As Object
+    Dim matches As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.IgnoreCase = False
+    re.Pattern = """" & key & """" & "\s*:\s*""(([^""\\]|\\.)*)"""
+    Set matches = re.Execute(jsonText)
+    If matches.Count > 0 Then Biz_JsonString = Biz_JsonUnescape(CStr(matches(0).SubMatches(0)))
+End Function
+
+Private Function Biz_JsonUnescape(ByVal valueIn As String) As String
+    Biz_JsonUnescape = Replace(Replace(Replace(Replace(valueIn, "\""", """"), "\\", "\"), "\/", "/"), "\n", vbLf)
 End Function
 
 ' ============================================================
@@ -1271,6 +1640,18 @@ End Sub
 
 Public Sub Ribbon_NormalizePhonesInColumns(control As IRibbonControl)
     NormalizePhonesInColumns
+End Sub
+
+Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
+    BizNo_SetApiKey
+End Sub
+
+Public Sub Ribbon_BizNoMergeThreeColumns(control As IRibbonControl)
+    BizNo_MergeThreeColumns
+End Sub
+
+Public Sub Ribbon_BizNoQueryStatus(control As IRibbonControl)
+    BizNo_QueryStatusForSelection
 End Sub
 
 Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)
