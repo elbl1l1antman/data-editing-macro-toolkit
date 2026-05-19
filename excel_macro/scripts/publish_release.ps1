@@ -113,7 +113,13 @@ $commit = "unknown"
 $wasDirtyBeforePublish = $false
 try {
     $commit = (git -C $ProjectRoot rev-parse --short HEAD).Trim()
-    $prePublishStatus = (git -C $ProjectRoot status --short)
+    $repoRoot = (git -C $ProjectRoot rev-parse --show-toplevel).Trim()
+    $projectRelPath = (Resolve-Path -LiteralPath $ProjectRoot).Path.Substring((Resolve-Path -LiteralPath $repoRoot).Path.Length).TrimStart('\', '/').Replace('\', '/')
+    if ($projectRelPath) {
+        $prePublishStatus = (git -C $repoRoot status --short -- $projectRelPath)
+    } else {
+        $prePublishStatus = (git -C $repoRoot status --short)
+    }
     if ($prePublishStatus) { $wasDirtyBeforePublish = $true }
 } catch {}
 
