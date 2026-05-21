@@ -34,6 +34,198 @@ function Get-ZipTextEntry {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 
+function Add-SpssRebuildUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmSpssRebuildOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "SPSS 표/배너 재구성"
+    $form.Properties.Item("Width").Value = 620
+    $form.Properties.Item("Height").Value = 430
+
+    $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
+    $lblHelp.Caption = "삭제할 표와 배너를 선택하고, 배너는 위/아래 버튼으로 순서를 조정하세요."
+    $lblHelp.Left = 12
+    $lblHelp.Top = 10
+    $lblHelp.Width = 580
+    $lblHelp.Height = 18
+
+    $lblTables = $designer.Controls.Add("Forms.Label.1", "lblTables", $true)
+    $lblTables.Caption = "삭제할 표"
+    $lblTables.Left = 12
+    $lblTables.Top = 34
+    $lblTables.Width = 260
+    $lblTables.Height = 16
+
+    $lstTables = $designer.Controls.Add("Forms.ListBox.1", "lstTables", $true)
+    $lstTables.Left = 12
+    $lstTables.Top = 52
+    $lstTables.Width = 280
+    $lstTables.Height = 292
+    $lstTables.ColumnCount = 2
+    $lstTables.ColumnWidths = "240 pt;0 pt"
+    $lstTables.MultiSelect = 1
+
+    $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
+    $lblBanners.Caption = "삭제/이동할 배너"
+    $lblBanners.Left = 312
+    $lblBanners.Top = 34
+    $lblBanners.Width = 220
+    $lblBanners.Height = 16
+
+    $lstBanners = $designer.Controls.Add("Forms.ListBox.1", "lstBanners", $true)
+    $lstBanners.Left = 312
+    $lstBanners.Top = 52
+    $lstBanners.Width = 220
+    $lstBanners.Height = 292
+    $lstBanners.ColumnCount = 2
+    $lstBanners.ColumnWidths = "180 pt;0 pt"
+    $lstBanners.MultiSelect = 1
+
+    $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
+    $cmdUp.Caption = "위로"
+    $cmdUp.Left = 542
+    $cmdUp.Top = 84
+    $cmdUp.Width = 54
+    $cmdUp.Height = 24
+
+    $cmdDown = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerDown", $true)
+    $cmdDown.Caption = "아래로"
+    $cmdDown.Left = 542
+    $cmdDown.Top = 114
+    $cmdDown.Width = 54
+    $cmdDown.Height = 24
+
+    $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
+    $lblTip.Caption = "체크된 항목은 삭제됩니다. 순서만 바꿀 배너는 선택하지 말고 위/아래만 사용하세요."
+    $lblTip.Left = 12
+    $lblTip.Top = 354
+    $lblTip.Width = 580
+    $lblTip.Height = 28
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 414
+    $cmdOk.Top = 386
+    $cmdOk.Width = 82
+    $cmdOk.Height = 26
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 510
+    $cmdCancel.Top = 386
+    $cmdCancel.Width = 82
+    $cmdCancel.Height = 26
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+Public DeleteTablesText As String
+Public DeleteBannersText As String
+Public BannerOrderText As String
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+End Sub
+
+Public Sub InitializeOptions(ByVal tables As Object, ByVal banners As Object)
+    Dim i As Long
+    Dim item As Variant
+
+    lstTables.Clear
+    For i = 1 To tables.Count
+        item = tables(i)
+        lstTables.AddItem CStr(i) & ". " & CStr(item(0))
+        lstTables.List(lstTables.ListCount - 1, 1) = CStr(i)
+    Next i
+
+    lstBanners.Clear
+    For i = 1 To banners.Count
+        lstBanners.AddItem CStr(i) & ". " & CStr(banners(i))
+        lstBanners.List(lstBanners.ListCount - 1, 1) = CStr(i)
+    Next i
+End Sub
+
+Private Sub cmdBannerUp_Click()
+    MoveSelectedBanner -1
+End Sub
+
+Private Sub cmdBannerDown_Click()
+    MoveSelectedBanner 1
+End Sub
+
+Private Sub MoveSelectedBanner(ByVal direction As Long)
+    Dim i As Long
+    If direction < 0 Then
+        For i = 1 To lstBanners.ListCount - 1
+            If lstBanners.Selected(i) Then SwapBannerRows i, i - 1
+        Next i
+    Else
+        For i = lstBanners.ListCount - 2 To 0 Step -1
+            If lstBanners.Selected(i) Then SwapBannerRows i, i + 1
+        Next i
+    End If
+End Sub
+
+Private Sub SwapBannerRows(ByVal a As Long, ByVal b As Long)
+    Dim text0 As String, id0 As String
+    Dim selectedA As Boolean, selectedB As Boolean
+
+    text0 = lstBanners.List(a, 0)
+    id0 = lstBanners.List(a, 1)
+    selectedA = lstBanners.Selected(a)
+    selectedB = lstBanners.Selected(b)
+
+    lstBanners.List(a, 0) = lstBanners.List(b, 0)
+    lstBanners.List(a, 1) = lstBanners.List(b, 1)
+    lstBanners.List(b, 0) = text0
+    lstBanners.List(b, 1) = id0
+
+    lstBanners.Selected(a) = selectedB
+    lstBanners.Selected(b) = selectedA
+End Sub
+
+Private Sub cmdOK_Click()
+    DeleteTablesText = SelectedIds(lstTables)
+    DeleteBannersText = SelectedIds(lstBanners)
+    BannerOrderText = AllIds(lstBanners)
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+
+Private Function SelectedIds(ByVal listBox As MSForms.ListBox) As String
+    Dim result As String
+    Dim i As Long
+    For i = 0 To listBox.ListCount - 1
+        If listBox.Selected(i) Then
+            If Len(result) > 0 Then result = result & ","
+            result = result & CStr(listBox.List(i, 1))
+        End If
+    Next i
+    SelectedIds = result
+End Function
+
+Private Function AllIds(ByVal listBox As MSForms.ListBox) As String
+    Dim result As String
+    Dim i As Long
+    For i = 0 To listBox.ListCount - 1
+        If Len(result) > 0 Then result = result & ","
+        result = result & CStr(listBox.List(i, 1))
+    Next i
+    AllIds = result
+End Function
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -166,12 +358,14 @@ try {
     $workbook = $excel.Workbooks.Open($DevWorkbook)
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
-            if ($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) {
+            if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
+                ($component.Type -eq 3 -and $component.Name -eq "frmSpssRebuildOptions")) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
         $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
+        Add-SpssRebuildUserForm -Workbook $workbook
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"

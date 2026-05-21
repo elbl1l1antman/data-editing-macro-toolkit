@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.5"
+Public Const TOOLKIT_VERSION As String = "0.8.6"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -2349,48 +2349,53 @@ Public Sub SPSS_RebuildTablesFromIndex()
         Exit Sub
     End If
 
-    Dim tableList As String
-    tableList = SPSS_FormatTableList(tables)
-
-    Dim deleteTableInput As String
-    deleteTableInput = InputBox( _
-        "탐지한 표 목록입니다. 삭제할 표 번호만 입력하세요." & vbCrLf & _
-        "비워두면 모든 표를 남깁니다. 예: 2,5-7" & vbCrLf & vbCrLf & tableList, _
-        "SPSS 표 재구성 - 삭제할 표", "")
-
     Dim deleteTables As Object
-    Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+    Dim deleteTableInput As String
+    Dim deleteBannerInput As String
+    Dim orderInput As String
 
     Dim banners As Collection
+    Set deleteTables = CreateObject("Scripting.Dictionary")
     Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
-    If banners.Count = 0 Then
-        If MsgBox("선택된 표에서 배너를 찾지 못했습니다." & vbCrLf & _
-                  "표 삭제만 반영해 신규 표/목차 시트를 생성할까요?", _
-                  vbQuestion + vbYesNo, "SPSS 표 재구성") = vbNo Then Exit Sub
-    End If
 
-    Dim bannerList As String
-    bannerList = SPSS_FormatBannerList(banners)
+    If SPSS_ShowRebuildOptionsForm(tables, banners, deleteTableInput, deleteBannerInput, orderInput) Then
+        Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+    Else
+        Dim tableList As String
+        tableList = SPSS_FormatTableList(tables)
 
-    Dim deleteBannerInput As String
-    If banners.Count > 0 Then
-        deleteBannerInput = InputBox( _
-            "탐지한 배너 목록입니다. 삭제할 배너 번호만 입력하세요." & vbCrLf & _
-            "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
-            "SPSS 표 재구성 - 삭제할 배너", "")
+        deleteTableInput = InputBox( _
+            "탐지한 표 목록입니다. 삭제할 표 번호만 입력하세요." & vbCrLf & _
+            "비워두면 모든 표를 남깁니다. 예: 2,5-7" & vbCrLf & vbCrLf & tableList, _
+            "SPSS 표 재구성 - 삭제할 표", "")
+        Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+
+        Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
+        If banners.Count = 0 Then
+            If MsgBox("선택된 표에서 배너를 찾지 못했습니다." & vbCrLf & _
+                      "표 삭제만 반영해 신규 표/목차 시트를 생성할까요?", _
+                      vbQuestion + vbYesNo, "SPSS 표 재구성") = vbNo Then Exit Sub
+        End If
+
+        Dim bannerList As String
+        bannerList = SPSS_FormatBannerList(banners)
+
+        If banners.Count > 0 Then
+            deleteBannerInput = InputBox( _
+                "탐지한 배너 목록입니다. 삭제할 배너 번호만 입력하세요." & vbCrLf & _
+                "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
+                "SPSS 표 재구성 - 삭제할 배너", "")
+
+            orderInput = InputBox( _
+                "배너 이동 순서를 번호로 입력하세요." & vbCrLf & _
+                "입력한 순서가 먼저 배치되고, 빠진 배너는 기존 순서대로 뒤에 붙습니다." & vbCrLf & _
+                "비워두면 기존 순서를 유지합니다. 예: 3,1,2" & vbCrLf & vbCrLf & bannerList, _
+                "SPSS 표 재구성 - 배너 순서", "")
+        End If
     End If
 
     Dim deleteBanners As Object
     Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteBannerInput, banners)
-
-    Dim orderInput As String
-    If banners.Count > 0 Then
-        orderInput = InputBox( _
-            "배너 이동 순서를 번호로 입력하세요." & vbCrLf & _
-            "입력한 순서가 먼저 배치되고, 빠진 배너는 기존 순서대로 뒤에 붙습니다." & vbCrLf & _
-            "비워두면 기존 순서를 유지합니다. 예: 3,1,2" & vbCrLf & vbCrLf & bannerList, _
-            "SPSS 표 재구성 - 배너 순서", "")
-    End If
 
     Dim orderNames As Collection
     Set orderNames = SPSS_ParseBannerOrder(orderInput, banners, deleteBanners)
@@ -2557,6 +2562,37 @@ Private Function SPSS_FormatTableList(ByVal tables As Collection) As String
         result = result & i & ". " & CStr(item(0)) & "  (행 " & CLng(item(1)) & "-" & CLng(item(2)) & ")" & vbCrLf
     Next i
     SPSS_FormatTableList = result
+End Function
+
+Private Function SPSS_ShowRebuildOptionsForm(ByVal tables As Collection, _
+                                             ByVal banners As Collection, _
+                                             ByRef deleteTableInput As String, _
+                                             ByRef deleteBannerInput As String, _
+                                             ByRef orderInput As String) As Boolean
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmSpssRebuildOptions")
+    form.InitializeOptions tables, banners
+    form.Show
+
+    If form.Cancelled Then
+        Unload form
+        Err.Raise vbObjectError + 8301, "SPSS_ShowRebuildOptionsForm", "사용자가 작업을 취소했습니다."
+    End If
+
+    deleteTableInput = CStr(form.DeleteTablesText)
+    deleteBannerInput = CStr(form.DeleteBannersText)
+    orderInput = CStr(form.BannerOrderText)
+
+    Unload form
+    SPSS_ShowRebuildOptionsForm = True
+    Exit Function
+
+Fallback:
+    If Err.Number = vbObjectError + 8301 Then Err.Raise Err.Number, Err.Source, Err.Description
+    Err.Clear
+    SPSS_ShowRebuildOptionsForm = False
 End Function
 
 Private Function SPSS_CollectUniqueBanners(ByVal tables As Collection, ByVal dataWs As Worksheet, ByVal deleteTables As Object) As Collection
