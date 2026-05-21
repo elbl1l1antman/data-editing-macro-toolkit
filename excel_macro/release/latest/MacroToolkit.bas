@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.2"
+Public Const TOOLKIT_VERSION As String = "0.8.3"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -945,22 +945,23 @@ Public Sub OutlierDetect_Run()
     End If
 
     ' ── 통계량 계산 ──────────────────────────────────────
-    Dim wf As WorksheetFunction: Set wf = Application.WorksheetFunction
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, numCount, sortedValues
 
-    Dim q1     As Double: q1     = wf.Percentile(values, 0.25)
-    Dim q3     As Double: q3     = wf.Percentile(values, 0.75)
+    Dim q1     As Double: q1     = OD_PercentileIncSorted(sortedValues, numCount, 0.25)
+    Dim q3     As Double: q3     = OD_PercentileIncSorted(sortedValues, numCount, 0.75)
     Dim iqrVal As Double: iqrVal = q3 - q1
-    Dim medV   As Double: medV   = wf.Median(values)
-    Dim meanV  As Double: meanV  = wf.Average(values)
-    Dim minV   As Double: minV   = wf.Min(values)
-    Dim maxV   As Double: maxV   = wf.Max(values)
+    Dim medV   As Double: medV   = OD_PercentileIncSorted(sortedValues, numCount, 0.5)
+    Dim meanV  As Double: meanV  = OD_AverageValues(values, numCount)
+    Dim minV   As Double: minV   = sortedValues(1)
+    Dim maxV   As Double: maxV   = sortedValues(numCount)
 
     Dim lo As Double, hi As Double
     Select Case criteria
         Case OD_IQR15: lo = q1 - 1.5 * iqrVal:                    hi = q3 + 1.5 * iqrVal
         Case OD_IQR20: lo = q1 - 2.0 * iqrVal:                    hi = q3 + 2.0 * iqrVal
-        Case OD_P95:   lo = wf.Percentile(values, 0.05):           hi = wf.Percentile(values, 0.95)
-        Case OD_P99:   lo = wf.Percentile(values, 0.01):           hi = wf.Percentile(values, 0.99)
+        Case OD_P95:   lo = OD_PercentileIncSorted(sortedValues, numCount, 0.05): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.95)
+        Case OD_P99:   lo = OD_PercentileIncSorted(sortedValues, numCount, 0.01): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.99)
     End Select
 
     ' 중앙값/평균값 대체 기준: 이상치 제외 후 계산
@@ -977,8 +978,8 @@ Public Sub OutlierDetect_Run()
         Next vi
         If trimN > 0 Then
             ReDim Preserve trimVals(1 To trimN)
-            If method = OD_MEDIAN Then replBase = wf.Median(trimVals)
-            If method = OD_MEAN   Then replBase = wf.Average(trimVals)
+            If method = OD_MEDIAN Then replBase = OD_MedianValues(trimVals, trimN)
+            If method = OD_MEAN Then replBase = OD_AverageValues(trimVals, trimN)
         Else
             ' 이상치 제외 후 데이터가 없는 극단적 경우 전체 통계량 사용
             If method = OD_MEDIAN Then replBase = medV Else replBase = meanV
@@ -1297,21 +1298,23 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
     ReDim Preserve values(1 To numCount)
     ReDim Preserve rowMap(1 To numCount)
 
-    Dim wf As WorksheetFunction: Set wf = Application.WorksheetFunction
-    Dim q1 As Double: q1 = wf.Percentile(values, 0.25)
-    Dim q3 As Double: q3 = wf.Percentile(values, 0.75)
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, numCount, sortedValues
+
+    Dim q1 As Double: q1 = OD_PercentileIncSorted(sortedValues, numCount, 0.25)
+    Dim q3 As Double: q3 = OD_PercentileIncSorted(sortedValues, numCount, 0.75)
     Dim iqrVal As Double: iqrVal = q3 - q1
-    Dim medV As Double: medV = wf.Median(values)
-    Dim meanV As Double: meanV = wf.Average(values)
-    Dim minV As Double: minV = wf.Min(values)
-    Dim maxV As Double: maxV = wf.Max(values)
+    Dim medV As Double: medV = OD_PercentileIncSorted(sortedValues, numCount, 0.5)
+    Dim meanV As Double: meanV = OD_AverageValues(values, numCount)
+    Dim minV As Double: minV = sortedValues(1)
+    Dim maxV As Double: maxV = sortedValues(numCount)
     Dim lo As Double, hi As Double
 
     Select Case criteria
         Case OD_IQR15: lo = q1 - 1.5 * iqrVal: hi = q3 + 1.5 * iqrVal
         Case OD_IQR20: lo = q1 - 2# * iqrVal: hi = q3 + 2# * iqrVal
-        Case OD_P95: lo = wf.Percentile(values, 0.05): hi = wf.Percentile(values, 0.95)
-        Case OD_P99: lo = wf.Percentile(values, 0.01): hi = wf.Percentile(values, 0.99)
+        Case OD_P95: lo = OD_PercentileIncSorted(sortedValues, numCount, 0.05): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.95)
+        Case OD_P99: lo = OD_PercentileIncSorted(sortedValues, numCount, 0.01): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.99)
     End Select
 
     Dim replBase As Double
@@ -1403,6 +1406,92 @@ Private Function OD_TrimToUsedRange(ByVal selectedRange As Range) As Range
     Else
         Set OD_TrimToUsedRange = usedPart
     End If
+End Function
+
+Private Sub OD_CopyAndSortValues(ByRef sourceValues() As Double, _
+                                 ByVal countN As Long, _
+                                 ByRef sortedValues() As Double)
+    If countN <= 0 Then Err.Raise vbObjectError + 8201, "OD_CopyAndSortValues", "정렬할 숫자값이 없습니다."
+
+    ReDim sortedValues(1 To countN)
+
+    Dim i As Long
+    For i = 1 To countN
+        sortedValues(i) = sourceValues(i)
+    Next i
+
+    If countN > 1 Then OD_QuickSortDoubles sortedValues, 1, countN
+End Sub
+
+Private Sub OD_QuickSortDoubles(ByRef values() As Double, ByVal firstIdx As Long, ByVal lastIdx As Long)
+    Dim lowIdx As Long: lowIdx = firstIdx
+    Dim highIdx As Long: highIdx = lastIdx
+    Dim pivot As Double: pivot = values((firstIdx + lastIdx) \ 2)
+    Dim tempValue As Double
+
+    Do While lowIdx <= highIdx
+        Do While values(lowIdx) < pivot
+            lowIdx = lowIdx + 1
+        Loop
+        Do While values(highIdx) > pivot
+            highIdx = highIdx - 1
+        Loop
+
+        If lowIdx <= highIdx Then
+            tempValue = values(lowIdx)
+            values(lowIdx) = values(highIdx)
+            values(highIdx) = tempValue
+            lowIdx = lowIdx + 1
+            highIdx = highIdx - 1
+        End If
+    Loop
+
+    If firstIdx < highIdx Then OD_QuickSortDoubles values, firstIdx, highIdx
+    If lowIdx < lastIdx Then OD_QuickSortDoubles values, lowIdx, lastIdx
+End Sub
+
+Private Function OD_PercentileIncSorted(ByRef sortedValues() As Double, _
+                                        ByVal countN As Long, _
+                                        ByVal percentile As Double) As Double
+    If countN <= 0 Then Err.Raise vbObjectError + 8202, "OD_PercentileIncSorted", "백분위수를 계산할 숫자값이 없습니다."
+    If percentile < 0 Or percentile > 1 Then Err.Raise vbObjectError + 8203, "OD_PercentileIncSorted", "백분위수는 0과 1 사이여야 합니다."
+    If countN = 1 Then
+        OD_PercentileIncSorted = sortedValues(1)
+        Exit Function
+    End If
+
+    Dim position As Double
+    position = 1 + (countN - 1) * percentile
+
+    Dim lowerIdx As Long
+    lowerIdx = Fix(position)
+
+    Dim upperIdx As Long
+    upperIdx = lowerIdx + 1
+    If upperIdx > countN Then upperIdx = countN
+
+    Dim fraction As Double
+    fraction = position - lowerIdx
+
+    OD_PercentileIncSorted = sortedValues(lowerIdx) + fraction * (sortedValues(upperIdx) - sortedValues(lowerIdx))
+End Function
+
+Private Function OD_MedianValues(ByRef values() As Double, ByVal countN As Long) As Double
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, countN, sortedValues
+    OD_MedianValues = OD_PercentileIncSorted(sortedValues, countN, 0.5)
+End Function
+
+Private Function OD_AverageValues(ByRef values() As Double, ByVal countN As Long) As Double
+    If countN <= 0 Then Err.Raise vbObjectError + 8204, "OD_AverageValues", "평균을 계산할 숫자값이 없습니다."
+
+    Dim total As Double
+    Dim i As Long
+    For i = 1 To countN
+        total = total + values(i)
+    Next i
+
+    OD_AverageValues = total / countN
 End Function
 
 Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
@@ -1563,10 +1652,11 @@ Private Function OD_CountIqrOutliers(ByVal ws As Worksheet, _
         End If
     Next r
 
-    Dim wf As WorksheetFunction
-    Set wf = Application.WorksheetFunction
-    Dim q1 As Double: q1 = wf.Percentile(values, 0.25)
-    Dim q3 As Double: q3 = wf.Percentile(values, 0.75)
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, countN, sortedValues
+
+    Dim q1 As Double: q1 = OD_PercentileIncSorted(sortedValues, countN, 0.25)
+    Dim q3 As Double: q3 = OD_PercentileIncSorted(sortedValues, countN, 0.75)
     Dim lo As Double: lo = q1 - 1.5 * (q3 - q1)
     Dim hi As Double: hi = q3 + 1.5 * (q3 - q1)
 
@@ -1652,9 +1742,9 @@ Private Function OD_ReplacementBase(ByRef values() As Double, _
 
     ReDim Preserve trimVals(1 To trimN)
     If method = OD_MEDIAN Then
-        OD_ReplacementBase = Application.WorksheetFunction.Median(trimVals)
+        OD_ReplacementBase = OD_MedianValues(trimVals, trimN)
     Else
-        OD_ReplacementBase = Application.WorksheetFunction.Average(trimVals)
+        OD_ReplacementBase = OD_AverageValues(trimVals, trimN)
     End If
 End Function
 
