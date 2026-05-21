@@ -61,7 +61,7 @@ function Add-RibbonCustomUi {
           <button id="btnSpssDeleteBanner" label="선택 배너 삭제" size="large" imageMso="DeleteTableRows" onAction="Ribbon_SPSSDeleteSelectedBanner" screentip="SPSS 배너 삭제" supertip="선택한 ◐ 가로 배너의 열 블록 또는 ▣ 세로 배너의 행 블록을 삭제하고 남은 셀을 당겨 붙입니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
-          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 분석 열 직접 선택" supertip="새 시트에 복사한 데이터에서 이상치를 탐지할 숫자 열을 직접 선택하면 오른쪽에 대체 결과 열, 이상치 조건부 서식, 기초통계표를 함께 추가합니다." />
+          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
           <button id="btnOutlierSetup" label="고급 설정" imageMso="ControlsGallery" onAction="Ribbon_OutlierDetectSetup" screentip="이상치 탐지 고급 설정" supertip="설정 시트를 사용하는 기존 방식의 이상치 탐지 및 결과 시트 생성을 준비합니다." />
         </group>
         <group id="grpToolkitInfo" label="정보">

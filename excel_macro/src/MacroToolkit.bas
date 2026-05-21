@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.3"
+Public Const TOOLKIT_VERSION As String = "0.8.4"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -29,7 +29,7 @@ Public Sub Toolkit_About()
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
            "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
            "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
-           "- 선택 범위 기반 이상치 탐지 및 대체", _
+           "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성", _
            vbInformation, "매크로 툴킷"
 End Sub
 
@@ -1186,20 +1186,12 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
         End If
         Set dataArea = Selection.Areas(1)
     Else
-        MsgBox "사용 방법" & vbCrLf & vbCrLf & _
-               "1. 원본 데이터를 새 시트에 복사해 붙여넣습니다." & vbCrLf & _
-               "2. 이상치를 탐지할 숫자 열 하나를 선택합니다." & vbCrLf & _
-               "   예: H:H, H1:H12001, layoffs_count 열" & vbCrLf & _
-               "3. 기준과 대체 방식을 선택하면 오른쪽에 결과 열과 통계표가 생성됩니다." & vbCrLf & vbCrLf & _
-               "표 전체를 선택한 경우에는 숫자형 열 목록에서 직접 고를 수 있습니다.", _
-               vbInformation, "이상치 대체 사용 안내"
-
         On Error Resume Next
         Set dataArea = Application.InputBox( _
-            "이상치를 탐지할 숫자 열을 마우스로 드래그하거나 직접 입력하세요." & vbCrLf & _
-            "예: H:H  /  H1:H12001  /  layoffs_count가 들어 있는 열" & vbCrLf & _
-            "표 전체를 선택하면 숫자형 열 선택 목록을 보여줍니다.", _
-            "이상치 대체 - 분석 열 선택", defaultAddress, Type:=8)
+            "이상치 확인을 할 범위를 선택하세요." & vbCrLf & vbCrLf & _
+            "빈칸에 범위를 직접 입력하거나, 마우스로 숫자 열을 드래그해 지정할 수 있습니다." & vbCrLf & _
+            "예: H:H  /  H1:H12001  /  표 전체 범위", _
+            "이상치 확인 - 범위 선택", defaultAddress, Type:=8)
         On Error GoTo ErrHandler
     End If
 
@@ -1243,39 +1235,12 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
         Exit Sub
     End If
 
-    Dim criteria As String
-    Dim method As String
-    If Len(Trim$(criteriaOverride)) > 0 Then
-        If Not OD_MapEasyCriteria(criteriaOverride, criteria) Then
-            MsgBox "알 수 없는 이상치 기준입니다: " & criteriaOverride, vbExclamation, "이상치 대체"
-            Exit Sub
-        End If
-    Else
-        If Not OD_SelectEasyCriteria(criteria) Then Exit Sub
-    End If
-
-    If Len(Trim$(methodOverride)) > 0 Then
-        If Not OD_MapEasyMethod(methodOverride, method) Then
-            MsgBox "알 수 없는 대체 방식입니다: " & methodOverride, vbExclamation, "이상치 대체"
-            Exit Sub
-        End If
-    Else
-        If Not OD_SelectEasyMethod(method) Then Exit Sub
-    End If
-
-    If Not suppressPrompts Then
-        If MsgBox("선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
-                  "변수: " & varName & vbCrLf & _
-                  "이상치 기준: " & criteria & vbCrLf & _
-                  "대체 방식: " & method & vbCrLf & vbCrLf & _
-                  "원본 오른쪽에 결과 열을 삽입하고, 이상치 셀을 강조합니다." & vbCrLf & _
-                  "계속하시겠습니까?", vbQuestion + vbYesNo, "이상치 대체 확인") = vbNo Then Exit Sub
-    End If
-
     Dim rowCount As Long: rowCount = lastRow - firstDataRow + 1
     Dim values() As Double: ReDim values(1 To rowCount)
     Dim rowMap() As Long: ReDim rowMap(1 To rowCount)
     Dim numCount As Long: numCount = 0
+    Dim blankCount As Long: blankCount = 0
+    Dim nonNumericCount As Long: nonNumericCount = 0
     Dim r As Long
 
     For r = firstDataRow To lastRow
@@ -1286,6 +1251,10 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
                 numCount = numCount + 1
                 values(numCount) = CDbl(cellValue)
                 rowMap(numCount) = r
+            ElseIf IsError(cellValue) Or IsEmpty(cellValue) Or Len(Trim$(CStr(cellValue))) = 0 Then
+                blankCount = blankCount + 1
+            Else
+                nonNumericCount = nonNumericCount + 1
             End If
         End If
     Next r
@@ -1298,6 +1267,18 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
     ReDim Preserve values(1 To numCount)
     ReDim Preserve rowMap(1 To numCount)
 
+    If Not suppressPrompts Then
+        If MsgBox("범위 확인" & vbCrLf & vbCrLf & _
+                  "선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
+                  "헤더/변수명: " & varName & vbCrLf & _
+                  "데이터 행 범위: " & firstDataRow & "행 ~ " & lastRow & "행" & vbCrLf & _
+                  "숫자값: " & numCount & "개" & vbCrLf & _
+                  "빈칸/오류: " & blankCount & "개" & vbCrLf & _
+                  "숫자가 아닌 값: " & nonNumericCount & "개" & vbCrLf & vbCrLf & _
+                  "이 범위로 기초통계량표와 Q1/Q3 검토열을 생성할까요?", _
+                  vbQuestion + vbYesNo, "이상치 확인 - 범위 검증") = vbNo Then Exit Sub
+    End If
+
     Dim sortedValues() As Double
     OD_CopyAndSortValues values, numCount, sortedValues
 
@@ -1308,77 +1289,65 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
     Dim meanV As Double: meanV = OD_AverageValues(values, numCount)
     Dim minV As Double: minV = sortedValues(1)
     Dim maxV As Double: maxV = sortedValues(numCount)
-    Dim lo As Double, hi As Double
-
-    Select Case criteria
-        Case OD_IQR15: lo = q1 - 1.5 * iqrVal: hi = q3 + 1.5 * iqrVal
-        Case OD_IQR20: lo = q1 - 2# * iqrVal: hi = q3 + 2# * iqrVal
-        Case OD_P95: lo = OD_PercentileIncSorted(sortedValues, numCount, 0.05): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.95)
-        Case OD_P99: lo = OD_PercentileIncSorted(sortedValues, numCount, 0.01): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.99)
-    End Select
-
-    Dim replBase As Double
-    If method = OD_MEDIAN Or method = OD_MEAN Then
-        replBase = OD_ReplacementBase(values, numCount, lo, hi, method, medV, meanV)
-    End If
-
-    Dim outlierCount As Long: outlierCount = 0
-    Dim outputCol As Long: outputCol = targetRange.Column + 1
+    Dim lo As Double: lo = q1 - 1.5 * iqrVal
+    Dim hi As Double: hi = q3 + 1.5 * iqrVal
+    Dim reviewCount As Long: reviewCount = 0
+    Dim thresholdCol As Long: thresholdCol = targetRange.Column + 1
+    Dim copyCol As Long: copyCol = targetRange.Column + 2
+    Dim statsCol As Long: statsCol = targetRange.Column + 8
 
     Application.ScreenUpdating = False
+    OD_WriteQuartileReviewStats ws, headerRow, firstDataRow, statsCol, _
+                                varName, targetRange.Address(False, False), numCount, _
+                                blankCount, nonNumericCount, minV, maxV, meanV, medV, _
+                                q1, q3, iqrVal, lo, hi
 
-    ws.Columns(outputCol).Insert Shift:=xlToRight
+    ws.Columns(thresholdCol).Resize(, 2).Insert Shift:=xlToRight
     If headerRow > 0 Then
-        ws.Cells(headerRow, outputCol).Value = varName & "_이상치대체"
-        ws.Cells(headerRow, outputCol).Font.Bold = True
-        ws.Cells(headerRow, outputCol).Interior.Color = RGB(255, 235, 185)
+        ws.Cells(headerRow, thresholdCol).Value = varName & "_Q1_Q3기준"
+        ws.Cells(headerRow, copyCol).Value = varName & "_검토복사"
+        ws.Range(ws.Cells(headerRow, thresholdCol), ws.Cells(headerRow, copyCol)).Font.Bold = True
+        ws.Range(ws.Cells(headerRow, thresholdCol), ws.Cells(headerRow, copyCol)).Interior.Color = RGB(255, 235, 185)
     End If
 
     Dim sourceDataRange As Range
-    Dim resultDataRange As Range
+    Dim thresholdDataRange As Range
+    Dim copiedDataRange As Range
     Set sourceDataRange = ws.Range(ws.Cells(firstDataRow, targetRange.Column), ws.Cells(lastRow, targetRange.Column))
-    Set resultDataRange = ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol))
-    resultDataRange.NumberFormat = sourceDataRange.NumberFormat
-    resultDataRange.Value = sourceDataRange.Value
+    Set thresholdDataRange = ws.Range(ws.Cells(firstDataRow, thresholdCol), ws.Cells(lastRow, thresholdCol))
+    Set copiedDataRange = ws.Range(ws.Cells(firstDataRow, copyCol), ws.Cells(lastRow, copyCol))
+    copiedDataRange.NumberFormat = sourceDataRange.NumberFormat
+    copiedDataRange.Value = sourceDataRange.Value
 
     Dim i As Long
     For i = 1 To numCount
         Dim v As Double: v = values(i)
         Dim outR As Long: outR = rowMap(i)
-        If v < lo Or v > hi Then
-            outlierCount = outlierCount + 1
-            ws.Cells(outR, targetRange.Column).Interior.Color = RGB(255, 220, 220)
-            ws.Cells(outR, targetRange.Column).Font.Color = RGB(160, 0, 0)
-            ws.Cells(outR, outputCol).Interior.Color = RGB(255, 245, 190)
-            ws.Cells(outR, outputCol).Font.Bold = True
-            If method = OD_CAP Then
-                If v < lo Then ws.Cells(outR, outputCol).Value = lo Else ws.Cells(outR, outputCol).Value = hi
-            ElseIf method = OD_REVIEW Then
-                ws.Cells(outR, outputCol).AddComment "이상치 검토 필요: " & criteria & " 기준 범위 [" & Format(lo, "0.####") & ", " & Format(hi, "0.####") & "]"
-            Else
-                ws.Cells(outR, outputCol).Value = replBase
-            End If
+        If v < q1 Then
+            reviewCount = reviewCount + 1
+            ws.Cells(outR, thresholdCol).Value = q1
+        ElseIf v > q3 Then
+            reviewCount = reviewCount + 1
+            ws.Cells(outR, thresholdCol).Value = q3
         End If
     Next i
 
-    OD_ApplyOutlierConditionalFormatting sourceDataRange, lo, hi
-    OD_ApplyOutlierConditionalFormatting resultDataRange, lo, hi
-    OD_WriteEasyStats ws, headerRow, firstDataRow, outputCol + 2, _
-                      varName, criteria, method, numCount, outlierCount, _
-                      minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, replBase
+    thresholdDataRange.NumberFormat = sourceDataRange.NumberFormat
+    OD_ApplyQuartileReviewFormatting copiedDataRange, thresholdDataRange
 
     Dim displayTopRow As Long
     If headerRow > 0 Then displayTopRow = headerRow Else displayTopRow = firstDataRow
-    ws.Range(ws.Cells(displayTopRow, outputCol), ws.Cells(lastRow, outputCol)).Columns.AutoFit
-    ws.Range(ws.Cells(displayTopRow, outputCol + 2), ws.Cells(displayTopRow + 24, outputCol + 3)).Columns.AutoFit
+    ws.Range(ws.Cells(displayTopRow, thresholdCol), ws.Cells(lastRow, copyCol)).Columns.AutoFit
+    ws.Range(ws.Cells(displayTopRow, statsCol + 2), ws.Cells(displayTopRow + 24, statsCol + 3)).Columns.AutoFit
     Application.ScreenUpdating = True
 
     If Not suppressPrompts Then
-        MsgBox "이상치 대체 열을 만들었습니다." & vbCrLf & _
+        MsgBox "Q1/Q3 검토열을 만들었습니다." & vbCrLf & _
                "유효값: " & numCount & "개" & vbCrLf & _
-               "이상치: " & outlierCount & "개" & vbCrLf & _
-               "결과 열: " & ws.Cells(1, outputCol).EntireColumn.Address(False, False), _
-               vbInformation, "이상치 대체 완료"
+               "Q1 미만 또는 Q3 초과 표시: " & reviewCount & "개" & vbCrLf & _
+               "기준값 열: " & ws.Cells(1, thresholdCol).EntireColumn.Address(False, False) & vbCrLf & _
+               "검토복사 열: " & ws.Cells(1, copyCol).EntireColumn.Address(False, False), _
+               vbInformation, "이상치 확인 완료"
     End If
     Exit Sub
 
@@ -1762,6 +1731,90 @@ Private Sub OD_ApplyOutlierConditionalFormatting(ByVal target As Range, ByVal lo
     Set upperRule = target.FormatConditions.Add(Type:=xlCellValue, Operator:=xlGreater, Formula1:=CStr(hi))
     upperRule.Interior.Color = RGB(255, 210, 210)
     upperRule.Font.Color = RGB(160, 0, 0)
+End Sub
+
+Private Sub OD_ApplyQuartileReviewFormatting(ByVal copiedDataRange As Range, ByVal thresholdDataRange As Range)
+    On Error Resume Next
+    copiedDataRange.FormatConditions.Delete
+    thresholdDataRange.FormatConditions.Delete
+    On Error GoTo 0
+
+    Dim formulaText As String
+    formulaText = "=" & thresholdDataRange.Cells(1, 1).Address(RowAbsolute:=False, ColumnAbsolute:=True) & "<>" & Chr$(34) & Chr$(34)
+
+    Dim copyRule As FormatCondition
+    Set copyRule = copiedDataRange.FormatConditions.Add(Type:=xlExpression, Formula1:=formulaText)
+    copyRule.Interior.Color = RGB(255, 245, 190)
+    copyRule.Font.Bold = True
+
+    Dim thresholdRule As FormatCondition
+    Set thresholdRule = thresholdDataRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlNotEqual, Formula1:="=" & Chr$(34) & Chr$(34))
+    thresholdRule.Interior.Color = RGB(255, 235, 185)
+    thresholdRule.Font.Color = RGB(160, 90, 0)
+    thresholdRule.Font.Bold = True
+End Sub
+
+Private Sub OD_WriteQuartileReviewStats(ws As Worksheet, _
+                                        ByVal headerRow As Long, _
+                                        ByVal firstDataRow As Long, _
+                                        ByVal startCol As Long, _
+                                        ByVal varName As String, _
+                                        ByVal selectedAddress As String, _
+                                        ByVal numCount As Long, _
+                                        ByVal blankCount As Long, _
+                                        ByVal nonNumericCount As Long, _
+                                        ByVal minV As Double, _
+                                        ByVal maxV As Double, _
+                                        ByVal meanV As Double, _
+                                        ByVal medV As Double, _
+                                        ByVal q1 As Double, _
+                                        ByVal q3 As Double, _
+                                        ByVal iqrVal As Double, _
+                                        ByVal lo As Double, _
+                                        ByVal hi As Double)
+    Dim topRow As Long
+    If headerRow > 0 Then topRow = headerRow Else topRow = firstDataRow
+    If topRow < 1 Then topRow = 1
+
+    Dim leftCol As Long: leftCol = startCol
+    Dim valueCol As Long: valueCol = startCol + 1
+
+    ws.Range(ws.Cells(topRow, leftCol), ws.Cells(topRow + 18, valueCol)).Clear
+    ws.Cells(topRow, leftCol).Value = "기초통계량"
+    ws.Cells(topRow, leftCol).Font.Bold = True
+    ws.Cells(topRow, leftCol).Font.Size = 12
+    ws.Cells(topRow, leftCol).Interior.Color = RGB(40, 75, 115)
+    ws.Cells(topRow, leftCol).Font.Color = RGB(255, 255, 255)
+    ws.Cells(topRow, valueCol).Interior.Color = RGB(40, 75, 115)
+
+    Dim rowNo As Long: rowNo = topRow + 1
+    OD_WriteStatRow ws, rowNo, leftCol, "변수명", varName
+    OD_WriteStatRow ws, rowNo, leftCol, "선택 범위", selectedAddress
+    OD_WriteStatRow ws, rowNo, leftCol, "숫자값", numCount
+    OD_WriteStatRow ws, rowNo, leftCol, "빈칸/오류", blankCount
+    OD_WriteStatRow ws, rowNo, leftCol, "숫자가 아닌 값", nonNumericCount
+    OD_WriteStatRow ws, rowNo, leftCol, "최솟값", minV
+    OD_WriteStatRow ws, rowNo, leftCol, "Q1", q1
+    OD_WriteStatRow ws, rowNo, leftCol, "중앙값", medV
+    OD_WriteStatRow ws, rowNo, leftCol, "평균", meanV
+    OD_WriteStatRow ws, rowNo, leftCol, "Q3", q3
+    OD_WriteStatRow ws, rowNo, leftCol, "최댓값", maxV
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR", iqrVal
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR 하한", lo
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR 상한", hi
+
+    With ws.Range(ws.Cells(topRow + 1, leftCol), ws.Cells(rowNo - 1, valueCol))
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(215, 220, 230)
+    End With
+    ws.Range(ws.Cells(topRow + 1, leftCol), ws.Cells(rowNo - 1, leftCol)).Interior.Color = RGB(235, 240, 248)
+    ws.Range(ws.Cells(topRow + 1, valueCol), ws.Cells(rowNo - 1, valueCol)).NumberFormat = "0.####"
+End Sub
+
+Private Sub OD_WriteStatRow(ws As Worksheet, ByRef rowNo As Long, ByVal startCol As Long, ByVal labelText As String, ByVal valueData As Variant)
+    ws.Cells(rowNo, startCol).Value = labelText
+    ws.Cells(rowNo, startCol + 1).Value = valueData
+    rowNo = rowNo + 1
 End Sub
 
 Private Sub OD_WriteEasyStats(ws As Worksheet, _
