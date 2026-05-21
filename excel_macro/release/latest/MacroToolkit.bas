@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.7.0"
+Public Const TOOLKIT_VERSION As String = "0.8.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -28,7 +28,8 @@ Public Sub Toolkit_About()
            "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
            "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
-           "- 사업자등록번호 병합 및 국세청 상태조회 API 연동", _
+           "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
+           "- 선택 범위 기반 이상치 탐지 및 대체", _
            vbInformation, "매크로 툴킷"
 End Sub
 
@@ -64,6 +65,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A15").Value = "BizNo_SetApiKey"
     ws.Range("A16").Value = "BizNo_MergeThreeColumns"
     ws.Range("A17").Value = "BizNo_QueryStatusForSelection"
+    ws.Range("A18").Value = "OutlierDetect_ApplyToSelection"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -795,6 +797,7 @@ Private Const OD_P99    As String = "상위 1% 제외"
 Private Const OD_CAP    As String = "상한값 대체"
 Private Const OD_MEDIAN As String = "중앙값 대체"
 Private Const OD_MEAN   As String = "평균값 대체"
+Private Const OD_REVIEW As String = "직접 검토(복사만)"
 
 ' 설정 시트 셀 주소
 Private Const OD_C_SRC  As String = "B3"
@@ -1151,9 +1154,307 @@ ErrHandler:
            vbExclamation, "이상치 탐지"
 End Sub
 
+' ============================================================
+' 프로시저 : OutlierDetect_ApplyToSelection
+' 설    명  : 선택한 숫자 범위 바로 옆 열에 이상치 대체 결과를 만들고,
+'             원본 이상치에는 조건부 서식과 강조 색을 적용한다.
+' ============================================================
+Public Sub OutlierDetect_ApplyToSelection()
+    Dim targetRange As Range
+
+    If TypeName(Selection) = "Range" Then
+        Set targetRange = Selection.Areas(1)
+    Else
+        On Error Resume Next
+        Set targetRange = Application.InputBox( _
+            "이상치를 탐지할 숫자 데이터 범위를 선택하세요." & vbCrLf & _
+            "헤더가 있으면 헤더까지 포함해도 됩니다. 예: B1:B500", _
+            "이상치 대체 - 범위 선택", Type:=8)
+        On Error GoTo 0
+    End If
+
+    If targetRange Is Nothing Then Exit Sub
+    If targetRange.Columns.Count > 1 Then
+        MsgBox "하나의 숫자 변수 열만 선택하세요." & vbCrLf & _
+               "여러 변수는 열별로 한 번씩 실행하는 편이 안전합니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet: Set ws = targetRange.Worksheet
+    Dim firstRow As Long: firstRow = targetRange.Row
+    Dim lastRow As Long: lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    Dim headerRow As Long: headerRow = 0
+    Dim firstDataRow As Long: firstDataRow = firstRow
+    Dim varName As String
+
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) = 0 Or Not IsNumeric(ws.Cells(firstRow, targetRange.Column).Value) Then
+        headerRow = firstRow
+        firstDataRow = firstRow + 1
+        varName = Trim$(CStr(ws.Cells(firstRow, targetRange.Column).Value))
+    End If
+    If Len(varName) = 0 Then varName = ws.Cells(firstDataRow, targetRange.Column).Address(False, False)
+
+    If firstDataRow > lastRow Then
+        MsgBox "분석할 숫자 데이터가 없습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    Dim criteria As String
+    Dim method As String
+    If Not OD_SelectEasyCriteria(criteria) Then Exit Sub
+    If Not OD_SelectEasyMethod(method) Then Exit Sub
+
+    If MsgBox("선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
+              "변수: " & varName & vbCrLf & _
+              "이상치 기준: " & criteria & vbCrLf & _
+              "대체 방식: " & method & vbCrLf & vbCrLf & _
+              "원본 오른쪽에 결과 열을 삽입하고, 이상치 셀을 강조합니다." & vbCrLf & _
+              "계속하시겠습니까?", vbQuestion + vbYesNo, "이상치 대체 확인") = vbNo Then Exit Sub
+
+    Dim rowCount As Long: rowCount = lastRow - firstDataRow + 1
+    Dim values() As Double: ReDim values(1 To rowCount)
+    Dim rowMap() As Long: ReDim rowMap(1 To rowCount)
+    Dim numCount As Long: numCount = 0
+    Dim r As Long
+
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim cellValue As Variant
+            cellValue = ws.Cells(r, targetRange.Column).Value
+            If Not IsError(cellValue) And Not IsEmpty(cellValue) And IsNumeric(cellValue) Then
+                numCount = numCount + 1
+                values(numCount) = CDbl(cellValue)
+                rowMap(numCount) = r
+            End If
+        End If
+    Next r
+
+    If numCount = 0 Then
+        MsgBox "선택 범위에서 유효한 숫자값을 찾지 못했습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    ReDim Preserve values(1 To numCount)
+    ReDim Preserve rowMap(1 To numCount)
+
+    If numCount < OD_MIN_N Then
+        If MsgBox("유효 숫자값이 " & numCount & "개입니다." & vbCrLf & _
+                  OD_MIN_N & "개 미만이면 통계량이 불안정할 수 있습니다." & vbCrLf & _
+                  "그래도 계속하시겠습니까?", vbWarning + vbYesNo, "사례수 확인") = vbNo Then Exit Sub
+    End If
+
+    Dim wf As WorksheetFunction: Set wf = Application.WorksheetFunction
+    Dim q1 As Double: q1 = wf.Percentile(values, 0.25)
+    Dim q3 As Double: q3 = wf.Percentile(values, 0.75)
+    Dim iqrVal As Double: iqrVal = q3 - q1
+    Dim medV As Double: medV = wf.Median(values)
+    Dim meanV As Double: meanV = wf.Average(values)
+    Dim minV As Double: minV = wf.Min(values)
+    Dim maxV As Double: maxV = wf.Max(values)
+    Dim lo As Double, hi As Double
+
+    Select Case criteria
+        Case OD_IQR15: lo = q1 - 1.5 * iqrVal: hi = q3 + 1.5 * iqrVal
+        Case OD_IQR20: lo = q1 - 2# * iqrVal: hi = q3 + 2# * iqrVal
+        Case OD_P95: lo = wf.Percentile(values, 0.05): hi = wf.Percentile(values, 0.95)
+        Case OD_P99: lo = wf.Percentile(values, 0.01): hi = wf.Percentile(values, 0.99)
+    End Select
+
+    Dim replBase As Double
+    If method = OD_MEDIAN Or method = OD_MEAN Then
+        replBase = OD_ReplacementBase(values, numCount, lo, hi, method, medV, meanV)
+    End If
+
+    Dim outlierCount As Long: outlierCount = 0
+    Dim outputCol As Long: outputCol = targetRange.Column + 1
+
+    Application.ScreenUpdating = False
+    On Error GoTo ErrHandler
+
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, outputCol).Value = varName & "_이상치대체"
+        ws.Cells(headerRow, outputCol).Font.Bold = True
+        ws.Cells(headerRow, outputCol).Interior.Color = RGB(255, 235, 185)
+    End If
+
+    Dim sourceDataRange As Range
+    Dim resultDataRange As Range
+    Set sourceDataRange = ws.Range(ws.Cells(firstDataRow, targetRange.Column), ws.Cells(lastRow, targetRange.Column))
+    Set resultDataRange = ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol))
+    resultDataRange.NumberFormat = sourceDataRange.NumberFormat
+    sourceDataRange.Copy
+    resultDataRange.PasteSpecial xlPasteValues
+    resultDataRange.PasteSpecial xlPasteFormats
+    Application.CutCopyMode = False
+
+    Dim i As Long
+    For i = 1 To numCount
+        Dim v As Double: v = values(i)
+        Dim outR As Long: outR = rowMap(i)
+        If v < lo Or v > hi Then
+            outlierCount = outlierCount + 1
+            ws.Cells(outR, targetRange.Column).Interior.Color = RGB(255, 220, 220)
+            ws.Cells(outR, targetRange.Column).Font.Color = RGB(160, 0, 0)
+            ws.Cells(outR, outputCol).Interior.Color = RGB(255, 245, 190)
+            ws.Cells(outR, outputCol).Font.Bold = True
+            If method = OD_CAP Then
+                If v < lo Then ws.Cells(outR, outputCol).Value = lo Else ws.Cells(outR, outputCol).Value = hi
+            ElseIf method = OD_REVIEW Then
+                ws.Cells(outR, outputCol).AddComment "이상치 검토 필요: " & criteria & " 기준 범위 [" & Format(lo, "0.####") & ", " & Format(hi, "0.####") & "]"
+            Else
+                ws.Cells(outR, outputCol).Value = replBase
+            End If
+        End If
+    Next i
+
+    OD_ApplyOutlierConditionalFormatting sourceDataRange, lo, hi
+    OD_ApplyOutlierConditionalFormatting resultDataRange, lo, hi
+    OD_WriteEasyStats ws, headerRow, firstDataRow, outputCol + 2, varName, criteria, method, numCount, outlierCount, minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, replBase
+
+    ws.Columns(outputCol).AutoFit
+    ws.Range(ws.Columns(outputCol + 2), ws.Columns(outputCol + 3)).AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "이상치 대체 열을 만들었습니다." & vbCrLf & _
+           "유효값: " & numCount & "개" & vbCrLf & _
+           "이상치: " & outlierCount & "개" & vbCrLf & _
+           "결과 열: " & ws.Cells(1, outputCol).EntireColumn.Address(False, False), _
+           vbInformation, "이상치 대체 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "이상치 대체 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "이상치 대체"
+End Sub
+
 ' ──────────────────────────────────────────────────────────────
 ' OutlierDetector 내부 헬퍼
 ' ──────────────────────────────────────────────────────────────
+
+Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
+    Dim criteriaInput As String
+    criteriaInput = InputBox( _
+        "이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_IQR15 & " : 일반적인 윈저라이징 기준" & vbCrLf & _
+        "2. " & OD_IQR20 & " : 조금 더 완화된 IQR 기준" & vbCrLf & _
+        "3. " & OD_P95 & " : 하위 5% / 상위 5% 기준" & vbCrLf & _
+        "4. " & OD_P99 & " : 하위 1% / 상위 1% 기준", _
+        "이상치 대체 - 기준 선택", "1")
+    If Len(Trim$(criteriaInput)) = 0 Then Exit Function
+
+    Select Case Trim$(criteriaInput)
+        Case "1", OD_IQR15: criteria = OD_IQR15
+        Case "2", OD_IQR20: criteria = OD_IQR20
+        Case "3", OD_P95: criteria = OD_P95
+        Case "4", OD_P99: criteria = OD_P99
+        Case Else
+            MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+            Exit Function
+    End Select
+
+    OD_SelectEasyCriteria = True
+End Function
+
+Private Function OD_SelectEasyMethod(ByRef method As String) As Boolean
+    Dim methodInput As String
+    methodInput = InputBox( _
+        "이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_CAP & " : 하한보다 작으면 하한, 상한보다 크면 상한으로 대체" & vbCrLf & _
+        "2. " & OD_MEDIAN & " : 정상 범위 데이터의 중앙값으로 대체" & vbCrLf & _
+        "3. " & OD_MEAN & " : 정상 범위 데이터의 평균으로 대체" & vbCrLf & _
+        "4. " & OD_REVIEW & " : 옆 열에 원본을 복사하고 이상치만 표시", _
+        "이상치 대체 - 방식 선택", "1")
+    If Len(Trim$(methodInput)) = 0 Then Exit Function
+
+    Select Case Trim$(methodInput)
+        Case "1", OD_CAP: method = OD_CAP
+        Case "2", OD_MEDIAN: method = OD_MEDIAN
+        Case "3", OD_MEAN: method = OD_MEAN
+        Case "4", OD_REVIEW: method = OD_REVIEW
+        Case Else
+            MsgBox "대체 방식은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+            Exit Function
+    End Select
+
+    OD_SelectEasyMethod = True
+End Function
+
+Private Function OD_ReplacementBase(ByRef values() As Double, ByVal numCount As Long, ByVal lo As Double, ByVal hi As Double, ByVal method As String, ByVal medV As Double, ByVal meanV As Double) As Double
+    Dim trimVals() As Double
+    Dim trimN As Long
+    Dim i As Long
+
+    ReDim trimVals(1 To numCount)
+    For i = 1 To numCount
+        If values(i) >= lo And values(i) <= hi Then
+            trimN = trimN + 1
+            trimVals(trimN) = values(i)
+        End If
+    Next i
+
+    If trimN = 0 Then
+        If method = OD_MEDIAN Then OD_ReplacementBase = medV Else OD_ReplacementBase = meanV
+        Exit Function
+    End If
+
+    ReDim Preserve trimVals(1 To trimN)
+    If method = OD_MEDIAN Then
+        OD_ReplacementBase = Application.WorksheetFunction.Median(trimVals)
+    Else
+        OD_ReplacementBase = Application.WorksheetFunction.Average(trimVals)
+    End If
+End Function
+
+Private Sub OD_ApplyOutlierConditionalFormatting(ByVal target As Range, ByVal lo As Double, ByVal hi As Double)
+    On Error Resume Next
+    target.FormatConditions.Delete
+    On Error GoTo 0
+
+    Dim lowerRule As FormatCondition
+    Dim upperRule As FormatCondition
+    Set lowerRule = target.FormatConditions.Add(Type:=xlCellValue, Operator:=xlLess, Formula1:=CStr(lo))
+    lowerRule.Interior.Color = RGB(210, 225, 255)
+    lowerRule.Font.Color = RGB(0, 60, 150)
+
+    Set upperRule = target.FormatConditions.Add(Type:=xlCellValue, Operator:=xlGreater, Formula1:=CStr(hi))
+    upperRule.Interior.Color = RGB(255, 210, 210)
+    upperRule.Font.Color = RGB(160, 0, 0)
+End Sub
+
+Private Sub OD_WriteEasyStats(ws As Worksheet, ByVal headerRow As Long, ByVal firstDataRow As Long, ByVal startCol As Long, ByVal varName As String, ByVal criteria As String, ByVal method As String, ByVal numCount As Long, ByVal outlierCount As Long, ByVal minV As Double, ByVal maxV As Double, ByVal meanV As Double, ByVal medV As Double, ByVal q1 As Double, ByVal q3 As Double, ByVal iqrVal As Double, ByVal lo As Double, ByVal hi As Double, ByVal replBase As Double)
+    Dim topRow As Long
+    If headerRow > 0 Then topRow = headerRow Else topRow = firstDataRow
+
+    Dim labels As Variant
+    Dim vals As Variant
+    labels = Array("변수", "기준", "대체 방식", "유효값 수", "이상치 수", "최솟값", "최댓값", "평균", "중앙값", "Q1", "Q3", "IQR", "하한", "상한", "대체 기준값")
+    vals = Array(varName, criteria, method, numCount, outlierCount, minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, IIf(method = OD_MEDIAN Or method = OD_MEAN, replBase, "-"))
+
+    With ws.Cells(topRow, startCol)
+        .Value = "이상치 대체 통계"
+        .Font.Bold = True
+        .Font.Size = 12
+        .Interior.Color = RGB(220, 230, 245)
+    End With
+    ws.Cells(topRow, startCol + 1).Value = Format(Now, "yyyy-mm-dd hh:nn:ss")
+
+    Dim i As Long
+    For i = LBound(labels) To UBound(labels)
+        ws.Cells(topRow + i + 1, startCol).Value = labels(i)
+        ws.Cells(topRow + i + 1, startCol).Font.Bold = True
+        ws.Cells(topRow + i + 1, startCol + 1).Value = vals(i)
+    Next i
+
+    ws.Cells(topRow + UBound(labels) + 3, startCol).Value = "색상 안내"
+    ws.Cells(topRow + UBound(labels) + 3, startCol).Font.Bold = True
+    ws.Cells(topRow + UBound(labels) + 4, startCol).Value = "빨강"
+    ws.Cells(topRow + UBound(labels) + 4, startCol + 1).Value = "상한 초과"
+    ws.Cells(topRow + UBound(labels) + 4, startCol).Interior.Color = RGB(255, 210, 210)
+    ws.Cells(topRow + UBound(labels) + 5, startCol).Value = "파랑"
+    ws.Cells(topRow + UBound(labels) + 5, startCol + 1).Value = "하한 미만"
+    ws.Cells(topRow + UBound(labels) + 5, startCol).Interior.Color = RGB(210, 225, 255)
+End Sub
 
 
 Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
@@ -1659,7 +1960,7 @@ Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)
 End Sub
 
 Public Sub Ribbon_OutlierDetectRun(control As IRibbonControl)
-    OutlierDetect_Run
+    OutlierDetect_ApplyToSelection
 End Sub
 
 Public Sub Ribbon_SPSSDeleteSelectedBanner(control As IRibbonControl)

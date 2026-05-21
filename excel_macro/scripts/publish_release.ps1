@@ -61,8 +61,8 @@ function Add-RibbonCustomUi {
           <button id="btnSpssDeleteBanner" label="선택 배너 삭제" size="large" imageMso="DeleteTableRows" onAction="Ribbon_SPSSDeleteSelectedBanner" screentip="SPSS 배너 삭제" supertip="선택한 ◐ 가로 배너의 열 블록 또는 ▣ 세로 배너의 행 블록을 삭제하고 남은 셀을 당겨 붙입니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
-          <button id="btnOutlierSetup" label="설정" size="large" imageMso="ControlsGallery" onAction="Ribbon_OutlierDetectSetup" screentip="이상치 탐지 설정" supertip="이상치 탐지 및 대체 기준을 지정하는 설정 시트를 만듭니다." />
-          <button id="btnOutlierRun" label="실행" imageMso="CalculateNow" onAction="Ribbon_OutlierDetectRun" screentip="이상치 탐지 실행" supertip="설정값에 따라 이상치를 탐지하고 대체 결과 시트를 생성합니다." />
+          <button id="btnOutlierRun" label="선택 범위 대체" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="선택 범위 이상치 대체" supertip="선택한 숫자 범위 바로 옆 열에 대체 결과를 만들고, 이상치 조건부 서식과 기초통계표를 함께 추가합니다." />
+          <button id="btnOutlierSetup" label="고급 설정" imageMso="ControlsGallery" onAction="Ribbon_OutlierDetectSetup" screentip="이상치 탐지 고급 설정" supertip="설정 시트를 사용하는 기존 방식의 이상치 탐지 및 결과 시트 생성을 준비합니다." />
         </group>
         <group id="grpToolkitInfo" label="정보">
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
