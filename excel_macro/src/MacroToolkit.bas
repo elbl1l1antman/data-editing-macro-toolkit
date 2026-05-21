@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.4"
+Public Const TOOLKIT_VERSION As String = "0.8.5"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -66,6 +66,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A16").Value = "BizNo_MergeThreeColumns"
     ws.Range("A17").Value = "BizNo_QueryStatusForSelection"
     ws.Range("A18").Value = "OutlierDetect_ApplyToSelection"
+    ws.Range("A19").Value = "SPSS_RebuildTablesFromIndex"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -2328,6 +2329,568 @@ Private Sub SPSS_SortRowRangesDescending(ByRef items As Variant)
         Next j
     Next i
 End Sub
+
+Public Sub SPSS_RebuildTablesFromIndex()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 2 Then
+        MsgBox "목차 시트와 집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 표 재구성"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim indexWs As Worksheet: Set indexWs = wb.Worksheets(1)
+    Dim dataWs As Worksheet: Set dataWs = wb.Worksheets(2)
+
+    Dim tables As Collection
+    Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    If tables.Count = 0 Then
+        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 표 재구성"
+        Exit Sub
+    End If
+
+    Dim tableList As String
+    tableList = SPSS_FormatTableList(tables)
+
+    Dim deleteTableInput As String
+    deleteTableInput = InputBox( _
+        "탐지한 표 목록입니다. 삭제할 표 번호만 입력하세요." & vbCrLf & _
+        "비워두면 모든 표를 남깁니다. 예: 2,5-7" & vbCrLf & vbCrLf & tableList, _
+        "SPSS 표 재구성 - 삭제할 표", "")
+
+    Dim deleteTables As Object
+    Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+
+    Dim banners As Collection
+    Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
+    If banners.Count = 0 Then
+        If MsgBox("선택된 표에서 배너를 찾지 못했습니다." & vbCrLf & _
+                  "표 삭제만 반영해 신규 표/목차 시트를 생성할까요?", _
+                  vbQuestion + vbYesNo, "SPSS 표 재구성") = vbNo Then Exit Sub
+    End If
+
+    Dim bannerList As String
+    bannerList = SPSS_FormatBannerList(banners)
+
+    Dim deleteBannerInput As String
+    If banners.Count > 0 Then
+        deleteBannerInput = InputBox( _
+            "탐지한 배너 목록입니다. 삭제할 배너 번호만 입력하세요." & vbCrLf & _
+            "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
+            "SPSS 표 재구성 - 삭제할 배너", "")
+    End If
+
+    Dim deleteBanners As Object
+    Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteBannerInput, banners)
+
+    Dim orderInput As String
+    If banners.Count > 0 Then
+        orderInput = InputBox( _
+            "배너 이동 순서를 번호로 입력하세요." & vbCrLf & _
+            "입력한 순서가 먼저 배치되고, 빠진 배너는 기존 순서대로 뒤에 붙습니다." & vbCrLf & _
+            "비워두면 기존 순서를 유지합니다. 예: 3,1,2" & vbCrLf & vbCrLf & bannerList, _
+            "SPSS 표 재구성 - 배너 순서", "")
+    End If
+
+    Dim orderNames As Collection
+    Set orderNames = SPSS_ParseBannerOrder(orderInput, banners, deleteBanners)
+
+    Dim outData As Worksheet
+    Dim outIndex As Worksheet
+    Set outData = wb.Worksheets.Add(After:=dataWs)
+    outData.Name = SPSS_UniqueSheetName(wb, "SPSS_표정리")
+    Set outIndex = wb.Worksheets.Add(Before:=outData)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+
+    Application.ScreenUpdating = False
+    SPSS_InitRebuiltIndex outIndex
+
+    Dim outRow As Long: outRow = 1
+    Dim indexRow As Long: indexRow = 3
+    Dim i As Long
+    For i = 1 To tables.Count
+        If Not deleteTables.Exists(CStr(i)) Then
+            Dim tableInfo As Variant
+            tableInfo = tables(i)
+            Dim startOutRow As Long
+            startOutRow = outRow
+            SPSS_CopyRebuiltTable dataWs, outData, tableInfo, outRow, deleteBanners, orderNames
+            SPSS_WriteRebuiltIndexRow outIndex, indexRow, CStr(tableInfo(0)), outData.Name, startOutRow
+            indexRow = indexRow + 1
+            outRow = outRow + 2
+        End If
+    Next i
+
+    outIndex.Columns("A:D").AutoFit
+    outData.UsedRange.Columns.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "신규 표 시트와 목차 시트를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & outData.Name, vbInformation, "SPSS 표 재구성 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "SPSS 표 재구성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 표 재구성"
+End Sub
+
+Private Function SPSS_CollectTablesFromIndex(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet) As Collection
+    Dim tables As Collection
+    Set tables = New Collection
+
+    Dim seenRows As Object
+    Set seenRows = CreateObject("Scripting.Dictionary")
+
+    Dim usedRange As Range
+    Set usedRange = indexWs.UsedRange
+
+    Dim cell As Range
+    For Each cell In usedRange.Cells
+        If cell.Hyperlinks.Count > 0 Then
+            Dim subAddress As String
+            subAddress = cell.Hyperlinks(1).SubAddress
+            If Len(subAddress) > 0 Then
+                Dim targetRow As Long
+                targetRow = SPSS_RowFromSubAddress(dataWs, subAddress)
+                If targetRow > 0 And Not seenRows.Exists(CStr(targetRow)) Then
+                    seenRows(CStr(targetRow)) = True
+                    tables.Add Array(SPSS_FindIndexTitle(indexWs, cell.Row, cell.Column, dataWs.Cells(targetRow, 1).Value), targetRow, 0)
+                End If
+            End If
+        End If
+    Next cell
+
+    If tables.Count = 0 Then
+        Dim r As Long
+        For r = 1 To dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
+            Dim titleText As String
+            titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+            If Left$(titleText, 1) = "[" Then
+                tables.Add Array(titleText, r, 0)
+            End If
+        Next r
+    End If
+
+    SPSS_SortTablesByStartRow tables
+    SPSS_SetTableEndRows tables, dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
+    Set SPSS_CollectTablesFromIndex = tables
+End Function
+
+Private Function SPSS_RowFromSubAddress(ByVal dataWs As Worksheet, ByVal subAddress As String) As Long
+    Dim addr As String
+    addr = subAddress
+    If InStr(1, addr, "!", vbTextCompare) > 0 Then addr = Mid$(addr, InStrRev(addr, "!") + 1)
+    addr = Replace(addr, "'", "")
+
+    On Error Resume Next
+    SPSS_RowFromSubAddress = dataWs.Range(addr).Row
+    On Error GoTo 0
+End Function
+
+Private Function SPSS_FindIndexTitle(ByVal indexWs As Worksheet, ByVal rowNo As Long, ByVal linkCol As Long, ByVal fallbackTitle As String) As String
+    Dim c As Long
+    For c = linkCol - 1 To 1 Step -1
+        Dim textValue As String
+        textValue = Trim$(CStr(indexWs.Cells(rowNo, c).Value))
+        If Len(textValue) > 0 And textValue <> "GO" Then
+            SPSS_FindIndexTitle = textValue
+            Exit Function
+        End If
+    Next c
+    SPSS_FindIndexTitle = Trim$(CStr(fallbackTitle))
+End Function
+
+Private Sub SPSS_SortTablesByStartRow(ByRef tables As Collection)
+    Dim arr() As Variant
+    Dim i As Long, j As Long
+    ReDim arr(1 To tables.Count)
+    For i = 1 To tables.Count
+        arr(i) = tables(i)
+    Next i
+
+    For i = 1 To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If CLng(arr(i)(1)) > CLng(arr(j)(1)) Then
+                Dim temp As Variant
+                temp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = temp
+            End If
+        Next j
+    Next i
+
+    Set tables = New Collection
+    For i = 1 To UBound(arr)
+        tables.Add arr(i)
+    Next i
+End Sub
+
+Private Sub SPSS_SetTableEndRows(ByRef tables As Collection, ByVal lastUsedRow As Long)
+    Dim rebuilt As Collection
+    Set rebuilt = New Collection
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim item As Variant
+        item = tables(i)
+        Dim endRow As Long
+        If i < tables.Count Then
+            Dim nextItem As Variant
+            nextItem = tables(i + 1)
+            endRow = CLng(nextItem(1)) - 1
+        Else
+            endRow = lastUsedRow
+        End If
+        rebuilt.Add Array(CStr(item(0)), CLng(item(1)), endRow)
+    Next i
+
+    Set tables = rebuilt
+End Sub
+
+Private Function SPSS_FormatTableList(ByVal tables As Collection) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim item As Variant
+        item = tables(i)
+        result = result & i & ". " & CStr(item(0)) & "  (행 " & CLng(item(1)) & "-" & CLng(item(2)) & ")" & vbCrLf
+    Next i
+    SPSS_FormatTableList = result
+End Function
+
+Private Function SPSS_CollectUniqueBanners(ByVal tables As Collection, ByVal dataWs As Worksheet, ByVal deleteTables As Object) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        If Not deleteTables.Exists(CStr(i)) Then
+            Dim tableInfo As Variant
+            tableInfo = tables(i)
+            SPSS_AddTableBanners result, seen, dataWs, CLng(tableInfo(1)), CLng(tableInfo(2))
+        End If
+    Next i
+
+    Set SPSS_CollectUniqueBanners = result
+End Function
+
+Private Sub SPSS_AddTableBanners(ByVal result As Collection, ByVal seen As Object, ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long)
+    Dim lastCol As Long
+    lastCol = SPSS_TableLastCol(ws, startRow, endRow)
+
+    Dim r As Long, c As Long
+    For r = startRow To endRow
+        Dim firstText As String
+        firstText = Trim$(CStr(ws.Cells(r, 1).Value))
+        If Left$(firstText, 1) = "▣" Then SPSS_AddBannerName result, seen, firstText
+
+        For c = 1 To lastCol
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then SPSS_AddBannerName result, seen, textValue
+        Next c
+    Next r
+End Sub
+
+Private Sub SPSS_AddBannerName(ByVal result As Collection, ByVal seen As Object, ByVal bannerText As String)
+    Dim name As String
+    name = SPSS_NormalizeBannerName(bannerText)
+    If Len(name) = 0 Then Exit Sub
+    If Not seen.Exists(name) Then
+        seen(name) = True
+        result.Add name
+    End If
+End Sub
+
+Private Function SPSS_FormatBannerList(ByVal banners As Collection) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To banners.Count
+        result = result & i & ". " & CStr(banners(i)) & vbCrLf
+    Next i
+    SPSS_FormatBannerList = result
+End Function
+
+Private Function SPSS_ParseIndexSelection(ByVal inputText As String, ByVal maxIndex As Long) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    inputText = Replace(Trim$(inputText), " ", "")
+    If Len(inputText) = 0 Then
+        Set SPSS_ParseIndexSelection = result
+        Exit Function
+    End If
+
+    Dim parts As Variant
+    parts = Split(inputText, ",")
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        Dim token As String
+        token = CStr(parts(i))
+        If InStr(1, token, "-", vbTextCompare) > 0 Then
+            Dim pair As Variant
+            pair = Split(token, "-")
+            If UBound(pair) = 1 And IsNumeric(pair(0)) And IsNumeric(pair(1)) Then
+                Dim a As Long: a = CLng(pair(0))
+                Dim b As Long: b = CLng(pair(1))
+                Dim n As Long
+                For n = a To b
+                    If n >= 1 And n <= maxIndex Then result(CStr(n)) = True
+                Next n
+            End If
+        ElseIf IsNumeric(token) Then
+            Dim idx As Long: idx = CLng(token)
+            If idx >= 1 And idx <= maxIndex Then result(CStr(idx)) = True
+        End If
+    Next i
+
+    Set SPSS_ParseIndexSelection = result
+End Function
+
+Private Function SPSS_ParseBannerDeleteSelection(ByVal inputText As String, ByVal banners As Collection) As Object
+    Dim indexSelection As Object
+    Set indexSelection = SPSS_ParseIndexSelection(inputText, banners.Count)
+
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    Dim key As Variant
+    For Each key In indexSelection.Keys
+        result(CStr(banners(CLng(key)))) = True
+    Next key
+
+    Set SPSS_ParseBannerDeleteSelection = result
+End Function
+
+Private Function SPSS_ParseBannerOrder(ByVal inputText As String, ByVal banners As Collection, ByVal deleteBanners As Object) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim added As Object
+    Set added = CreateObject("Scripting.Dictionary")
+
+    Dim indexSelection As Object
+    Set indexSelection = SPSS_ParseIndexSelection(inputText, banners.Count)
+    Dim parts As Variant
+    inputText = Replace(Trim$(inputText), " ", "")
+    If Len(inputText) > 0 Then
+        parts = Split(inputText, ",")
+        Dim i As Long
+        For i = LBound(parts) To UBound(parts)
+            If IsNumeric(parts(i)) Then
+                Dim idx As Long: idx = CLng(parts(i))
+                If idx >= 1 And idx <= banners.Count Then
+                    Dim name As String: name = CStr(banners(idx))
+                    If Not deleteBanners.Exists(name) And Not added.Exists(name) Then
+                        result.Add name
+                        added(name) = True
+                    End If
+                End If
+            End If
+        Next i
+    End If
+
+    Set SPSS_ParseBannerOrder = result
+End Function
+
+Private Sub SPSS_InitRebuiltIndex(ByVal ws As Worksheet)
+    ws.Range("A1").Value = "재구성 표 목차"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+    ws.Range("A2").Value = "번호"
+    ws.Range("B2").Value = "표 제목"
+    ws.Range("C2").Value = "이동"
+    ws.Range("A2:C2").Font.Bold = True
+End Sub
+
+Private Sub SPSS_WriteRebuiltIndexRow(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal title As String, ByVal dataSheetName As String, ByVal targetRow As Long)
+    ws.Cells(rowNo, 1).Value = rowNo - 2
+    ws.Cells(rowNo, 2).Value = title
+    ws.Cells(rowNo, 3).Value = "GO"
+    ws.Hyperlinks.Add Anchor:=ws.Cells(rowNo, 3), Address:="", _
+                      SubAddress:="'" & dataSheetName & "'!A" & targetRow, _
+                      TextToDisplay:="GO"
+End Sub
+
+Private Sub SPSS_CopyRebuiltTable(ByVal srcWs As Worksheet, _
+                                  ByVal dstWs As Worksheet, _
+                                  ByVal tableInfo As Variant, _
+                                  ByRef dstStartRow As Long, _
+                                  ByVal deleteBanners As Object, _
+                                  ByVal orderNames As Collection)
+    Dim startRow As Long: startRow = CLng(tableInfo(1))
+    Dim endRow As Long: endRow = CLng(tableInfo(2))
+    Dim lastCol As Long: lastCol = SPSS_TableLastCol(srcWs, startRow, endRow)
+
+    Dim rowSegments As Collection
+    Set rowSegments = SPSS_BuildRowSegments(srcWs, startRow, endRow)
+    Dim colSegments As Collection
+    Set colSegments = SPSS_BuildColumnSegments(srcWs, startRow, endRow, lastCol)
+
+    Dim orderedRows As Collection
+    Set orderedRows = SPSS_OrderSegments(rowSegments, deleteBanners, orderNames)
+    Dim orderedCols As Collection
+    Set orderedCols = SPSS_OrderSegments(colSegments, deleteBanners, orderNames)
+
+    Dim dstRow As Long: dstRow = dstStartRow
+    Dim rIdx As Long, cIdx As Long
+    For rIdx = 1 To orderedRows.Count
+        Dim rowSeg As Variant
+        rowSeg = orderedRows(rIdx)
+        Dim dstCol As Long: dstCol = 1
+        For cIdx = 1 To orderedCols.Count
+            Dim colSeg As Variant
+            colSeg = orderedCols(cIdx)
+            srcWs.Range(srcWs.Cells(CLng(rowSeg(0)), CLng(colSeg(0))), srcWs.Cells(CLng(rowSeg(1)), CLng(colSeg(1)))).Copy _
+                Destination:=dstWs.Cells(dstRow, dstCol)
+            dstCol = dstCol + (CLng(colSeg(1)) - CLng(colSeg(0)) + 1)
+        Next cIdx
+        dstRow = dstRow + (CLng(rowSeg(1)) - CLng(rowSeg(0)) + 1)
+    Next rIdx
+
+    dstStartRow = dstRow
+End Sub
+
+Private Function SPSS_TableLastCol(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Long
+    Dim lastCol As Long: lastCol = 1
+    Dim r As Long
+    For r = startRow To endRow
+        Dim c As Long
+        c = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
+        If c > lastCol Then lastCol = c
+    Next r
+    SPSS_TableLastCol = lastCol
+End Function
+
+Private Function SPSS_BuildRowSegments(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim bannerRows As Collection
+    Set bannerRows = New Collection
+    Dim r As Long
+    For r = startRow To endRow
+        If Left$(Trim$(CStr(ws.Cells(r, 1).Value)), 1) = "▣" Then bannerRows.Add r
+    Next r
+
+    If bannerRows.Count = 0 Then
+        result.Add Array(startRow, endRow, "", "fixed")
+        Set SPSS_BuildRowSegments = result
+        Exit Function
+    End If
+
+    If CLng(bannerRows(1)) > startRow Then result.Add Array(startRow, CLng(bannerRows(1)) - 1, "", "fixed")
+    Dim i As Long
+    For i = 1 To bannerRows.Count
+        Dim segStart As Long: segStart = CLng(bannerRows(i))
+        Dim segEnd As Long
+        If i < bannerRows.Count Then segEnd = CLng(bannerRows(i + 1)) - 1 Else segEnd = endRow
+        result.Add Array(segStart, segEnd, SPSS_NormalizeBannerName(CStr(ws.Cells(segStart, 1).Value)), "banner")
+    Next i
+
+    Set SPSS_BuildRowSegments = result
+End Function
+
+Private Function SPSS_BuildColumnSegments(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim bannerRow As Long: bannerRow = 0
+    Dim starts As Collection
+    Set starts = New Collection
+
+    Dim r As Long, c As Long
+    For r = startRow To endRow
+        Set starts = New Collection
+        For c = 1 To lastCol
+            If Left$(Trim$(CStr(ws.Cells(r, c).Value)), 1) = "◐" Then starts.Add c
+        Next c
+        If starts.Count > 0 Then
+            bannerRow = r
+            Exit For
+        End If
+    Next r
+
+    If bannerRow = 0 Then
+        result.Add Array(1, lastCol, "", "fixed")
+        Set SPSS_BuildColumnSegments = result
+        Exit Function
+    End If
+
+    If CLng(starts(1)) > 1 Then result.Add Array(1, CLng(starts(1)) - 1, "", "fixed")
+    Dim i As Long
+    For i = 1 To starts.Count
+        Dim segStart As Long: segStart = CLng(starts(i))
+        Dim segEnd As Long
+        If i < starts.Count Then segEnd = CLng(starts(i + 1)) - 1 Else segEnd = lastCol
+        result.Add Array(segStart, segEnd, SPSS_NormalizeBannerName(CStr(ws.Cells(bannerRow, segStart).Value)), "banner")
+    Next i
+
+    Set SPSS_BuildColumnSegments = result
+End Function
+
+Private Function SPSS_OrderSegments(ByVal sourceSegments As Collection, ByVal deleteBanners As Object, ByVal orderNames As Collection) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim added As Object
+    Set added = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To sourceSegments.Count
+        Dim seg As Variant
+        seg = sourceSegments(i)
+        If CStr(seg(3)) <> "banner" Then
+            result.Add seg
+            added(CStr(i)) = True
+        End If
+    Next i
+
+    Dim orderIdx As Long
+    For orderIdx = 1 To orderNames.Count
+        Dim targetName As String
+        targetName = CStr(orderNames(orderIdx))
+        For i = 1 To sourceSegments.Count
+            seg = sourceSegments(i)
+            If CStr(seg(3)) = "banner" And CStr(seg(2)) = targetName Then
+                If Not deleteBanners.Exists(CStr(seg(2))) And Not added.Exists(CStr(i)) Then
+                    result.Add seg
+                    added(CStr(i)) = True
+                End If
+            End If
+        Next i
+    Next orderIdx
+
+    For i = 1 To sourceSegments.Count
+        seg = sourceSegments(i)
+        If Not added.Exists(CStr(i)) Then
+            If CStr(seg(3)) <> "banner" Or Not deleteBanners.Exists(CStr(seg(2))) Then
+                result.Add seg
+            End If
+        End If
+    Next i
+
+    Set SPSS_OrderSegments = result
+End Function
+
+Private Function SPSS_UniqueSheetName(ByVal wb As Workbook, ByVal baseName As String) As String
+    Dim name As String
+    name = Left$(baseName & "_" & Format(Now, "mmdd_hhnn"), 31)
+    Dim candidate As String: candidate = name
+    Dim n As Long: n = 1
+    Do While SPSS_WorksheetExists(wb, candidate)
+        n = n + 1
+        candidate = Left$(name, 28) & "_" & n
+    Loop
+    SPSS_UniqueSheetName = candidate
+End Function
+
+Private Function SPSS_WorksheetExists(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = wb.Worksheets(sheetName)
+    On Error GoTo 0
+    SPSS_WorksheetExists = Not ws Is Nothing
+End Function
 ' ============================================================
 ' Ribbon callbacks
 ' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
@@ -2378,6 +2941,10 @@ End Sub
 
 Public Sub Ribbon_SPSSDeleteSelectedBanner(control As IRibbonControl)
     SPSS_DeleteSelectedBanner
+End Sub
+
+Public Sub Ribbon_SPSSRebuildTablesFromIndex(control As IRibbonControl)
+    SPSS_RebuildTablesFromIndex
 End Sub
 
 
