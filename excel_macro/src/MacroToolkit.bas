@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.0"
+Public Const TOOLKIT_VERSION As String = "0.8.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1159,25 +1159,38 @@ End Sub
 ' 설    명  : 선택한 숫자 범위 바로 옆 열에 이상치 대체 결과를 만들고,
 '             원본 이상치에는 조건부 서식과 강조 색을 적용한다.
 ' ============================================================
-Public Sub OutlierDetect_ApplyToSelection()
+Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As String = "", _
+                                          Optional ByVal methodOverride As String = "", _
+                                          Optional ByVal skipConfirm As Boolean = False)
+    On Error GoTo ErrHandler
+
+    Dim suppressPrompts As Boolean
+    suppressPrompts = skipConfirm _
+                      Or Len(Trim$(criteriaOverride)) > 0 _
+                      Or Len(Trim$(methodOverride)) > 0 _
+                      Or Not Application.Visible
+
+    Dim dataArea As Range
     Dim targetRange As Range
+    Dim analysisRelativeCol As Long
 
     If TypeName(Selection) = "Range" Then
-        Set targetRange = Selection.Areas(1)
+        Set dataArea = Selection.Areas(1)
     Else
         On Error Resume Next
-        Set targetRange = Application.InputBox( _
-            "이상치를 탐지할 숫자 데이터 범위를 선택하세요." & vbCrLf & _
-            "헤더가 있으면 헤더까지 포함해도 됩니다. 예: B1:B500", _
+        Set dataArea = Application.InputBox( _
+            "이상치를 탐지할 데이터 범위를 선택하세요." & vbCrLf & _
+            "표 전체를 선택해도 숫자 열을 자동으로 탐지합니다. 예: A1:W12001", _
             "이상치 대체 - 범위 선택", Type:=8)
         On Error GoTo 0
     End If
 
-    If targetRange Is Nothing Then Exit Sub
-    If targetRange.Columns.Count > 1 Then
-        MsgBox "하나의 숫자 변수 열만 선택하세요." & vbCrLf & _
-               "여러 변수는 열별로 한 번씩 실행하는 편이 안전합니다.", vbExclamation, "이상치 대체"
-        Exit Sub
+    If dataArea Is Nothing Then Exit Sub
+    If dataArea.Columns.Count > 1 Then
+        If Not OD_SelectNumericColumnFromRange(dataArea, suppressPrompts, analysisRelativeCol) Then Exit Sub
+        Set targetRange = dataArea.Columns(analysisRelativeCol)
+    Else
+        Set targetRange = dataArea
     End If
 
     Dim ws As Worksheet: Set ws = targetRange.Worksheet
@@ -1201,15 +1214,32 @@ Public Sub OutlierDetect_ApplyToSelection()
 
     Dim criteria As String
     Dim method As String
-    If Not OD_SelectEasyCriteria(criteria) Then Exit Sub
-    If Not OD_SelectEasyMethod(method) Then Exit Sub
+    If Len(Trim$(criteriaOverride)) > 0 Then
+        If Not OD_MapEasyCriteria(criteriaOverride, criteria) Then
+            MsgBox "알 수 없는 이상치 기준입니다: " & criteriaOverride, vbExclamation, "이상치 대체"
+            Exit Sub
+        End If
+    Else
+        If Not OD_SelectEasyCriteria(criteria) Then Exit Sub
+    End If
 
-    If MsgBox("선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
-              "변수: " & varName & vbCrLf & _
-              "이상치 기준: " & criteria & vbCrLf & _
-              "대체 방식: " & method & vbCrLf & vbCrLf & _
-              "원본 오른쪽에 결과 열을 삽입하고, 이상치 셀을 강조합니다." & vbCrLf & _
-              "계속하시겠습니까?", vbQuestion + vbYesNo, "이상치 대체 확인") = vbNo Then Exit Sub
+    If Len(Trim$(methodOverride)) > 0 Then
+        If Not OD_MapEasyMethod(methodOverride, method) Then
+            MsgBox "알 수 없는 대체 방식입니다: " & methodOverride, vbExclamation, "이상치 대체"
+            Exit Sub
+        End If
+    Else
+        If Not OD_SelectEasyMethod(method) Then Exit Sub
+    End If
+
+    If Not suppressPrompts Then
+        If MsgBox("선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
+                  "변수: " & varName & vbCrLf & _
+                  "이상치 기준: " & criteria & vbCrLf & _
+                  "대체 방식: " & method & vbCrLf & vbCrLf & _
+                  "원본 오른쪽에 결과 열을 삽입하고, 이상치 셀을 강조합니다." & vbCrLf & _
+                  "계속하시겠습니까?", vbQuestion + vbYesNo, "이상치 대체 확인") = vbNo Then Exit Sub
+    End If
 
     Dim rowCount As Long: rowCount = lastRow - firstDataRow + 1
     Dim values() As Double: ReDim values(1 To rowCount)
@@ -1237,12 +1267,6 @@ Public Sub OutlierDetect_ApplyToSelection()
     ReDim Preserve values(1 To numCount)
     ReDim Preserve rowMap(1 To numCount)
 
-    If numCount < OD_MIN_N Then
-        If MsgBox("유효 숫자값이 " & numCount & "개입니다." & vbCrLf & _
-                  OD_MIN_N & "개 미만이면 통계량이 불안정할 수 있습니다." & vbCrLf & _
-                  "그래도 계속하시겠습니까?", vbWarning + vbYesNo, "사례수 확인") = vbNo Then Exit Sub
-    End If
-
     Dim wf As WorksheetFunction: Set wf = Application.WorksheetFunction
     Dim q1 As Double: q1 = wf.Percentile(values, 0.25)
     Dim q3 As Double: q3 = wf.Percentile(values, 0.75)
@@ -1269,7 +1293,6 @@ Public Sub OutlierDetect_ApplyToSelection()
     Dim outputCol As Long: outputCol = targetRange.Column + 1
 
     Application.ScreenUpdating = False
-    On Error GoTo ErrHandler
 
     ws.Columns(outputCol).Insert Shift:=xlToRight
     If headerRow > 0 Then
@@ -1283,10 +1306,7 @@ Public Sub OutlierDetect_ApplyToSelection()
     Set sourceDataRange = ws.Range(ws.Cells(firstDataRow, targetRange.Column), ws.Cells(lastRow, targetRange.Column))
     Set resultDataRange = ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol))
     resultDataRange.NumberFormat = sourceDataRange.NumberFormat
-    sourceDataRange.Copy
-    resultDataRange.PasteSpecial xlPasteValues
-    resultDataRange.PasteSpecial xlPasteFormats
-    Application.CutCopyMode = False
+    resultDataRange.Value = sourceDataRange.Value
 
     Dim i As Long
     For i = 1 To numCount
@@ -1310,22 +1330,32 @@ Public Sub OutlierDetect_ApplyToSelection()
 
     OD_ApplyOutlierConditionalFormatting sourceDataRange, lo, hi
     OD_ApplyOutlierConditionalFormatting resultDataRange, lo, hi
-    OD_WriteEasyStats ws, headerRow, firstDataRow, outputCol + 2, varName, criteria, method, numCount, outlierCount, minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, replBase
+    OD_WriteEasyStats ws, headerRow, firstDataRow, outputCol + 2, _
+                      varName, criteria, method, numCount, outlierCount, _
+                      minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, replBase
 
-    ws.Columns(outputCol).AutoFit
-    ws.Range(ws.Columns(outputCol + 2), ws.Columns(outputCol + 3)).AutoFit
+    Dim displayTopRow As Long
+    If headerRow > 0 Then displayTopRow = headerRow Else displayTopRow = firstDataRow
+    ws.Range(ws.Cells(displayTopRow, outputCol), ws.Cells(lastRow, outputCol)).Columns.AutoFit
+    ws.Range(ws.Cells(displayTopRow, outputCol + 2), ws.Cells(displayTopRow + 24, outputCol + 3)).Columns.AutoFit
     Application.ScreenUpdating = True
 
-    MsgBox "이상치 대체 열을 만들었습니다." & vbCrLf & _
-           "유효값: " & numCount & "개" & vbCrLf & _
-           "이상치: " & outlierCount & "개" & vbCrLf & _
-           "결과 열: " & ws.Cells(1, outputCol).EntireColumn.Address(False, False), _
-           vbInformation, "이상치 대체 완료"
+    If Not suppressPrompts Then
+        MsgBox "이상치 대체 열을 만들었습니다." & vbCrLf & _
+               "유효값: " & numCount & "개" & vbCrLf & _
+               "이상치: " & outlierCount & "개" & vbCrLf & _
+               "결과 열: " & ws.Cells(1, outputCol).EntireColumn.Address(False, False), _
+               vbInformation, "이상치 대체 완료"
+    End If
     Exit Sub
 
 ErrHandler:
     Application.ScreenUpdating = True
-    MsgBox "이상치 대체 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "이상치 대체"
+    If suppressPrompts Then
+        Err.Raise Err.Number, "OutlierDetect_ApplyToSelection", Err.Description
+    Else
+        MsgBox "이상치 대체 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "이상치 대체"
+    End If
 End Sub
 
 ' ──────────────────────────────────────────────────────────────
@@ -1343,17 +1373,163 @@ Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
         "이상치 대체 - 기준 선택", "1")
     If Len(Trim$(criteriaInput)) = 0 Then Exit Function
 
-    Select Case Trim$(criteriaInput)
-        Case "1", OD_IQR15: criteria = OD_IQR15
-        Case "2", OD_IQR20: criteria = OD_IQR20
-        Case "3", OD_P95: criteria = OD_P95
-        Case "4", OD_P99: criteria = OD_P99
-        Case Else
-            MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
-            Exit Function
-    End Select
+    If Not OD_MapEasyCriteria(criteriaInput, criteria) Then
+        MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
 
     OD_SelectEasyCriteria = True
+End Function
+
+Private Function OD_SelectNumericColumnFromRange(ByVal dataArea As Range, _
+                                                 ByVal skipConfirm As Boolean, _
+                                                 ByRef relativeCol As Long) As Boolean
+    Dim numericCols As Collection
+    Set numericCols = New Collection
+
+    Dim c As Long
+    For c = 1 To dataArea.Columns.Count
+        Dim firstDataRow As Long
+        Dim headerText As String
+        Dim n As Long
+        Dim outN As Long
+
+        firstDataRow = OD_FirstDataRowForColumn(dataArea, c, headerText)
+        n = OD_CountNumericValues(dataArea.Worksheet, dataArea.Column + c - 1, firstDataRow, dataArea.Row + dataArea.Rows.Count - 1)
+        If n > 0 Then
+            outN = OD_CountIqrOutliers(dataArea.Worksheet, dataArea.Column + c - 1, firstDataRow, dataArea.Row + dataArea.Rows.Count - 1)
+            If Len(headerText) = 0 Then headerText = "열" & c
+            numericCols.Add Array(c, headerText, n, outN)
+        End If
+    Next c
+
+    If numericCols.Count = 0 Then
+        MsgBox "선택 범위에서 숫자형 열을 찾지 못했습니다." & vbCrLf & _
+               "숫자가 텍스트로 저장된 경우 먼저 [숫자 변환]을 실행하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    If numericCols.Count = 1 Then
+        Dim onlyItem As Variant
+        onlyItem = numericCols(1)
+        relativeCol = CLng(onlyItem(0))
+        OD_SelectNumericColumnFromRange = True
+        Exit Function
+    End If
+
+    If skipConfirm Then
+        Dim bestIdx As Long: bestIdx = 1
+        Dim bestItem As Variant
+        Dim curItem As Variant
+        For c = 2 To numericCols.Count
+            curItem = numericCols(c)
+            bestItem = numericCols(bestIdx)
+            If CLng(curItem(3)) > CLng(bestItem(3)) Then bestIdx = c
+        Next c
+        bestItem = numericCols(bestIdx)
+        relativeCol = CLng(bestItem(0))
+        OD_SelectNumericColumnFromRange = True
+        Exit Function
+    End If
+
+    Dim prompt As String
+    prompt = "선택 범위에서 숫자형 열을 찾았습니다." & vbCrLf & _
+             "이상치를 탐지할 열 번호를 선택하세요." & vbCrLf & vbCrLf
+
+    For c = 1 To numericCols.Count
+        Dim listItem As Variant
+        listItem = numericCols(c)
+        prompt = prompt & c & ". " & CStr(listItem(1)) & _
+                 " (유효값 " & CLng(listItem(2)) & _
+                 "개, IQR 이상치 " & CLng(listItem(3)) & "개)" & vbCrLf
+    Next c
+
+    Dim userInput As String
+    userInput = InputBox(prompt, "이상치 대체 - 숫자 열 선택", "1")
+    If Len(Trim$(userInput)) = 0 Then Exit Function
+    If Not IsNumeric(userInput) Then
+        MsgBox "목록의 번호를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    Dim selectedIdx As Long
+    selectedIdx = CLng(userInput)
+    If selectedIdx < 1 Or selectedIdx > numericCols.Count Then
+        MsgBox "선택 번호가 범위를 벗어났습니다.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    Dim selectedItem As Variant
+    selectedItem = numericCols(selectedIdx)
+    relativeCol = CLng(selectedItem(0))
+    OD_SelectNumericColumnFromRange = True
+End Function
+
+Private Function OD_FirstDataRowForColumn(ByVal dataArea As Range, _
+                                          ByVal relativeCol As Long, _
+                                          ByRef headerText As String) As Long
+    Dim firstCell As Range
+    Set firstCell = dataArea.Cells(1, relativeCol)
+    headerText = Trim$(CStr(firstCell.Value))
+
+    If Len(headerText) = 0 Or Not IsNumeric(firstCell.Value) Then
+        OD_FirstDataRowForColumn = dataArea.Row + 1
+    Else
+        headerText = ""
+        OD_FirstDataRowForColumn = dataArea.Row
+    End If
+End Function
+
+Private Function OD_CountNumericValues(ByVal ws As Worksheet, _
+                                       ByVal absoluteCol As Long, _
+                                       ByVal firstDataRow As Long, _
+                                       ByVal lastRow As Long) As Long
+    Dim r As Long
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim v As Variant
+            v = ws.Cells(r, absoluteCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                OD_CountNumericValues = OD_CountNumericValues + 1
+            End If
+        End If
+    Next r
+End Function
+
+Private Function OD_CountIqrOutliers(ByVal ws As Worksheet, _
+                                     ByVal absoluteCol As Long, _
+                                     ByVal firstDataRow As Long, _
+                                     ByVal lastRow As Long) As Long
+    Dim countN As Long
+    countN = OD_CountNumericValues(ws, absoluteCol, firstDataRow, lastRow)
+    If countN = 0 Then Exit Function
+
+    Dim values() As Double
+    ReDim values(1 To countN)
+
+    Dim r As Long
+    Dim idx As Long
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim v As Variant
+            v = ws.Cells(r, absoluteCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                idx = idx + 1
+                values(idx) = CDbl(v)
+            End If
+        End If
+    Next r
+
+    Dim wf As WorksheetFunction
+    Set wf = Application.WorksheetFunction
+    Dim q1 As Double: q1 = wf.Percentile(values, 0.25)
+    Dim q3 As Double: q3 = wf.Percentile(values, 0.75)
+    Dim lo As Double: lo = q1 - 1.5 * (q3 - q1)
+    Dim hi As Double: hi = q3 + 1.5 * (q3 - q1)
+
+    For idx = 1 To countN
+        If values(idx) < lo Or values(idx) > hi Then OD_CountIqrOutliers = OD_CountIqrOutliers + 1
+    Next idx
 End Function
 
 Private Function OD_SelectEasyMethod(ByRef method As String) As Boolean
@@ -1367,20 +1543,53 @@ Private Function OD_SelectEasyMethod(ByRef method As String) As Boolean
         "이상치 대체 - 방식 선택", "1")
     If Len(Trim$(methodInput)) = 0 Then Exit Function
 
-    Select Case Trim$(methodInput)
-        Case "1", OD_CAP: method = OD_CAP
-        Case "2", OD_MEDIAN: method = OD_MEDIAN
-        Case "3", OD_MEAN: method = OD_MEAN
-        Case "4", OD_REVIEW: method = OD_REVIEW
-        Case Else
-            MsgBox "대체 방식은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
-            Exit Function
-    End Select
+    If Not OD_MapEasyMethod(methodInput, method) Then
+        MsgBox "대체 방식은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
 
     OD_SelectEasyMethod = True
 End Function
 
-Private Function OD_ReplacementBase(ByRef values() As Double, ByVal numCount As Long, ByVal lo As Double, ByVal hi As Double, ByVal method As String, ByVal medV As Double, ByVal meanV As Double) As Double
+Private Function OD_MapEasyCriteria(ByVal userInput As String, ByRef criteria As String) As Boolean
+    Select Case Trim$(userInput)
+        Case "1", OD_IQR15
+            criteria = OD_IQR15
+        Case "2", OD_IQR20
+            criteria = OD_IQR20
+        Case "3", OD_P95
+            criteria = OD_P95
+        Case "4", OD_P99
+            criteria = OD_P99
+        Case Else
+            Exit Function
+    End Select
+    OD_MapEasyCriteria = True
+End Function
+
+Private Function OD_MapEasyMethod(ByVal userInput As String, ByRef method As String) As Boolean
+    Select Case Trim$(userInput)
+        Case "1", OD_CAP
+            method = OD_CAP
+        Case "2", OD_MEDIAN
+            method = OD_MEDIAN
+        Case "3", OD_MEAN
+            method = OD_MEAN
+        Case "4", OD_REVIEW
+            method = OD_REVIEW
+        Case Else
+            Exit Function
+    End Select
+    OD_MapEasyMethod = True
+End Function
+
+Private Function OD_ReplacementBase(ByRef values() As Double, _
+                                    ByVal numCount As Long, _
+                                    ByVal lo As Double, _
+                                    ByVal hi As Double, _
+                                    ByVal method As String, _
+                                    ByVal medV As Double, _
+                                    ByVal meanV As Double) As Double
     Dim trimVals() As Double
     Dim trimN As Long
     Dim i As Long
@@ -1422,7 +1631,25 @@ Private Sub OD_ApplyOutlierConditionalFormatting(ByVal target As Range, ByVal lo
     upperRule.Font.Color = RGB(160, 0, 0)
 End Sub
 
-Private Sub OD_WriteEasyStats(ws As Worksheet, ByVal headerRow As Long, ByVal firstDataRow As Long, ByVal startCol As Long, ByVal varName As String, ByVal criteria As String, ByVal method As String, ByVal numCount As Long, ByVal outlierCount As Long, ByVal minV As Double, ByVal maxV As Double, ByVal meanV As Double, ByVal medV As Double, ByVal q1 As Double, ByVal q3 As Double, ByVal iqrVal As Double, ByVal lo As Double, ByVal hi As Double, ByVal replBase As Double)
+Private Sub OD_WriteEasyStats(ws As Worksheet, _
+                              ByVal headerRow As Long, _
+                              ByVal firstDataRow As Long, _
+                              ByVal startCol As Long, _
+                              ByVal varName As String, _
+                              ByVal criteria As String, _
+                              ByVal method As String, _
+                              ByVal numCount As Long, _
+                              ByVal outlierCount As Long, _
+                              ByVal minV As Double, _
+                              ByVal maxV As Double, _
+                              ByVal meanV As Double, _
+                              ByVal medV As Double, _
+                              ByVal q1 As Double, _
+                              ByVal q3 As Double, _
+                              ByVal iqrVal As Double, _
+                              ByVal lo As Double, _
+                              ByVal hi As Double, _
+                              ByVal replBase As Double)
     Dim topRow As Long
     If headerRow > 0 Then topRow = headerRow Else topRow = firstDataRow
 
