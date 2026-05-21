@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.8.1`
+`0.8.2`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -27,7 +27,11 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 - 텍스트 형식 숫자를 실제 숫자값으로 변환
 - 혼재된 한국 전화번호 형식 정규화
-- 이상치 탐지 및 대체 결과 시트 생성`r`n- 이상치 탐지 실행 시 팝업으로 데이터 범위, 분석 변수, 기준, 대체 방식 지정`r`n- SPSS 내보내기 통계표에서 선택한 가로/세로 배너 블록 삭제
+- 이상치 탐지 및 대체 결과 시트 생성
+- 이상치 탐지 실행 시 새 시트에 복사한 데이터에서 분석 열을 직접 지정
+- 표 전체 선택 시 숫자형 열 자동 탐지 후 선택 목록 제공
+- 이상치 셀 조건부 서식, 대체 결과 열, 기초통계량표 자동 생성
+- SPSS 내보내기 통계표에서 선택한 가로/세로 배너 블록 삭제
 
 ## 개발용 통합문서 확인
 
@@ -51,10 +55,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.8.1/DataEditingMacroToolkit_v0.8.1.xlam`
-- `release/v0.8.1/DataEditingMacroToolkit_v0.8.1.xlsm`
-- `release/v0.3.0/MacroToolkit.bas`
-- `release/v0.3.0/manifest.json`
+- `release/v0.8.2/DataEditingMacroToolkit_v0.8.2.xlam`
+- `release/v0.8.2/DataEditingMacroToolkit_v0.8.2.xlsm`
+- `release/v0.8.2/MacroToolkit.bas`
+- `release/v0.8.2/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -69,7 +73,8 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 - `숫자 변환`: 선택 영역, 현재 시트, 범위 선택
 - `전화번호`: 선택 영역, 범위 선택
-- `SPSS 표 정리`: 선택 배너 삭제`r`n- `이상치 탐지`: 설정, 실행
+- `SPSS 표 정리`: 선택 배너 삭제
+- `이상치 탐지`: 분석 열 직접 선택, 설정, 실행
 - `정보`: 버전 정보
 설치 대상 파일:
 

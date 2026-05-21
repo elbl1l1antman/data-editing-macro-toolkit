@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.1"
+Public Const TOOLKIT_VERSION As String = "0.8.2"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1174,18 +1174,48 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
     Dim targetRange As Range
     Dim analysisRelativeCol As Long
 
+    Dim defaultAddress As String
     If TypeName(Selection) = "Range" Then
+        defaultAddress = Selection.Areas(1).Address
+    End If
+
+    If suppressPrompts Then
+        If TypeName(Selection) <> "Range" Then
+            Err.Raise vbObjectError + 8101, "OutlierDetect_ApplyToSelection", "분석할 숫자 범위를 선택하세요."
+        End If
         Set dataArea = Selection.Areas(1)
     Else
+        MsgBox "사용 방법" & vbCrLf & vbCrLf & _
+               "1. 원본 데이터를 새 시트에 복사해 붙여넣습니다." & vbCrLf & _
+               "2. 이상치를 탐지할 숫자 열 하나를 선택합니다." & vbCrLf & _
+               "   예: H:H, H1:H12001, layoffs_count 열" & vbCrLf & _
+               "3. 기준과 대체 방식을 선택하면 오른쪽에 결과 열과 통계표가 생성됩니다." & vbCrLf & vbCrLf & _
+               "표 전체를 선택한 경우에는 숫자형 열 목록에서 직접 고를 수 있습니다.", _
+               vbInformation, "이상치 대체 사용 안내"
+
         On Error Resume Next
         Set dataArea = Application.InputBox( _
-            "이상치를 탐지할 데이터 범위를 선택하세요." & vbCrLf & _
-            "표 전체를 선택해도 숫자 열을 자동으로 탐지합니다. 예: A1:W12001", _
-            "이상치 대체 - 범위 선택", Type:=8)
-        On Error GoTo 0
+            "이상치를 탐지할 숫자 열을 마우스로 드래그하거나 직접 입력하세요." & vbCrLf & _
+            "예: H:H  /  H1:H12001  /  layoffs_count가 들어 있는 열" & vbCrLf & _
+            "표 전체를 선택하면 숫자형 열 선택 목록을 보여줍니다.", _
+            "이상치 대체 - 분석 열 선택", defaultAddress, Type:=8)
+        On Error GoTo ErrHandler
     End If
 
     If dataArea Is Nothing Then Exit Sub
+    If dataArea.Areas.Count > 1 Then
+        MsgBox "이상치 대체는 한 번에 하나의 연속된 범위만 처리합니다." & vbCrLf & _
+               "분석할 숫자 열 하나 또는 표 범위 하나를 다시 선택하세요.", _
+               vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    Set dataArea = OD_TrimToUsedRange(dataArea)
+    If dataArea Is Nothing Then
+        MsgBox "선택한 범위에서 사용 중인 데이터를 찾지 못했습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
     If dataArea.Columns.Count > 1 Then
         If Not OD_SelectNumericColumnFromRange(dataArea, suppressPrompts, analysisRelativeCol) Then Exit Sub
         Set targetRange = dataArea.Columns(analysisRelativeCol)
@@ -1361,6 +1391,19 @@ End Sub
 ' ──────────────────────────────────────────────────────────────
 ' OutlierDetector 내부 헬퍼
 ' ──────────────────────────────────────────────────────────────
+
+Private Function OD_TrimToUsedRange(ByVal selectedRange As Range) As Range
+    Dim usedPart As Range
+    On Error Resume Next
+    Set usedPart = Application.Intersect(selectedRange, selectedRange.Worksheet.UsedRange)
+    On Error GoTo 0
+
+    If usedPart Is Nothing Then
+        Set OD_TrimToUsedRange = selectedRange
+    Else
+        Set OD_TrimToUsedRange = usedPart
+    End If
+End Function
 
 Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
     Dim criteriaInput As String
