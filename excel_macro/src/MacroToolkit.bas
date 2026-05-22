@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.6"
+Public Const TOOLKIT_VERSION As String = "0.8.7"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -120,6 +120,14 @@ Public Sub ConvertTextNumbersInColumns()
     ConvertTextNumbersInRange targetRange
 End Sub
 
+Public Sub ConvertTextNumbersWithForm()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("숫자 변환", _
+        "텍스트로 저장된 숫자를 실제 숫자값으로 변환합니다. 변환할 셀/열/범위를 선택하세요.", _
+        targetRange) Then Exit Sub
+    ConvertTextNumbersInRange targetRange
+End Sub
+
 ' ============================================================
 ' 프로시저 : NormalizePhonesInSelection
 ' 설  명  : 사용자가 선택한 셀 범위의 전화번호를
@@ -154,6 +162,47 @@ Public Sub NormalizePhonesInColumns()
     If targetRange Is Nothing Then Exit Sub
     NormalizePhonesInRange targetRange
 End Sub
+
+Public Sub NormalizePhonesWithForm()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
+        "한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다. 정리할 셀/열/범위를 선택하세요.", _
+        targetRange) Then Exit Sub
+    NormalizePhonesInRange targetRange
+End Sub
+
+Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
+                                              ByVal guideText As String, _
+                                              ByRef targetRange As Range) As Boolean
+    On Error GoTo Fallback
+
+    Dim defaultAddress As String
+    If TypeName(Selection) = "Range" Then defaultAddress = Selection.Areas(1).Address(External:=True)
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmRangeSelectOptions")
+    form.InitializeOptions formTitle, guideText, defaultAddress
+    form.Show
+
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Set targetRange = form.SelectedRange
+    Unload form
+    If targetRange Is Nothing Then Exit Function
+
+    Toolkit_GetRangeFromUserForm = True
+    Exit Function
+
+Fallback:
+    Err.Clear
+    On Error Resume Next
+    Set targetRange = Application.InputBox(guideText, formTitle, Type:=8)
+    On Error GoTo 0
+    Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
+End Function
 
 ' ============================================================
 ' 프로시저 : ConvertTextNumbersInRange (내부 전용)
@@ -2936,23 +2985,23 @@ Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)
-    ConvertTextNumbersInSelection
+    ConvertTextNumbersWithForm
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInUsedRange(control As IRibbonControl)
-    ConvertTextNumbersInUsedRange
+    ConvertTextNumbersWithForm
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInColumns(control As IRibbonControl)
-    ConvertTextNumbersInColumns
+    ConvertTextNumbersWithForm
 End Sub
 
 Public Sub Ribbon_NormalizePhonesInSelection(control As IRibbonControl)
-    NormalizePhonesInSelection
+    NormalizePhonesWithForm
 End Sub
 
 Public Sub Ribbon_NormalizePhonesInColumns(control As IRibbonControl)
-    NormalizePhonesInColumns
+    NormalizePhonesWithForm
 End Sub
 
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)

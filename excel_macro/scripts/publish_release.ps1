@@ -226,6 +226,110 @@ End Function
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-RangeSelectUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmRangeSelectOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "범위 선택"
+    $form.Properties.Item("Width").Value = 440
+    $form.Properties.Item("Height").Value = 220
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Left = 12
+    $lblTitle.Top = 10
+    $lblTitle.Width = 400
+    $lblTitle.Height = 18
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Left = 12
+    $lblGuide.Top = 34
+    $lblGuide.Width = 400
+    $lblGuide.Height = 48
+
+    $txtRange = $designer.Controls.Add("Forms.TextBox.1", "txtRange", $true)
+    $txtRange.Left = 12
+    $txtRange.Top = 92
+    $txtRange.Width = 300
+    $txtRange.Height = 22
+
+    $cmdPick = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickRange", $true)
+    $cmdPick.Caption = "범위 선택"
+    $cmdPick.Left = 322
+    $cmdPick.Top = 90
+    $cmdPick.Width = 86
+    $cmdPick.Height = 24
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 232
+    $cmdOk.Top = 150
+    $cmdOk.Width = 82
+    $cmdOk.Height = 26
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 326
+    $cmdCancel.Top = 150
+    $cmdCancel.Width = 82
+    $cmdCancel.Height = 26
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+Public SelectedRange As Object
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+End Sub
+
+Public Sub InitializeOptions(ByVal titleText As String, ByVal guideText As String, ByVal defaultAddress As String)
+    Me.Caption = titleText
+    lblTitle.Caption = titleText
+    lblGuide.Caption = guideText
+    txtRange.Value = defaultAddress
+End Sub
+
+Private Sub cmdPickRange_Click()
+    Dim picked As Range
+    Me.Hide
+    On Error Resume Next
+    Set picked = Application.InputBox("처리할 범위를 선택하세요.", Me.Caption, txtRange.Value, Type:=8)
+    On Error GoTo 0
+    If Not picked Is Nothing Then
+        Set SelectedRange = picked
+        txtRange.Value = picked.Address(External:=True)
+    End If
+    Me.Show
+End Sub
+
+Private Sub cmdOK_Click()
+    If SelectedRange Is Nothing Then
+        On Error Resume Next
+        Set SelectedRange = Application.Range(txtRange.Value)
+        On Error GoTo 0
+    End If
+
+    If SelectedRange Is Nothing Then
+        MsgBox "처리할 범위를 먼저 선택하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -235,14 +339,9 @@ function Add-RibbonCustomUi {
   <ribbon>
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
-        <group id="grpNumberTools" label="숫자 변환">
-          <button id="btnConvertSelection" label="선택 영역" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInSelection" screentip="선택 영역 숫자 변환" supertip="선택한 셀의 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnConvertUsedRange" label="현재 시트" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="현재 시트 숫자 변환" supertip="활성 시트의 사용 범위 전체에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnConvertRange" label="범위 선택" imageMso="SelectCell" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="범위 지정 숫자 변환" supertip="마우스로 선택하거나 직접 입력한 범위의 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-        </group>
-        <group id="grpPhoneTools" label="전화번호">
-          <button id="btnPhoneSelection" label="선택 영역" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInSelection" screentip="선택 영역 전화번호 정리" supertip="선택한 셀의 한국 전화번호 형식을 하이픈 포함 표준 형식으로 정규화합니다." />
-          <button id="btnPhoneRange" label="범위 선택" imageMso="AddressBook" onAction="Ribbon_NormalizePhonesInColumns" screentip="범위 지정 전화번호 정리" supertip="마우스로 선택하거나 직접 입력한 범위의 전화번호를 정규화합니다." />
+        <group id="grpNumberTools" label="데이터 정리">
+          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="UserForm에서 범위를 지정해 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
+          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="UserForm에서 범위를 지정해 한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
@@ -250,12 +349,10 @@ function Add-RibbonCustomUi {
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
-          <button id="btnSpssDeleteBanner" label="선택 배너 삭제" size="large" imageMso="DeleteTableRows" onAction="Ribbon_SPSSDeleteSelectedBanner" screentip="SPSS 배너 삭제" supertip="선택한 ◐ 가로 배너의 열 블록 또는 ▣ 세로 배너의 행 블록을 삭제하고 남은 셀을 당겨 붙입니다." />
-          <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지해 삭제할 표, 삭제할 배너, 배너 순서를 지정한 뒤 신규 목차와 표 시트를 생성합니다." />
+          <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지해 UserForm에서 표/배너 삭제와 배너 순서를 지정한 뒤 신규 목차와 표 시트를 생성합니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
-          <button id="btnOutlierSetup" label="고급 설정" imageMso="ControlsGallery" onAction="Ribbon_OutlierDetectSetup" screentip="이상치 탐지 고급 설정" supertip="설정 시트를 사용하는 기존 방식의 이상치 탐지 및 결과 시트 생성을 준비합니다." />
         </group>
         <group id="grpToolkitInfo" label="정보">
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
@@ -359,13 +456,14 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and $component.Name -eq "frmSpssRebuildOptions")) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
         $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
         Add-SpssRebuildUserForm -Workbook $workbook
+        Add-RangeSelectUserForm -Workbook $workbook
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
