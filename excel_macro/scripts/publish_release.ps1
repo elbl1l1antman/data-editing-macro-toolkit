@@ -45,7 +45,7 @@ function Add-SpssRebuildUserForm {
     $form.Properties.Item("Height").Value = 430
 
     $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
-    $lblHelp.Caption = "삭제할 표와 배너를 선택하세요. 원본 집계표 시트를 복사한 뒤 삭제 내용을 반영합니다."
+    $lblHelp.Caption = "삭제할 표와 배너를 선택하세요. Shift+클릭은 연속 선택, Ctrl+클릭은 개별 추가 선택입니다."
     $lblHelp.Left = 12
     $lblHelp.Top = 10
     $lblHelp.Width = 580
@@ -65,7 +65,7 @@ function Add-SpssRebuildUserForm {
     $lstTables.Height = 292
     $lstTables.ColumnCount = 2
     $lstTables.ColumnWidths = "240 pt;0 pt"
-    $lstTables.MultiSelect = 1
+    $lstTables.MultiSelect = 2
 
     $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
     $lblBanners.Caption = "삭제할 배너"
@@ -81,7 +81,7 @@ function Add-SpssRebuildUserForm {
     $lstBanners.Height = 292
     $lstBanners.ColumnCount = 2
     $lstBanners.ColumnWidths = "180 pt;0 pt"
-    $lstBanners.MultiSelect = 1
+    $lstBanners.MultiSelect = 2
 
     $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
     $cmdUp.Caption = "위로"
@@ -100,7 +100,7 @@ function Add-SpssRebuildUserForm {
     $cmdDown.Height = 24
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "체크된 항목은 삭제됩니다. BOT/TOP/MID 계열은 세로 배너 삭제 버튼에서 별도로 처리하세요."
+    $lblTip.Caption = "선택된 항목은 삭제됩니다. 원본 시트를 복사한 뒤 결과를 만들며, BOT/TOP/MID 계열은 세로 배너 삭제 버튼에서 별도로 처리하세요."
     $lblTip.Left = 12
     $lblTip.Top = 354
     $lblTip.Width = 580
