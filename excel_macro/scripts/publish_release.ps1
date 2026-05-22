@@ -248,18 +248,18 @@ function Add-RangeSelectUserForm {
     $lblGuide.Left = 12
     $lblGuide.Top = 34
     $lblGuide.Width = 400
-    $lblGuide.Height = 48
+    $lblGuide.Height = 58
 
     $txtRange = $designer.Controls.Add("Forms.TextBox.1", "txtRange", $true)
     $txtRange.Left = 12
-    $txtRange.Top = 92
+    $txtRange.Top = 102
     $txtRange.Width = 300
     $txtRange.Height = 22
 
     $cmdPick = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickRange", $true)
-    $cmdPick.Caption = "범위 선택"
+    $cmdPick.Caption = "현재 선택 사용"
     $cmdPick.Left = 322
-    $cmdPick.Top = 90
+    $cmdPick.Top = 100
     $cmdPick.Width = 86
     $cmdPick.Height = 24
 
@@ -281,51 +281,65 @@ function Add-RangeSelectUserForm {
 Option Explicit
 
 Public Cancelled As Boolean
+Public Done As Boolean
 Public SelectedRange As Object
 
 Private Sub UserForm_Initialize()
     Cancelled = True
+    Done = False
 End Sub
 
 Public Sub InitializeOptions(ByVal titleText As String, ByVal guideText As String, ByVal defaultAddress As String)
     Me.Caption = titleText
     lblTitle.Caption = titleText
-    lblGuide.Caption = guideText
+    lblGuide.Caption = guideText & vbCrLf & "범위를 선택한 뒤 이 창의 [실행]을 누르거나 [현재 선택 사용]을 누르세요."
     txtRange.Value = defaultAddress
+    txtRange.Tag = defaultAddress
 End Sub
 
 Private Sub cmdPickRange_Click()
-    Dim picked As Range
-    Me.Hide
     On Error Resume Next
-    Set picked = Application.InputBox("처리할 범위를 선택하세요.", Me.Caption, txtRange.Value, Type:=8)
-    On Error GoTo 0
-    If Not picked Is Nothing Then
-        Set SelectedRange = picked
-        txtRange.Value = picked.Address(External:=True)
+    If TypeName(Application.Selection) = "Range" Then
+        Set SelectedRange = Application.Selection
+        txtRange.Value = SelectedRange.Address(External:=True)
+        txtRange.Tag = txtRange.Value
     End If
-    Me.Show
+    On Error GoTo 0
 End Sub
 
 Private Sub cmdOK_Click()
-    If SelectedRange Is Nothing Then
-        On Error Resume Next
-        Set SelectedRange = Application.Range(txtRange.Value)
-        On Error GoTo 0
+    Dim typedAddress As String
+    typedAddress = Trim$(txtRange.Value)
+
+    On Error Resume Next
+    If Len(typedAddress) > 0 And typedAddress <> CStr(txtRange.Tag) Then
+        Set SelectedRange = Application.Range(typedAddress)
+    ElseIf TypeName(Application.Selection) = "Range" Then
+        Set SelectedRange = Application.Selection
+    ElseIf Len(typedAddress) > 0 Then
+        Set SelectedRange = Application.Range(typedAddress)
     End If
+    On Error GoTo 0
 
     If SelectedRange Is Nothing Then
-        MsgBox "처리할 범위를 먼저 선택하세요.", vbExclamation, Me.Caption
+        MsgBox "엑셀 시트에서 처리할 범위를 먼저 선택하거나 주소를 입력하세요.", vbExclamation, Me.Caption
         Exit Sub
     End If
 
     Cancelled = False
+    Done = True
     Me.Hide
 End Sub
 
 Private Sub cmdCancel_Click()
     Cancelled = True
+    Done = True
     Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Cancelled = True
+    Done = True
 End Sub
 '@
 
@@ -342,13 +356,13 @@ function Add-RibbonCustomUi {
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
         <group id="grpNumberTools" label="데이터 정리">
-          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="UserForm에서 범위를 지정해 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="UserForm에서 범위를 지정해 한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다." />
+          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
+          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 한국 전화번호 형식을 표준 형식으로 정리합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
-          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
-          <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
+          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 병합" supertip="Excel 시트에서 3개 열 범위를 선택한 뒤 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
+          <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="Excel 시트에서 사업자등록번호 범위를 선택한 뒤 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지한 뒤 원본 집계표 시트를 복사해 표/배너 삭제를 반영하고 새 목차 링크를 생성합니다." />

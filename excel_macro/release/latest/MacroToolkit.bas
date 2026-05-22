@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.8"
+Public Const TOOLKIT_VERSION As String = "0.8.9"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -108,16 +108,9 @@ End Sub
 ' ============================================================
 Public Sub ConvertTextNumbersInColumns()
     Dim targetRange As Range
-    ' Application.InputBox(Type:=8): 엑셀 내장 범위 선택 대화상자
-    ' 마우스 드래그 선택과 직접 주소 입력을 모두 지원한다.
-    ' 취소 시 False(Boolean)를 반환하므로 오류 처리로 Nothing 여부를 판별한다.
-    On Error Resume Next
-    Set targetRange = Application.InputBox( _
-        "변환할 범위를 마우스로 선택하거나 직접 입력하세요." & vbCrLf & _
-        "예시: A:A  /  B1:B100  /  A:A,C:C", _
-        "텍스트 숫자 변환", Type:=8)
-    On Error GoTo 0
-    If targetRange Is Nothing Then Exit Sub
+    If Not Toolkit_GetRangeFromUserForm("숫자 변환", _
+        "엑셀 시트에서 변환할 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
     ConvertTextNumbersInRange targetRange
 End Sub
 
@@ -154,13 +147,9 @@ End Sub
 ' ============================================================
 Public Sub NormalizePhonesInColumns()
     Dim targetRange As Range
-    On Error Resume Next
-    Set targetRange = Application.InputBox( _
-        "전화번호 범위를 마우스로 선택하거나 직접 입력하세요." & vbCrLf & _
-        "예시: B:B  /  C1:C100  /  B:B,D:D", _
-        "전화번호 정규화", Type:=8)
-    On Error GoTo 0
-    If targetRange Is Nothing Then Exit Sub
+    If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
+        "엑셀 시트에서 전화번호 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
     NormalizePhonesInRange targetRange
 End Sub
 
@@ -183,7 +172,11 @@ Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
     Dim form As Object
     Set form = VBA.UserForms.Add("frmRangeSelectOptions")
     form.InitializeOptions formTitle, guideText, defaultAddress
-    form.Show
+    form.Show vbModeless
+
+    Do While Not CBool(form.Done)
+        DoEvents
+    Loop
 
     If form.Cancelled Then
         Unload form
@@ -482,12 +475,10 @@ Public Sub BizNo_MergeThreeColumns()
     Dim dataStartRow As Long
     Dim formatted As String
 
-    If TypeName(Selection) <> "Range" Then
-        MsgBox "사업자등록번호가 나뉜 3개 열 범위를 먼저 선택하세요.", vbExclamation, "사업자등록번호 병합"
-        Exit Sub
-    End If
+    If Not Toolkit_GetRangeFromUserForm("사업자등록번호 3열 병합", _
+        "사업자등록번호가 3개 열로 나뉜 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
 
-    Set targetRange = Selection
     If targetRange.Columns.Count < 3 Then
         MsgBox "3개 열로 나뉜 범위를 선택해야 합니다." & vbCrLf & _
                "예: 123 / 45 / 67890 형태의 세 열", vbExclamation, "사업자등록번호 병합"
@@ -542,12 +533,11 @@ Public Sub BizNo_QueryStatusForSelection()
     Dim batchRows(1 To 100) As Long
     Dim batchCount As Long
 
-    If TypeName(Selection) <> "Range" Then
-        MsgBox "조회할 사업자등록번호 범위를 먼저 선택하세요.", vbExclamation, "사업자등록 상태조회"
-        Exit Sub
-    End If
+    If Not Toolkit_GetRangeFromUserForm("사업자등록 상태조회", _
+        "조회할 사업자등록번호 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
 
-    Set targetRange = Selection.Areas(1)
+    Set targetRange = targetRange.Areas(1)
     If targetRange.Columns.Count > 1 Then
         Set targetRange = targetRange.Columns(1)
     End If
@@ -1237,13 +1227,9 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
         End If
         Set dataArea = Selection.Areas(1)
     Else
-        On Error Resume Next
-        Set dataArea = Application.InputBox( _
-            "이상치 확인을 할 범위를 선택하세요." & vbCrLf & vbCrLf & _
-            "빈칸에 범위를 직접 입력하거나, 마우스로 숫자 열을 드래그해 지정할 수 있습니다." & vbCrLf & _
-            "예: H:H  /  H1:H12001  /  표 전체 범위", _
-            "이상치 확인 - 범위 선택", defaultAddress, Type:=8)
-        On Error GoTo ErrHandler
+        If Not Toolkit_GetRangeFromUserForm("이상치 확인 - 범위 선택", _
+            "엑셀 시트에서 이상치 확인 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+            dataArea) Then Exit Sub
     End If
 
     If dataArea Is Nothing Then Exit Sub
@@ -1929,13 +1915,9 @@ Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
                                      ByRef method As String, _
                                      ByRef memo As String) As Boolean
     Dim selectedRange As Range
-    On Error Resume Next
-    Set selectedRange = Application.InputBox( _
-        "① 헤더 행을 포함한 분석 범위를 선택하세요." & vbCrLf & vbCrLf & _
-        "예: A1:H500 처럼 첫 행에 변수명이 있는 범위" & vbCrLf & _
-        "필터가 적용된 경우 보이는 행만 분석합니다.", _
-        "이상치 탐지 - 데이터 범위", Type:=8)
-    On Error GoTo 0
+    If Not Toolkit_GetRangeFromUserForm("이상치 탐지 - 데이터 범위", _
+        "헤더 행을 포함한 분석 범위를 선택하세요. 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        selectedRange) Then Exit Function
     If selectedRange Is Nothing Then Exit Function
 
     If selectedRange.Rows.Count < 2 Then
