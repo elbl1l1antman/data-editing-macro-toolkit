@@ -358,10 +358,12 @@ function Add-RibbonCustomUi {
         <group id="grpNumberTools" label="데이터 정리">
           <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="현재 시트 데이터 영역 숫자 변환" supertip="현재 활성 시트에서 실제 값이나 수식이 있는 마지막 행과 열까지만 잡아 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 한국 전화번호 형식을 표준 형식으로 정리합니다." />
+          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="Excel 시트에서 범위를 선택하면 원본 오른쪽에 복사본 열을 만들고 한국 전화번호 형식을 표준 형식으로 정리합니다." />
+          <button id="btnPhoneDashless" label="전화번호 대시 제거" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 대시 제거" supertip="선택한 전화번호 범위를 원본 오른쪽에 복사한 뒤 대시와 구분기호를 제거해 숫자만 남깁니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
+          <button id="btnBizDashless" label="대시 제거" imageMso="ClearFormats" onAction="Ribbon_RemoveBizNoDashes" screentip="사업자등록번호 대시 제거" supertip="선택한 사업자등록번호 범위를 원본 오른쪽에 복사한 뒤 대시와 구분기호를 제거해 숫자 10자리 형태로 정리합니다." />
           <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 병합" supertip="Excel 시트에서 3개 열 범위를 선택한 뒤 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="Excel 시트에서 사업자등록번호 범위를 선택한 뒤 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>

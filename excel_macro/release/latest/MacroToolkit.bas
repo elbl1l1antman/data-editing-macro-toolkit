@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.10"
+Public Const TOOLKIT_VERSION As String = "0.8.11"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -59,15 +59,17 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A9").Value  = "ConvertTextNumbersInColumns"
     ws.Range("A10").Value = "NormalizePhonesInSelection"
     ws.Range("A11").Value = "NormalizePhonesInColumns"
-    ws.Range("A12").Value = "OutlierDetect_Setup"
-    ws.Range("A13").Value = "OutlierDetect_Run"
-    ws.Range("A14").Value = "SPSS_DeleteSelectedBanner"
-    ws.Range("A15").Value = "BizNo_SetApiKey"
-    ws.Range("A16").Value = "BizNo_MergeThreeColumns"
-    ws.Range("A17").Value = "BizNo_QueryStatusForSelection"
-    ws.Range("A18").Value = "OutlierDetect_ApplyToSelection"
-    ws.Range("A19").Value = "SPSS_RebuildTablesFromIndex"
-    ws.Range("A20").Value = "SPSS_DeleteVerticalBannersFromIndex"
+    ws.Range("A12").Value = "RemovePhoneDashesToCopiedColumns"
+    ws.Range("A13").Value = "RemoveBizNoDashesToCopiedColumns"
+    ws.Range("A14").Value = "OutlierDetect_Setup"
+    ws.Range("A15").Value = "OutlierDetect_Run"
+    ws.Range("A16").Value = "SPSS_DeleteSelectedBanner"
+    ws.Range("A17").Value = "BizNo_SetApiKey"
+    ws.Range("A18").Value = "BizNo_MergeThreeColumns"
+    ws.Range("A19").Value = "BizNo_QueryStatusForSelection"
+    ws.Range("A20").Value = "OutlierDetect_ApplyToSelection"
+    ws.Range("A21").Value = "SPSS_RebuildTablesFromIndex"
+    ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -154,7 +156,7 @@ Public Sub NormalizePhonesInSelection()
         MsgBox "전화번호 셀을 먼저 선택하세요.", vbExclamation, "매크로 툴킷"
         Exit Sub
     End If
-    NormalizePhonesInRange Selection
+    NormalizePhonesToCopiedColumns Selection
 End Sub
 
 ' ============================================================
@@ -170,7 +172,7 @@ Public Sub NormalizePhonesInColumns()
     If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
         "엑셀 시트에서 전화번호 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
         targetRange) Then Exit Sub
-    NormalizePhonesInRange targetRange
+    NormalizePhonesToCopiedColumns targetRange
 End Sub
 
 Public Sub NormalizePhonesWithForm()
@@ -178,7 +180,23 @@ Public Sub NormalizePhonesWithForm()
     If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
         "한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다. 정리할 셀/열/범위를 선택하세요.", _
         targetRange) Then Exit Sub
-    NormalizePhonesInRange targetRange
+    NormalizePhonesToCopiedColumns targetRange
+End Sub
+
+Public Sub RemovePhoneDashesToCopiedColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 대시 제거", _
+        "대시를 제거할 전화번호 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 숫자만 남깁니다.", _
+        targetRange) Then Exit Sub
+    StripDigitsToCopiedColumns targetRange, "전화번호 대시 제거"
+End Sub
+
+Public Sub RemoveBizNoDashesToCopiedColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("사업자등록번호 대시 제거", _
+        "대시를 제거할 사업자등록번호 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 숫자만 남깁니다.", _
+        targetRange) Then Exit Sub
+    StripDigitsToCopiedColumns targetRange, "사업자등록번호 대시 제거"
 End Sub
 
 Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
@@ -240,6 +258,13 @@ Private Function Toolkit_GetActualDataRange(ByVal ws As Worksheet) As Range
     Set Toolkit_GetActualDataRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRowCell.Row, lastColCell.Column))
 End Function
 
+Private Function Toolkit_TrimRangeToActualData(ByVal target As Range) As Range
+    Dim actualData As Range
+    Set actualData = Toolkit_GetActualDataRange(target.Worksheet)
+    If actualData Is Nothing Then Exit Function
+    Set Toolkit_TrimRangeToActualData = Intersect(target, actualData)
+End Function
+
 ' ============================================================
 ' 프로시저 : ConvertTextNumbersInRange (내부 전용)
 ' 설  명  : 주어진 Range 내 각 셀을 순회하며
@@ -280,6 +305,26 @@ ErrHandler:
 End Sub
 
 ' ============================================================
+' 프로시저 : NormalizePhonesToCopiedColumns (내부 전용)
+' 설  명  : 선택 범위를 오른쪽 새 열에 복사한 뒤 복사본만 전화번호
+'           표준 형식으로 정규화한다.
+' ============================================================
+Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range)
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(target)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 데이터를 찾지 못했습니다.", vbInformation, "전화번호 정리"
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "전화번호_정리")
+    If outputRange Is Nothing Then Exit Sub
+
+    NormalizePhonesInRange outputRange, "전화번호 정리 복사본"
+End Sub
+
+' ============================================================
 ' 프로시저 : NormalizePhonesInRange (내부 전용)
 ' 설  명  : 주어진 Range 내 각 셀을 순회하며
 '           한국 전화번호를 표준 형식으로 정규화한다.
@@ -287,7 +332,7 @@ End Sub
 '           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
 ' 파라미터 : target - 정규화 대상 Range
 ' ============================================================
-Private Sub NormalizePhonesInRange(ByVal target As Range)
+Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화")
     Dim cell As Range
     Dim changedCount As Long         ' 실제 변경된 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
@@ -312,14 +357,89 @@ Private Sub NormalizePhonesInRange(ByVal target As Range)
 
     Application.ScreenUpdating = True
     MsgBox changedCount & "개 전화번호가 정규화되었습니다." & vbCrLf & _
-           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다.", _
-           vbInformation, "전화번호 정규화"
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
+           "원본 범위는 변경하지 않았습니다.", _
+           vbInformation, resultTitle
     Exit Sub
 
 ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
-           vbExclamation, "전화번호 정규화"
+           vbExclamation, resultTitle
+End Sub
+
+Private Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal headerSuffix As String) As Range
+    Dim ws As Worksheet
+    Set ws = sourceRange.Worksheet
+
+    If sourceRange.Areas.Count > 1 Then
+        MsgBox "복사본 열 생성 기능은 한 번에 하나의 연속된 범위만 처리합니다." & vbCrLf & _
+               "처리할 열 또는 표 범위를 다시 선택하세요.", vbExclamation, "복사본 열 생성"
+        Exit Function
+    End If
+
+    Dim outputCol As Long
+    outputCol = sourceRange.Column + sourceRange.Columns.Count
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, sourceRange.Columns.Count).Insert Shift:=xlToRight
+
+    Dim outputRange As Range
+    Set outputRange = ws.Range(ws.Cells(sourceRange.Row, outputCol), _
+                               ws.Cells(sourceRange.Row + sourceRange.Rows.Count - 1, outputCol + sourceRange.Columns.Count - 1))
+    sourceRange.Copy Destination:=outputRange
+    Application.CutCopyMode = False
+
+    Dim c As Long
+    For c = 1 To outputRange.Columns.Count
+        outputRange.Columns(c).NumberFormat = "@"
+    Next c
+
+    Application.ScreenUpdating = True
+    Set CopyRangeToAdjacentColumns = outputRange
+End Function
+
+Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle As String)
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(target)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 데이터를 찾지 못했습니다.", vbInformation, resultTitle
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "대시제거")
+    If outputRange Is Nothing Then Exit Sub
+
+    Dim cell As Range
+    Dim changedCount As Long
+    Dim skippedFormulaCount As Long
+    Dim digits As String
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    For Each cell In outputRange.Cells
+        If cell.HasFormula Then
+            skippedFormulaCount = skippedFormulaCount + 1
+        Else
+            digits = DigitsOnly(CStr(cell.Value))
+            If Len(digits) > 0 And CStr(cell.Value) <> digits Then
+                cell.NumberFormat = "@"
+                cell.Value = digits
+                changedCount = changedCount + 1
+            End If
+        End If
+    Next cell
+
+    Application.ScreenUpdating = True
+    MsgBox changedCount & "개 셀에서 대시/구분기호를 제거했습니다." & vbCrLf & _
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
+           "원본 범위는 변경하지 않았습니다.", vbInformation, resultTitle
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, resultTitle
 End Sub
 
 ' ============================================================
@@ -3255,8 +3375,16 @@ Public Sub Ribbon_NormalizePhonesInColumns(control As IRibbonControl)
     NormalizePhonesWithForm
 End Sub
 
+Public Sub Ribbon_RemovePhoneDashes(control As IRibbonControl)
+    RemovePhoneDashesToCopiedColumns
+End Sub
+
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
     BizNo_SetApiKey
+End Sub
+
+Public Sub Ribbon_RemoveBizNoDashes(control As IRibbonControl)
+    RemoveBizNoDashesToCopiedColumns
 End Sub
 
 Public Sub Ribbon_BizNoMergeThreeColumns(control As IRibbonControl)
