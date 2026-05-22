@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.14"
+Public Const TOOLKIT_VERSION As String = "0.8.15"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -71,6 +71,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A21").Value = "SPSS_RebuildTablesFromIndex"
     ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
     ws.Range("A23").Value = "Toolkit_ResetAllSheetsToTop"
+    ws.Range("A24").Value = "SPSS_CreateIndexForActiveSheet"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -2571,17 +2572,22 @@ End Sub
 Public Sub SPSS_RebuildTablesFromIndex()
     On Error GoTo ErrHandler
 
-    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 2 Then
-        MsgBox "목차 시트와 집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 표 재구성"
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 1 Then
+        MsgBox "집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 표 재구성"
         Exit Sub
     End If
 
     Dim wb As Workbook: Set wb = ActiveWorkbook
-    Dim indexWs As Worksheet: Set indexWs = wb.Worksheets(1)
-    Dim dataWs As Worksheet: Set dataWs = wb.Worksheets(2)
+    Dim indexWs As Worksheet
+    Dim dataWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
 
     Dim tables As Collection
-    Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    If indexWs Is Nothing Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    End If
     If tables.Count = 0 Then
         MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 표 재구성"
         Exit Sub
@@ -2664,17 +2670,22 @@ End Sub
 Public Sub SPSS_DeleteVerticalBannersFromIndex()
     On Error GoTo ErrHandler
 
-    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 2 Then
-        MsgBox "목차 시트와 집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 세로 배너 삭제"
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 1 Then
+        MsgBox "집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 세로 배너 삭제"
         Exit Sub
     End If
 
     Dim wb As Workbook: Set wb = ActiveWorkbook
-    Dim indexWs As Worksheet: Set indexWs = wb.Worksheets(1)
-    Dim dataWs As Worksheet: Set dataWs = wb.Worksheets(2)
+    Dim indexWs As Worksheet
+    Dim dataWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
 
     Dim tables As Collection
-    Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    If indexWs Is Nothing Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    End If
     If tables.Count = 0 Then
         MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 세로 배너 삭제"
         Exit Sub
@@ -2727,6 +2738,43 @@ ErrHandler:
     MsgBox "세로 배너 삭제 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 세로 배너 삭제"
 End Sub
 
+Public Sub SPSS_CreateIndexForActiveSheet()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or TypeName(ActiveSheet) <> "Worksheet" Then
+        MsgBox "목차를 만들 집계표 시트를 먼저 선택하세요.", vbExclamation, "SPSS 목차 생성"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim dataWs As Worksheet: Set dataWs = ActiveSheet
+
+    Dim tables As Collection
+    Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    If tables.Count = 0 Then
+        MsgBox "현재 시트에서 표 제목 행을 찾지 못했습니다." & vbCrLf & _
+               "표 제목이 [표 ...]처럼 '['로 시작하는지 확인하세요.", vbExclamation, "SPSS 목차 생성"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=dataWs)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, dataWs
+    outIndex.Columns("A:D").AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "목차 시트를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & dataWs.Name, vbInformation, "SPSS 목차 생성 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "SPSS 목차 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 목차 생성"
+End Sub
+
 Private Function SPSS_CollectTablesFromIndex(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet) As Collection
     Dim tables As Collection
     Set tables = New Collection
@@ -2754,19 +2802,52 @@ Private Function SPSS_CollectTablesFromIndex(ByVal indexWs As Worksheet, ByVal d
     Next cell
 
     If tables.Count = 0 Then
-        Dim r As Long
-        For r = 1 To dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
-            Dim titleText As String
-            titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
-            If Left$(titleText, 1) = "[" Then
-                tables.Add Array(titleText, r, 0)
-            End If
-        Next r
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        SPSS_SortTablesByStartRow tables
+        SPSS_SetTableEndRows tables, dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
     End If
 
-    SPSS_SortTablesByStartRow tables
-    SPSS_SetTableEndRows tables, dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
     Set SPSS_CollectTablesFromIndex = tables
+End Function
+
+Private Function SPSS_CollectTablesFromDataSheet(ByVal dataWs As Worksheet) As Collection
+    Dim tables As Collection
+    Set tables = New Collection
+
+    Dim usedRange As Range
+    Set usedRange = dataWs.UsedRange
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then
+            tables.Add Array(titleText, r, 0)
+        End If
+    Next r
+
+    SPSS_SortTablesByStartRow tables
+    SPSS_SetTableEndRows tables, usedRange.Row + usedRange.Rows.Count - 1
+    Set SPSS_CollectTablesFromDataSheet = tables
+End Function
+
+Private Sub SPSS_ResolveIndexAndDataSheets(ByVal wb As Workbook, ByRef indexWs As Worksheet, ByRef dataWs As Worksheet)
+    Set indexWs = Nothing
+    Set dataWs = Nothing
+
+    If wb.Worksheets.Count >= 2 And SPSS_WorksheetHasHyperlinks(wb.Worksheets(1)) Then
+        Set indexWs = wb.Worksheets(1)
+        Set dataWs = wb.Worksheets(2)
+    ElseIf TypeName(ActiveSheet) = "Worksheet" Then
+        Set dataWs = ActiveSheet
+    Else
+        Set dataWs = wb.Worksheets(1)
+    End If
+End Sub
+
+Private Function SPSS_WorksheetHasHyperlinks(ByVal ws As Worksheet) As Boolean
+    SPSS_WorksheetHasHyperlinks = (ws.Hyperlinks.Count > 0)
 End Function
 
 Private Function SPSS_RowFromSubAddress(ByVal dataWs As Worksheet, ByVal subAddress As String) As Long
@@ -3496,6 +3577,10 @@ End Sub
 
 Public Sub Ribbon_SPSSDeleteSelectedBanner(control As IRibbonControl)
     SPSS_DeleteSelectedBanner
+End Sub
+
+Public Sub Ribbon_SPSSCreateIndexForActiveSheet(control As IRibbonControl)
+    SPSS_CreateIndexForActiveSheet
 End Sub
 
 Public Sub Ribbon_SPSSRebuildTablesFromIndex(control As IRibbonControl)

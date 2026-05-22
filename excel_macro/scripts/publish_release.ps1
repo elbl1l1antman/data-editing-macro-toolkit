@@ -368,6 +368,7 @@ function Add-RibbonCustomUi {
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="Excel 시트에서 사업자등록번호 범위를 선택한 뒤 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
+          <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
           <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지한 뒤 원본 집계표 시트를 복사해 표/배너 삭제를 반영하고 새 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
         </group>
