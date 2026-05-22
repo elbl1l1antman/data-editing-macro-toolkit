@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.13"
+Public Const TOOLKIT_VERSION As String = "0.8.14"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -2640,6 +2640,7 @@ Public Sub SPSS_RebuildTablesFromIndex()
     SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
     SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
     SPSS_ApplyHorizontalBannerDeletes outData, deleteBanners
+    SPSS_EnsureOneBlankRowBetweenTables outData
 
     Dim outIndex As Worksheet
     Set outIndex = wb.Worksheets.Add(Before:=outData)
@@ -2705,6 +2706,7 @@ Public Sub SPSS_DeleteVerticalBannersFromIndex()
 
     SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
     SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
+    SPSS_EnsureOneBlankRowBetweenTables outData
 
     Dim outIndex As Worksheet
     Set outIndex = wb.Worksheets.Add(Before:=outData)
@@ -3184,6 +3186,47 @@ Private Sub SPSS_DeleteRowRanges(ByVal ws As Worksheet, ByVal ranges As Collecti
         ws.Rows(CLng(items(i)(0)) & ":" & CLng(items(i)(1))).Delete Shift:=xlUp
     Next i
 End Sub
+
+Private Sub SPSS_EnsureOneBlankRowBetweenTables(ByVal ws As Worksheet)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim titleRows As Collection
+    Set titleRows = New Collection
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(ws.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then titleRows.Add r
+    Next r
+
+    If titleRows.Count < 2 Then Exit Sub
+
+    Dim i As Long
+    For i = titleRows.Count To 2 Step -1
+        Dim titleRow As Long
+        titleRow = CLng(titleRows(i))
+
+        Dim blankCount As Long
+        Dim scanRow As Long
+        scanRow = titleRow - 1
+        Do While scanRow > 1 And SPSS_IsRowValueBlank(ws, scanRow)
+            blankCount = blankCount + 1
+            scanRow = scanRow - 1
+        Loop
+
+        If blankCount = 0 Then
+            ws.Rows(titleRow).Insert Shift:=xlDown
+        ElseIf blankCount > 1 Then
+            ws.Rows((titleRow - blankCount) & ":" & (titleRow - 2)).Delete Shift:=xlUp
+        End If
+    Next i
+End Sub
+
+Private Function SPSS_IsRowValueBlank(ByVal ws As Worksheet, ByVal rowIndex As Long) As Boolean
+    SPSS_IsRowValueBlank = (Application.WorksheetFunction.CountA(ws.Rows(rowIndex)) = 0)
+End Function
 
 Private Sub SPSS_RebuildIndexFromDataSheet(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet)
     SPSS_InitRebuiltIndex indexWs
