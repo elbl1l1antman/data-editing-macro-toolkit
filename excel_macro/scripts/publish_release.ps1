@@ -357,6 +357,7 @@ function Add-RibbonCustomUi {
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
         <group id="grpNumberTools" label="데이터 정리">
           <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
+          <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="현재 시트 데이터 영역 숫자 변환" supertip="현재 활성 시트에서 실제 값이나 수식이 있는 마지막 행과 열까지만 잡아 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 한국 전화번호 형식을 표준 형식으로 정리합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">

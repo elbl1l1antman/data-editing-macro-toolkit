@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.8.9`
+`0.8.10`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -26,6 +26,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 ## 현재 기능
 
 - 텍스트 형식 숫자를 실제 숫자값으로 변환
+- 현재 시트의 실제 데이터 영역만 대상으로 텍스트 숫자 일괄 변환
 - 혼재된 한국 전화번호 형식 정규화
 - 숫자 변환과 전화번호 정리를 UserForm 기반 범위 선택 GUI로 실행
 - 범위 선택 시 Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 선택 후 실행 가능
@@ -59,10 +60,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.8.9/DataEditingMacroToolkit_v0.8.9.xlam`
-- `release/v0.8.9/DataEditingMacroToolkit_v0.8.9.xlsm`
-- `release/v0.8.9/MacroToolkit.bas`
-- `release/v0.8.9/manifest.json`
+- `release/v0.8.10/DataEditingMacroToolkit_v0.8.10.xlam`
+- `release/v0.8.10/DataEditingMacroToolkit_v0.8.10.xlsm`
+- `release/v0.8.10/MacroToolkit.bas`
+- `release/v0.8.10/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -75,7 +76,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 설치 후 Excel 상단 리본의 `보기` 탭 옆에 `데이터 툴킷` 탭이 추가됩니다. 기능은 이 탭의 버튼으로 실행합니다.
 
-- `데이터 정리`: 숫자 변환, 전화번호 정리
+- `데이터 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리
 - `SPSS 표 정리`: 선택 배너 삭제, 목차 기반 재구성
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
 - `정보`: 버전 정보

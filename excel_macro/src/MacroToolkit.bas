@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.9"
+Public Const TOOLKIT_VERSION As String = "0.8.10"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -55,7 +55,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A5").Value = "사용 가능한 매크로"
     ws.Range("A6").Value  = "Toolkit_About"
     ws.Range("A7").Value  = "ConvertTextNumbersInSelection"
-    ws.Range("A8").Value  = "ConvertTextNumbersInUsedRange"
+    ws.Range("A8").Value  = "ConvertTextNumbersInCurrentSheetDataRange"
     ws.Range("A9").Value  = "ConvertTextNumbersInColumns"
     ws.Range("A10").Value = "NormalizePhonesInSelection"
     ws.Range("A11").Value = "NormalizePhonesInColumns"
@@ -94,7 +94,27 @@ End Sub
 '           텍스트 형식 숫자를 실제 숫자로 일괄 변환한다.
 ' ============================================================
 Public Sub ConvertTextNumbersInUsedRange()
-    ConvertTextNumbersInRange ActiveSheet.UsedRange
+    ConvertTextNumbersInCurrentSheetDataRange
+End Sub
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInCurrentSheetDataRange
+' 설  명  : 현재 활성 시트에서 실제 데이터가 있는 마지막 행/열까지만 잡아
+'           텍스트 형식 숫자를 실제 숫자로 일괄 변환한다.
+' ============================================================
+Public Sub ConvertTextNumbersInCurrentSheetDataRange()
+    Dim targetRange As Range
+    Set targetRange = Toolkit_GetActualDataRange(ActiveSheet)
+    If targetRange Is Nothing Then
+        MsgBox "현재 시트에서 변환할 데이터가 있는 범위를 찾지 못했습니다.", vbInformation, "시트 전체 숫자 변환"
+        Exit Sub
+    End If
+
+    If MsgBox("현재 시트의 실제 데이터 영역만 변환합니다." & vbCrLf & _
+              "범위: " & targetRange.Address(False, False) & vbCrLf & vbCrLf & _
+              "계속할까요?", vbQuestion + vbYesNo, "시트 전체 숫자 변환") = vbNo Then Exit Sub
+
+    ConvertTextNumbersInRange targetRange
 End Sub
 
 ' ============================================================
@@ -196,6 +216,28 @@ Fallback:
     Set targetRange = Application.InputBox(guideText, formTitle, Type:=8)
     On Error GoTo 0
     Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
+End Function
+
+Private Function Toolkit_GetActualDataRange(ByVal ws As Worksheet) As Range
+    Dim firstCell As Range
+    Dim lastRowCell As Range
+    Dim lastColCell As Range
+
+    On Error Resume Next
+    Set firstCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                  SearchOrder:=xlByRows, SearchDirection:=xlNext, _
+                                  MatchCase:=False)
+    Set lastRowCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                    SearchOrder:=xlByRows, SearchDirection:=xlPrevious, _
+                                    MatchCase:=False)
+    Set lastColCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                    SearchOrder:=xlByColumns, SearchDirection:=xlPrevious, _
+                                    MatchCase:=False)
+    On Error GoTo 0
+
+    If firstCell Is Nothing Or lastRowCell Is Nothing Or lastColCell Is Nothing Then Exit Function
+
+    Set Toolkit_GetActualDataRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRowCell.Row, lastColCell.Column))
 End Function
 
 ' ============================================================
@@ -3198,7 +3240,7 @@ Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInUsedRange(control As IRibbonControl)
-    ConvertTextNumbersWithForm
+    ConvertTextNumbersInCurrentSheetDataRange
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInColumns(control As IRibbonControl)
