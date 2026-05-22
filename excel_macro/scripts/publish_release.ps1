@@ -45,7 +45,7 @@ function Add-SpssRebuildUserForm {
     $form.Properties.Item("Height").Value = 430
 
     $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
-    $lblHelp.Caption = "삭제할 표와 배너를 선택하고, 배너는 위/아래 버튼으로 순서를 조정하세요."
+    $lblHelp.Caption = "삭제할 표와 배너를 선택하세요. 원본 집계표 시트를 복사한 뒤 삭제 내용을 반영합니다."
     $lblHelp.Left = 12
     $lblHelp.Top = 10
     $lblHelp.Width = 580
@@ -68,7 +68,7 @@ function Add-SpssRebuildUserForm {
     $lstTables.MultiSelect = 1
 
     $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
-    $lblBanners.Caption = "삭제/이동할 배너"
+    $lblBanners.Caption = "삭제할 배너"
     $lblBanners.Left = 312
     $lblBanners.Top = 34
     $lblBanners.Width = 220
@@ -77,7 +77,7 @@ function Add-SpssRebuildUserForm {
     $lstBanners = $designer.Controls.Add("Forms.ListBox.1", "lstBanners", $true)
     $lstBanners.Left = 312
     $lstBanners.Top = 52
-    $lstBanners.Width = 220
+    $lstBanners.Width = 280
     $lstBanners.Height = 292
     $lstBanners.ColumnCount = 2
     $lstBanners.ColumnWidths = "180 pt;0 pt"
@@ -85,6 +85,7 @@ function Add-SpssRebuildUserForm {
 
     $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
     $cmdUp.Caption = "위로"
+    $cmdUp.Visible = $false
     $cmdUp.Left = 542
     $cmdUp.Top = 84
     $cmdUp.Width = 54
@@ -92,13 +93,14 @@ function Add-SpssRebuildUserForm {
 
     $cmdDown = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerDown", $true)
     $cmdDown.Caption = "아래로"
+    $cmdDown.Visible = $false
     $cmdDown.Left = 542
     $cmdDown.Top = 114
     $cmdDown.Width = 54
     $cmdDown.Height = 24
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "체크된 항목은 삭제됩니다. 순서만 바꿀 배너는 선택하지 말고 위/아래만 사용하세요."
+    $lblTip.Caption = "체크된 항목은 삭제됩니다. BOT/TOP/MID 계열은 세로 배너 삭제 버튼에서 별도로 처리하세요."
     $lblTip.Left = 12
     $lblTip.Top = 354
     $lblTip.Width = 580
@@ -349,7 +351,8 @@ function Add-RibbonCustomUi {
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
-          <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지해 UserForm에서 표/배너 삭제와 배너 순서를 지정한 뒤 신규 목차와 표 시트를 생성합니다." />
+          <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지한 뒤 원본 집계표 시트를 복사해 표/배너 삭제를 반영하고 새 목차 링크를 생성합니다." />
+          <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />

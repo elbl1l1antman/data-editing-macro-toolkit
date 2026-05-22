@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.7"
+Public Const TOOLKIT_VERSION As String = "0.8.8"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -67,6 +67,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A17").Value = "BizNo_QueryStatusForSelection"
     ws.Range("A18").Value = "OutlierDetect_ApplyToSelection"
     ws.Range("A19").Value = "SPSS_RebuildTablesFromIndex"
+    ws.Range("A20").Value = "SPSS_DeleteVerticalBannersFromIndex"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -2435,45 +2436,27 @@ Public Sub SPSS_RebuildTablesFromIndex()
                 "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
                 "SPSS 표 재구성 - 삭제할 배너", "")
 
-            orderInput = InputBox( _
-                "배너 이동 순서를 번호로 입력하세요." & vbCrLf & _
-                "입력한 순서가 먼저 배치되고, 빠진 배너는 기존 순서대로 뒤에 붙습니다." & vbCrLf & _
-                "비워두면 기존 순서를 유지합니다. 예: 3,1,2" & vbCrLf & vbCrLf & bannerList, _
-                "SPSS 표 재구성 - 배너 순서", "")
         End If
     End If
 
     Dim deleteBanners As Object
     Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteBannerInput, banners)
 
-    Dim orderNames As Collection
-    Set orderNames = SPSS_ParseBannerOrder(orderInput, banners, deleteBanners)
-
+    Application.ScreenUpdating = False
     Dim outData As Worksheet
-    Dim outIndex As Worksheet
-    Set outData = wb.Worksheets.Add(After:=dataWs)
+    dataWs.Copy After:=dataWs
+    Set outData = ActiveSheet
     outData.Name = SPSS_UniqueSheetName(wb, "SPSS_표정리")
+
+    SPSS_ApplyTableDeletes outData, tables, deleteTables
+    SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
+    SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
+    SPSS_ApplyHorizontalBannerDeletes outData, deleteBanners
+
+    Dim outIndex As Worksheet
     Set outIndex = wb.Worksheets.Add(Before:=outData)
     outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
-
-    Application.ScreenUpdating = False
-    SPSS_InitRebuiltIndex outIndex
-
-    Dim outRow As Long: outRow = 1
-    Dim indexRow As Long: indexRow = 3
-    Dim i As Long
-    For i = 1 To tables.Count
-        If Not deleteTables.Exists(CStr(i)) Then
-            Dim tableInfo As Variant
-            tableInfo = tables(i)
-            Dim startOutRow As Long
-            startOutRow = outRow
-            SPSS_CopyRebuiltTable dataWs, outData, tableInfo, outRow, deleteBanners, orderNames
-            SPSS_WriteRebuiltIndexRow outIndex, indexRow, CStr(tableInfo(0)), outData.Name, startOutRow
-            indexRow = indexRow + 1
-            outRow = outRow + 2
-        End If
-    Next i
+    SPSS_RebuildIndexFromDataSheet outIndex, outData
 
     outIndex.Columns("A:D").AutoFit
     outData.UsedRange.Columns.AutoFit
@@ -2487,6 +2470,71 @@ Public Sub SPSS_RebuildTablesFromIndex()
 ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "SPSS 표 재구성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 표 재구성"
+End Sub
+
+Public Sub SPSS_DeleteVerticalBannersFromIndex()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 2 Then
+        MsgBox "목차 시트와 집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim indexWs As Worksheet: Set indexWs = wb.Worksheets(1)
+    Dim dataWs As Worksheet: Set dataWs = wb.Worksheets(2)
+
+    Dim tables As Collection
+    Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    If tables.Count = 0 Then
+        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim verticalBanners As Collection
+    Set verticalBanners = SPSS_CollectVerticalBanners(tables, dataWs)
+    If verticalBanners.Count = 0 Then
+        MsgBox "삭제할 세로 배너를 찾지 못했습니다.", vbInformation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim deleteInput As String
+    deleteInput = InputBox( _
+        "삭제할 세로 배너 번호를 입력하세요." & vbCrLf & _
+        "BOT/TOP/MID 계열은 세로 배너로 분류합니다. 예: 1,3-4" & vbCrLf & vbCrLf & _
+        SPSS_FormatBannerList(verticalBanners), _
+        "SPSS 세로 배너 삭제", "")
+    If Len(Trim$(deleteInput)) = 0 Then Exit Sub
+
+    Dim deleteBanners As Object
+    Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteInput, verticalBanners)
+
+    Application.ScreenUpdating = False
+    Dim outData As Worksheet
+    dataWs.Copy After:=dataWs
+    Set outData = ActiveSheet
+    outData.Name = SPSS_UniqueSheetName(wb, "SPSS_세로배너삭제")
+
+    SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
+    SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
+
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=outData)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, outData
+
+    outIndex.Columns("A:D").AutoFit
+    outData.UsedRange.Columns.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "세로 배너 삭제 결과 시트와 목차를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & outData.Name, vbInformation, "SPSS 세로 배너 삭제 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "세로 배너 삭제 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 세로 배너 삭제"
 End Sub
 
 Private Function SPSS_CollectTablesFromIndex(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet) As Collection
@@ -2662,6 +2710,38 @@ Private Function SPSS_CollectUniqueBanners(ByVal tables As Collection, ByVal dat
     Set SPSS_CollectUniqueBanners = result
 End Function
 
+Private Function SPSS_CollectVerticalBanners(ByVal tables As Collection, ByVal dataWs As Worksheet) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim tableInfo As Variant
+        tableInfo = tables(i)
+        Dim lastCol As Long
+        lastCol = SPSS_TableLastCol(dataWs, CLng(tableInfo(1)), CLng(tableInfo(2)))
+
+        Dim r As Long, c As Long
+        For r = CLng(tableInfo(1)) To CLng(tableInfo(2))
+            Dim firstText As String
+            firstText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+            If Left$(firstText, 1) = "▣" Then SPSS_AddBannerName result, seen, firstText
+
+            For c = 1 To lastCol
+                Dim textValue As String
+                textValue = Trim$(CStr(dataWs.Cells(r, c).Value))
+                If Left$(textValue, 1) = "◐" And SPSS_IsVerticalBannerLikeName(SPSS_NormalizeBannerName(textValue)) Then
+                    SPSS_AddBannerName result, seen, textValue
+                End If
+            Next c
+        Next r
+    Next i
+
+    Set SPSS_CollectVerticalBanners = result
+End Function
+
 Private Sub SPSS_AddTableBanners(ByVal result As Collection, ByVal seen As Object, ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long)
     Dim lastCol As Long
     lastCol = SPSS_TableLastCol(ws, startRow, endRow)
@@ -2796,6 +2876,153 @@ Private Sub SPSS_WriteRebuiltIndexRow(ByVal ws As Worksheet, ByVal rowNo As Long
                       SubAddress:="'" & dataSheetName & "'!A" & targetRow, _
                       TextToDisplay:="GO"
 End Sub
+
+Private Sub SPSS_ApplyTableDeletes(ByVal ws As Worksheet, ByVal tables As Collection, ByVal deleteTables As Object)
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        If deleteTables.Exists(CStr(i)) Then
+            Dim item As Variant
+            item = tables(i)
+            ranges.Add Array(CLng(item(1)), CLng(item(2)))
+        End If
+    Next i
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyVerticalBannerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(r, usedRange.Column).Value))
+        If Left$(textValue, 1) = "▣" Then
+            Dim bannerName As String
+            bannerName = SPSS_NormalizeBannerName(textValue)
+            If deleteBanners.Exists(bannerName) Then
+                ranges.Add Array(r, SPSS_FindVerticalBannerEnd(ws, r, usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column))
+            End If
+        End If
+    Next r
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyVerticalLikeMarkerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then
+                Dim bannerName As String
+                bannerName = SPSS_NormalizeBannerName(textValue)
+                If deleteBanners.Exists(bannerName) And SPSS_IsVerticalBannerLikeName(bannerName) Then
+                    ranges.Add Array(r, r)
+                    Exit For
+                End If
+            End If
+        Next c
+    Next r
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyHorizontalBannerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then
+                Dim bannerName As String
+                bannerName = SPSS_NormalizeBannerName(textValue)
+                If deleteBanners.Exists(bannerName) And Not SPSS_IsVerticalBannerLikeName(bannerName) Then
+                    Dim endCol As Long
+                    endCol = SPSS_FindHorizontalBannerEnd(ws, r, c, usedRange.Column + usedRange.Columns.Count - 1)
+                    ranges(CStr(c) & ":" & CStr(endCol)) = Array(c, endCol)
+                End If
+            End If
+        Next c
+    Next r
+
+    If ranges.Count = 0 Then Exit Sub
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortColumnRangesDescending items
+
+    For r = LBound(items) To UBound(items)
+        ws.Range(ws.Columns(CLng(items(r)(0))), ws.Columns(CLng(items(r)(1)))).Delete Shift:=xlToLeft
+    Next r
+End Sub
+
+Private Sub SPSS_DeleteRowRanges(ByVal ws As Worksheet, ByVal ranges As Collection)
+    If ranges.Count = 0 Then Exit Sub
+
+    Dim items() As Variant
+    Dim i As Long
+    ReDim items(0 To ranges.Count - 1)
+    For i = 1 To ranges.Count
+        items(i - 1) = ranges(i)
+    Next i
+    SPSS_SortRowRangesDescending items
+
+    For i = LBound(items) To UBound(items)
+        ws.Rows(CLng(items(i)(0)) & ":" & CLng(items(i)(1))).Delete Shift:=xlUp
+    Next i
+End Sub
+
+Private Sub SPSS_RebuildIndexFromDataSheet(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet)
+    SPSS_InitRebuiltIndex indexWs
+
+    Dim indexRow As Long: indexRow = 3
+    Dim usedRange As Range
+    Set usedRange = dataWs.UsedRange
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then
+            SPSS_WriteRebuiltIndexRow indexWs, indexRow, titleText, dataWs.Name, r
+            indexRow = indexRow + 1
+        End If
+    Next r
+End Sub
+
+Private Function SPSS_IsVerticalBannerLikeName(ByVal bannerName As String) As Boolean
+    Dim textValue As String
+    textValue = UCase$(Trim$(bannerName))
+    SPSS_IsVerticalBannerLikeName = (InStr(1, textValue, "BOT", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "BOTTOM", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "TOP", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "MID", vbTextCompare) > 0)
+End Function
 
 Private Sub SPSS_CopyRebuiltTable(ByVal srcWs As Worksheet, _
                                   ByVal dstWs As Worksheet, _
@@ -3030,6 +3257,10 @@ End Sub
 
 Public Sub Ribbon_SPSSRebuildTablesFromIndex(control As IRibbonControl)
     SPSS_RebuildTablesFromIndex
+End Sub
+
+Public Sub Ribbon_SPSSDeleteVerticalBanners(control As IRibbonControl)
+    SPSS_DeleteVerticalBannersFromIndex
 End Sub
 
 
