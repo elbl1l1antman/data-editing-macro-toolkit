@@ -375,6 +375,7 @@ function Add-RibbonCustomUi {
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
         </group>
         <group id="grpToolkitInfo" label="정보">
+          <button id="btnResetAllSheetsTop" label="모든 시트 최상단" imageMso="GoToTop" onAction="Ribbon_ResetAllSheetsToTop" screentip="모든 시트 화면 위치 정렬" supertip="통합문서의 모든 워크시트를 A1 기준 최상단으로 이동시키고 원래 보던 시트로 돌아옵니다." />
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
         </group>
       </tab>

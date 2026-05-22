@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.11"
+Public Const TOOLKIT_VERSION As String = "0.8.12"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -70,9 +70,53 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A20").Value = "OutlierDetect_ApplyToSelection"
     ws.Range("A21").Value = "SPSS_RebuildTablesFromIndex"
     ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
+    ws.Range("A23").Value = "Toolkit_ResetAllSheetsToTop"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
+End Sub
+
+Public Sub Toolkit_ResetAllSheetsToTop()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    Dim originalSheet As Worksheet
+    If TypeName(ActiveSheet) = "Worksheet" Then Set originalSheet = ActiveSheet
+
+    Dim ws As Worksheet
+    Dim resetCount As Long
+
+    Application.ScreenUpdating = False
+    For Each ws In wb.Worksheets
+        ws.Activate
+        ws.Range("A1").Select
+        If Not ActiveWindow Is Nothing Then
+            ActiveWindow.ScrollRow = 1
+            ActiveWindow.ScrollColumn = 1
+        End If
+        resetCount = resetCount + 1
+    Next ws
+
+    If Not originalSheet Is Nothing Then
+        originalSheet.Activate
+        originalSheet.Range("A1").Select
+        If Not ActiveWindow Is Nothing Then
+            ActiveWindow.ScrollRow = 1
+            ActiveWindow.ScrollColumn = 1
+        End If
+    End If
+
+    Application.ScreenUpdating = True
+    MsgBox resetCount & "개 시트의 화면 위치를 최상단으로 정렬했습니다.", vbInformation, "모든 시트 최상단"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "모든 시트 최상단 정렬 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "모든 시트 최상단"
 End Sub
 
 ' ============================================================
@@ -3353,6 +3397,10 @@ End Function
 ' ============================================================
 Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
     Toolkit_About
+End Sub
+
+Public Sub Ribbon_ResetAllSheetsToTop(control As IRibbonControl)
+    Toolkit_ResetAllSheetsToTop
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)
