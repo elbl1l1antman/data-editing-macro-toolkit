@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.8.15"
+Public Const TOOLKIT_VERSION As String = "0.8.16"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -72,6 +72,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
     ws.Range("A23").Value = "Toolkit_ResetAllSheetsToTop"
     ws.Range("A24").Value = "SPSS_CreateIndexForActiveSheet"
+    ws.Range("A25").Value = "Toolkit_SelectA1OnAllSheets"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -118,6 +119,10 @@ Public Sub Toolkit_ResetAllSheetsToTop()
 ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "모든 시트 최상단 정렬 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "모든 시트 최상단"
+End Sub
+
+Public Sub Toolkit_SelectA1OnAllSheets()
+    Toolkit_ResetAllSheetsToTop
 End Sub
 
 ' ============================================================
@@ -3525,6 +3530,10 @@ End Sub
 
 Public Sub Ribbon_ResetAllSheetsToTop(control As IRibbonControl)
     Toolkit_ResetAllSheetsToTop
+End Sub
+
+Public Sub Ribbon_SelectA1OnAllSheets(control As IRibbonControl)
+    Toolkit_SelectA1OnAllSheets
 End Sub
 
 Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)

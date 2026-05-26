@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.8.15`
+`0.8.16`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -31,6 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 전화번호 정리 시 원본 오른쪽에 복사본 열을 생성한 뒤 복사본만 정규화
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 모든 워크시트의 화면 위치를 A1 기준 최상단으로 정렬
+- 모든 워크시트의 선택 셀을 A1로 변경
 - 숫자 변환과 전화번호 정리를 UserForm 기반 범위 선택 GUI로 실행
 - 범위 선택 시 Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 선택 후 실행 가능
 - 이상치 탐지 및 대체 결과 시트 생성
@@ -66,10 +67,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.8.15/DataEditingMacroToolkit_v0.8.15.xlam`
-- `release/v0.8.15/DataEditingMacroToolkit_v0.8.15.xlsm`
-- `release/v0.8.15/MacroToolkit.bas`
-- `release/v0.8.15/manifest.json`
+- `release/v0.8.16/DataEditingMacroToolkit_v0.8.16.xlam`
+- `release/v0.8.16/DataEditingMacroToolkit_v0.8.16.xlsm`
+- `release/v0.8.16/MacroToolkit.bas`
+- `release/v0.8.16/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -86,7 +87,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 - `사업자등록`: 인증키 설정, 대시 제거, 3열 병합, 상태조회
 - `SPSS 표 정리`: 목차 생성, 선택 배너 삭제, 목차 기반 재구성
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
-- `정보`: 모든 시트 최상단, 버전 정보
+- `정보`: 모든 시트 A1 선택, 모든 시트 최상단, 버전 정보
 설치 대상 파일:
 
 `release/latest/DataEditingMacroToolkit_latest.xlam`

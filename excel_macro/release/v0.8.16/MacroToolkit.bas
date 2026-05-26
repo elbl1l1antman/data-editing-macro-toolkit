@@ -1,0 +1,3607 @@
+﻿Attribute VB_Name = "MacroToolkit"
+' ============================================================
+' 모듈명  : MacroToolkit
+' 설  명  : 엑셀 데이터 편집을 위한 매크로 도구 모음
+'           - 텍스트 형식 숫자를 실제 숫자로 일괄 변환
+'           - 혼용된 한국 전화번호 형식을 표준 형식으로 정규화
+' ============================================================
+Option Explicit
+
+' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
+Public Const TOOLKIT_VERSION As String = "0.8.16"
+
+' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
+Private Const VERSION_SHEET As String = "_MacroToolkit"
+Private Const BIZ_API_BASE_URL As String = "https://api.odcloud.kr/api/nts-businessman/v1/status"
+Private Const BIZ_APP_NAME As String = "DataEditingMacroToolkit"
+Private Const BIZ_APP_SECTION As String = "BusinessApi"
+Private Const BIZ_APP_KEY As String = "ServiceKey"
+
+' ============================================================
+' 프로시저 : Toolkit_About
+' 설  명  : 툴킷의 버전과 주요 기능을 팝업 메시지로 안내
+' ============================================================
+Public Sub Toolkit_About()
+    MsgBox "데이터 편집 매크로 툴킷" & vbCrLf & _
+           "버전: " & TOOLKIT_VERSION & vbCrLf & vbCrLf & _
+           "주요 기능:" & vbCrLf & _
+           "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
+           "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
+           "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
+           "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
+           "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성", _
+           vbInformation, "매크로 툴킷"
+End Sub
+
+' ============================================================
+' 프로시저 : Toolkit_SetupWorkbook
+' 설  명  : 현재 통합 문서에 버전 정보 시트를 생성하고
+'           사용 가능한 매크로 목록을 기록한다.
+'           처음 워크북에 툴킷을 배포할 때 한 번 실행한다.
+' ============================================================
+Public Sub Toolkit_SetupWorkbook()
+    Dim ws As Worksheet
+    ' 버전 시트가 없으면 새로 만들고, 있으면 기존 시트를 반환
+    Set ws = EnsureVersionSheet()
+
+    ' 헤더 및 버전 정보 기록
+    ws.Range("A1").Value = "데이터 편집 매크로 툴킷"
+    ws.Range("A2").Value = "버전"
+    ws.Range("B2").Value = TOOLKIT_VERSION
+    ws.Range("A3").Value = "갱신 일시"
+    ws.Range("B3").Value = Format(Now, "yyyy-mm-dd hh:nn:ss")
+
+    ' 사용 가능한 매크로 목록 기록
+    ws.Range("A5").Value = "사용 가능한 매크로"
+    ws.Range("A6").Value  = "Toolkit_About"
+    ws.Range("A7").Value  = "ConvertTextNumbersInSelection"
+    ws.Range("A8").Value  = "ConvertTextNumbersInCurrentSheetDataRange"
+    ws.Range("A9").Value  = "ConvertTextNumbersInColumns"
+    ws.Range("A10").Value = "NormalizePhonesInSelection"
+    ws.Range("A11").Value = "NormalizePhonesInColumns"
+    ws.Range("A12").Value = "RemovePhoneDashesToCopiedColumns"
+    ws.Range("A13").Value = "RemoveBizNoDashesToCopiedColumns"
+    ws.Range("A14").Value = "OutlierDetect_Setup"
+    ws.Range("A15").Value = "OutlierDetect_Run"
+    ws.Range("A16").Value = "SPSS_DeleteSelectedBanner"
+    ws.Range("A17").Value = "BizNo_SetApiKey"
+    ws.Range("A18").Value = "BizNo_MergeThreeColumns"
+    ws.Range("A19").Value = "BizNo_QueryStatusForSelection"
+    ws.Range("A20").Value = "OutlierDetect_ApplyToSelection"
+    ws.Range("A21").Value = "SPSS_RebuildTablesFromIndex"
+    ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
+    ws.Range("A23").Value = "Toolkit_ResetAllSheetsToTop"
+    ws.Range("A24").Value = "SPSS_CreateIndexForActiveSheet"
+    ws.Range("A25").Value = "Toolkit_SelectA1OnAllSheets"
+
+    ' 내용에 맞게 열 너비 자동 조절
+    ws.Columns("A:B").AutoFit
+End Sub
+
+Public Sub Toolkit_ResetAllSheetsToTop()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    Dim originalSheet As Worksheet
+    If TypeName(ActiveSheet) = "Worksheet" Then Set originalSheet = ActiveSheet
+
+    Dim ws As Worksheet
+    Dim resetCount As Long
+
+    Application.ScreenUpdating = False
+    For Each ws In wb.Worksheets
+        ws.Activate
+        ws.Range("A1").Select
+        If Not ActiveWindow Is Nothing Then
+            ActiveWindow.ScrollRow = 1
+            ActiveWindow.ScrollColumn = 1
+        End If
+        resetCount = resetCount + 1
+    Next ws
+
+    If Not originalSheet Is Nothing Then
+        originalSheet.Activate
+        originalSheet.Range("A1").Select
+        If Not ActiveWindow Is Nothing Then
+            ActiveWindow.ScrollRow = 1
+            ActiveWindow.ScrollColumn = 1
+        End If
+    End If
+
+    Application.ScreenUpdating = True
+    MsgBox resetCount & "개 시트의 화면 위치를 최상단으로 정렬했습니다.", vbInformation, "모든 시트 최상단"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "모든 시트 최상단 정렬 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "모든 시트 최상단"
+End Sub
+
+Public Sub Toolkit_SelectA1OnAllSheets()
+    Toolkit_ResetAllSheetsToTop
+End Sub
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInSelection
+' 설  명  : 사용자가 선택한 셀 범위에서 텍스트 형식 숫자를
+'           실제 숫자로 변환한다.
+'           실행 전에 반드시 대상 셀을 선택해야 한다.
+' ============================================================
+Public Sub ConvertTextNumbersInSelection()
+    ' 선택 영역이 Range 타입인지 확인 (차트, 도형 등 선택 시 오류 방지)
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "변환할 셀을 먼저 선택하세요.", vbExclamation, "매크로 툴킷"
+        Exit Sub
+    End If
+    ConvertTextNumbersInRange Selection
+End Sub
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInUsedRange
+' 설  명  : 현재 활성 시트의 사용 범위(UsedRange) 전체에서
+'           텍스트 형식 숫자를 실제 숫자로 일괄 변환한다.
+' ============================================================
+Public Sub ConvertTextNumbersInUsedRange()
+    ConvertTextNumbersInCurrentSheetDataRange
+End Sub
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInCurrentSheetDataRange
+' 설  명  : 현재 활성 시트에서 실제 데이터가 있는 마지막 행/열까지만 잡아
+'           텍스트 형식 숫자를 실제 숫자로 일괄 변환한다.
+' ============================================================
+Public Sub ConvertTextNumbersInCurrentSheetDataRange()
+    Dim targetRange As Range
+    Set targetRange = Toolkit_GetActualDataRange(ActiveSheet)
+    If targetRange Is Nothing Then
+        MsgBox "현재 시트에서 변환할 데이터가 있는 범위를 찾지 못했습니다.", vbInformation, "시트 전체 숫자 변환"
+        Exit Sub
+    End If
+
+    If MsgBox("현재 시트의 실제 데이터 영역만 변환합니다." & vbCrLf & _
+              "범위: " & targetRange.Address(False, False) & vbCrLf & vbCrLf & _
+              "계속할까요?", vbQuestion + vbYesNo, "시트 전체 숫자 변환") = vbNo Then Exit Sub
+
+    ConvertTextNumbersInRange targetRange
+End Sub
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInColumns
+' 설  명  : 사용자가 지정한 범위에서 텍스트 형식 숫자를
+'           실제 숫자로 변환한다.
+'           범위 지정 방법 (둘 다 지원):
+'             - 마우스로 셀/열을 클릭하거나 드래그하여 선택
+'             - 입력창에 범위 주소를 직접 입력 (예: A:A, B1:B100)
+'           Ctrl 키를 누른 채 클릭하면 복수 영역 선택 가능
+' ============================================================
+Public Sub ConvertTextNumbersInColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("숫자 변환", _
+        "엑셀 시트에서 변환할 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
+    ConvertTextNumbersInRange targetRange
+End Sub
+
+Public Sub ConvertTextNumbersWithForm()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("숫자 변환", _
+        "텍스트로 저장된 숫자를 실제 숫자값으로 변환합니다. 변환할 셀/열/범위를 선택하세요.", _
+        targetRange) Then Exit Sub
+    ConvertTextNumbersInRange targetRange
+End Sub
+
+' ============================================================
+' 프로시저 : NormalizePhonesInSelection
+' 설  명  : 사용자가 선택한 셀 범위의 전화번호를
+'           표준 형식(지역번호-국번-번호)으로 정규화한다.
+'           실행 전에 반드시 대상 셀을 선택해야 한다.
+' ============================================================
+Public Sub NormalizePhonesInSelection()
+    ' 선택 영역이 Range 타입인지 확인
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "전화번호 셀을 먼저 선택하세요.", vbExclamation, "매크로 툴킷"
+        Exit Sub
+    End If
+    NormalizePhonesToCopiedColumns Selection
+End Sub
+
+' ============================================================
+' 프로시저 : NormalizePhonesInColumns
+' 설  명  : 사용자가 지정한 범위의 전화번호를 표준 형식으로 정규화한다.
+'           범위 지정 방법 (둘 다 지원):
+'             - 마우스로 셀/열을 클릭하거나 드래그하여 선택
+'             - 입력창에 범위 주소를 직접 입력 (예: B:B, C1:C100)
+'           Ctrl 키를 누른 채 클릭하면 복수 영역 선택 가능
+' ============================================================
+Public Sub NormalizePhonesInColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
+        "엑셀 시트에서 전화번호 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
+    NormalizePhonesToCopiedColumns targetRange
+End Sub
+
+Public Sub NormalizePhonesWithForm()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
+        "한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다. 정리할 셀/열/범위를 선택하세요.", _
+        targetRange) Then Exit Sub
+    NormalizePhonesToCopiedColumns targetRange
+End Sub
+
+Public Sub RemovePhoneDashesToCopiedColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 대시 제거", _
+        "대시를 제거할 전화번호 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 숫자만 남깁니다.", _
+        targetRange) Then Exit Sub
+    StripDigitsToCopiedColumns targetRange, "전화번호 대시 제거"
+End Sub
+
+Public Sub RemoveBizNoDashesToCopiedColumns()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("사업자등록번호 대시 제거", _
+        "대시를 제거할 사업자등록번호 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 숫자만 남깁니다.", _
+        targetRange) Then Exit Sub
+    StripDigitsToCopiedColumns targetRange, "사업자등록번호 대시 제거"
+End Sub
+
+Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
+                                              ByVal guideText As String, _
+                                              ByRef targetRange As Range) As Boolean
+    On Error GoTo Fallback
+
+    Dim defaultAddress As String
+    If TypeName(Selection) = "Range" Then defaultAddress = Selection.Areas(1).Address(External:=True)
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmRangeSelectOptions")
+    form.InitializeOptions formTitle, guideText, defaultAddress
+    form.Show vbModeless
+
+    Do While Not CBool(form.Done)
+        DoEvents
+    Loop
+
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Set targetRange = form.SelectedRange
+    Unload form
+    If targetRange Is Nothing Then Exit Function
+
+    Toolkit_GetRangeFromUserForm = True
+    Exit Function
+
+Fallback:
+    Err.Clear
+    On Error Resume Next
+    Set targetRange = Application.InputBox(guideText, formTitle, Type:=8)
+    On Error GoTo 0
+    Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
+End Function
+
+Private Function Toolkit_GetActualDataRange(ByVal ws As Worksheet) As Range
+    Dim firstCell As Range
+    Dim lastRowCell As Range
+    Dim lastColCell As Range
+
+    On Error Resume Next
+    Set firstCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                  SearchOrder:=xlByRows, SearchDirection:=xlNext, _
+                                  MatchCase:=False)
+    Set lastRowCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                    SearchOrder:=xlByRows, SearchDirection:=xlPrevious, _
+                                    MatchCase:=False)
+    Set lastColCell = ws.Cells.Find(What:="*", LookIn:=xlFormulas, LookAt:=xlPart, _
+                                    SearchOrder:=xlByColumns, SearchDirection:=xlPrevious, _
+                                    MatchCase:=False)
+    On Error GoTo 0
+
+    If firstCell Is Nothing Or lastRowCell Is Nothing Or lastColCell Is Nothing Then Exit Function
+
+    Set Toolkit_GetActualDataRange = ws.Range(ws.Cells(1, 1), ws.Cells(lastRowCell.Row, lastColCell.Column))
+End Function
+
+Private Function Toolkit_TrimRangeToActualData(ByVal target As Range) As Range
+    Dim actualData As Range
+    Set actualData = Toolkit_GetActualDataRange(target.Worksheet)
+    If actualData Is Nothing Then Exit Function
+    Set Toolkit_TrimRangeToActualData = Intersect(target, actualData)
+End Function
+
+' ============================================================
+' 프로시저 : ConvertTextNumbersInRange (내부 전용)
+' 설  명  : 주어진 Range 내 각 셀을 순회하며
+'           텍스트 형식 숫자를 실제 Double 숫자로 변환한다.
+'           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
+' 파라미터 : target - 변환 대상 Range
+' ============================================================
+Private Sub ConvertTextNumbersInRange(ByVal target As Range)
+    Dim cell As Range
+    Dim convertedCount As Long   ' 변환 성공 셀 수
+    Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
+    Dim newValue As Variant      ' 변환된 숫자 값을 임시 저장
+
+    On Error GoTo ErrHandler
+    ' 화면 갱신 중지: 셀 업데이트마다 화면을 다시 그리지 않아 속도 향상
+    Application.ScreenUpdating = False
+    For Each cell In target.Cells
+        If cell.HasFormula Then
+            ' 수식 셀은 값을 덮어쓰면 수식이 사라지므로 건너뜀
+            skippedFormulaCount = skippedFormulaCount + 1
+        ElseIf TryNumberFromText(cell.Value, newValue) Then
+            ' 텍스트를 숫자로 파싱 성공 시 셀 값 교체
+            cell.Value = newValue
+            convertedCount = convertedCount + 1
+        End If
+    Next cell
+
+    Application.ScreenUpdating = True
+    MsgBox convertedCount & "개 셀이 변환되었습니다." & vbCrLf & _
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다.", _
+           vbInformation, "텍스트 숫자 변환"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, "텍스트 숫자 변환"
+End Sub
+
+' ============================================================
+' 프로시저 : NormalizePhonesToCopiedColumns (내부 전용)
+' 설  명  : 선택 범위를 오른쪽 새 열에 복사한 뒤 복사본만 전화번호
+'           표준 형식으로 정규화한다.
+' ============================================================
+Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range)
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(target)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 데이터를 찾지 못했습니다.", vbInformation, "전화번호 정리"
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "전화번호_정리")
+    If outputRange Is Nothing Then Exit Sub
+
+    NormalizePhonesInRange outputRange, "전화번호 정리 복사본"
+End Sub
+
+' ============================================================
+' 프로시저 : NormalizePhonesInRange (내부 전용)
+' 설  명  : 주어진 Range 내 각 셀을 순회하며
+'           한국 전화번호를 표준 형식으로 정규화한다.
+'           셀 서식을 텍스트(@)로 변경해 앞자리 0이 유지되도록 한다.
+'           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
+' 파라미터 : target - 정규화 대상 Range
+' ============================================================
+Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화")
+    Dim cell As Range
+    Dim changedCount As Long         ' 실제 변경된 셀 수
+    Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
+    Dim normalized As String         ' 정규화된 전화번호 문자열
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    For Each cell In target.Cells
+        If cell.HasFormula Then
+            skippedFormulaCount = skippedFormulaCount + 1
+        ElseIf NormalizeKoreanPhone(CStr(cell.Value), normalized) Then
+            ' 값이 실제로 바뀐 경우에만 셀을 업데이트
+            If CStr(cell.Value) <> normalized Then
+                ' 텍스트 서식으로 설정해야 "010-..."처럼 하이픈이 포함된
+                ' 번호가 날짜/수식으로 오해되지 않고 앞자리 0도 보존됨
+                cell.NumberFormat = "@"
+                cell.Value = normalized
+                changedCount = changedCount + 1
+            End If
+        End If
+    Next cell
+
+    Application.ScreenUpdating = True
+    MsgBox changedCount & "개 전화번호가 정규화되었습니다." & vbCrLf & _
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
+           "원본 범위는 변경하지 않았습니다.", _
+           vbInformation, resultTitle
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, resultTitle
+End Sub
+
+Private Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal headerSuffix As String) As Range
+    Dim ws As Worksheet
+    Set ws = sourceRange.Worksheet
+
+    If sourceRange.Areas.Count > 1 Then
+        MsgBox "복사본 열 생성 기능은 한 번에 하나의 연속된 범위만 처리합니다." & vbCrLf & _
+               "처리할 열 또는 표 범위를 다시 선택하세요.", vbExclamation, "복사본 열 생성"
+        Exit Function
+    End If
+
+    Dim outputCol As Long
+    outputCol = sourceRange.Column + sourceRange.Columns.Count
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, sourceRange.Columns.Count).Insert Shift:=xlToRight
+
+    Dim outputRange As Range
+    Set outputRange = ws.Range(ws.Cells(sourceRange.Row, outputCol), _
+                               ws.Cells(sourceRange.Row + sourceRange.Rows.Count - 1, outputCol + sourceRange.Columns.Count - 1))
+    sourceRange.Copy Destination:=outputRange
+    Application.CutCopyMode = False
+
+    Dim c As Long
+    For c = 1 To outputRange.Columns.Count
+        outputRange.Columns(c).NumberFormat = "@"
+    Next c
+
+    Application.ScreenUpdating = True
+    Set CopyRangeToAdjacentColumns = outputRange
+End Function
+
+Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle As String)
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(target)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 데이터를 찾지 못했습니다.", vbInformation, resultTitle
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "대시제거")
+    If outputRange Is Nothing Then Exit Sub
+
+    Dim cell As Range
+    Dim changedCount As Long
+    Dim skippedFormulaCount As Long
+    Dim digits As String
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    For Each cell In outputRange.Cells
+        If cell.HasFormula Then
+            skippedFormulaCount = skippedFormulaCount + 1
+        Else
+            digits = DigitsOnly(CStr(cell.Value))
+            If Len(digits) > 0 And CStr(cell.Value) <> digits Then
+                cell.NumberFormat = "@"
+                cell.Value = digits
+                changedCount = changedCount + 1
+            End If
+        End If
+    Next cell
+
+    Application.ScreenUpdating = True
+    MsgBox changedCount & "개 셀에서 대시/구분기호를 제거했습니다." & vbCrLf & _
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
+           "원본 범위는 변경하지 않았습니다.", vbInformation, resultTitle
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, resultTitle
+End Sub
+
+' ============================================================
+' 함  수 : TryNumberFromText (내부 전용)
+' 설  명  : 셀 값이 텍스트 형식의 숫자이면 Double로 변환하여
+'           valueOut에 저장하고 True를 반환한다.
+'           처리하는 형식:
+'             - 앞의 작은따옴표(') 제거  → '1234  =>  1234
+'             - 비표시 공백(NBSP, U+00A0) 제거
+'             - 천 단위 쉼표 제거          → 1,234  =>  1234
+'             - 원화 기호(\, ₩) 제거       → \1000  =>  1000
+'             - 괄호 음수 처리             → (500)  =>  -500
+'             - 퍼센트 처리               → 75%    =>  0.75
+' 파라미터 : valueIn  - 원본 셀 값 (Variant)
+'            valueOut - 변환된 숫자 (ByRef, 호출자에게 반환)
+' 반환값  : 변환 성공 시 True, 실패 시 False
+' ============================================================
+Private Function TryNumberFromText(ByVal valueIn As Variant, ByRef valueOut As Variant) As Boolean
+    Dim textValue As String
+    Dim negativeValue As Boolean  ' 괄호로 감싸진 음수 여부
+    Dim percentValue As Boolean   ' 퍼센트(%) 값 여부
+
+    ' 오류 값이거나 빈 셀이면 변환 불필요
+    If IsError(valueIn) Or IsEmpty(valueIn) Then Exit Function
+    ' 이미 숫자 타입(String이 아닌)이면 변환 불필요
+    If IsNumeric(valueIn) And VarType(valueIn) <> vbString Then Exit Function
+
+    textValue = Trim$(CStr(valueIn))
+    If Len(textValue) = 0 Then Exit Function
+
+    ' 엑셀이 숫자 앞에 자동으로 붙이는 작은따옴표(') 제거
+    If Left$(textValue, 1) = "'" Then textValue = Mid$(textValue, 2)
+
+    ' 비표시 공백(Non-Breaking Space, U+00A0) 및 일반 공백 제거
+    textValue = Replace(textValue, ChrW(160), "")
+    textValue = Replace(textValue, " ", "")
+    ' 천 단위 구분 쉼표 제거
+    textValue = Replace(textValue, ",", "")
+    ' 원화 기호 두 종류 모두 제거 (역슬래시형 \, 유니코드 ₩)
+    textValue = Replace(textValue, "\", "")
+    textValue = Replace(textValue, "₩", "")
+
+    ' "(500)" 형태의 괄호 음수 처리
+    If Left$(textValue, 1) = "(" And Right$(textValue, 1) = ")" Then
+        negativeValue = True
+        textValue = Mid$(textValue, 2, Len(textValue) - 2)  ' 괄호 제거
+    End If
+
+    ' "75%" 형태의 퍼센트 처리
+    If Right$(textValue, 1) = "%" Then
+        percentValue = True
+        textValue = Left$(textValue, Len(textValue) - 1)  ' % 기호 제거
+    End If
+
+    ' 정리 후에도 숫자가 아니면 변환 실패
+    If Len(textValue) = 0 Or Not IsNumeric(textValue) Then Exit Function
+
+    valueOut = CDbl(textValue)
+    If negativeValue Then valueOut = -CDbl(valueOut)      ' 음수 부호 적용
+    If percentValue Then valueOut = CDbl(valueOut) / 100  ' 퍼센트 → 소수 변환
+    TryNumberFromText = True
+End Function
+
+' ============================================================
+' 함  수 : NormalizeKoreanPhone (내부 전용)
+' 설  명  : 입력 문자열에서 숫자만 추출한 뒤
+'           한국 전화번호 규칙에 따라 표준 형식(XXX-XXXX-XXXX)으로
+'           정규화하여 valueOut에 저장하고 True를 반환한다.
+'           지원 형식:
+'             - 서울 지역번호 (02): 02-XXX-XXXX / 02-XXXX-XXXX
+'             - 휴대전화 (01X): 01X-XXX-XXXX / 01X-XXXX-XXXX
+'             - 기타 지역번호 (0XX): 0XX-XXX-XXXX / 0XX-XXXX-XXXX
+'             - 국제번호 +82 또는 0082 → 0으로 치환 후 처리
+' 파라미터 : valueIn  - 원본 전화번호 문자열
+'            valueOut - 정규화된 전화번호 (ByRef, 호출자에게 반환)
+' 반환값  : 정규화 성공 시 True, 인식 불가 형식이면 False
+' ============================================================
+Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As String) As Boolean
+    Dim source As String
+    Dim digits As String  ' 숫자만 추출한 문자열
+
+    source = Trim$(valueIn)
+    If Len(source) = 0 Then Exit Function
+
+    ' 괄호, 공백, 하이픈 등 비숫자 문자를 모두 제거하여 순수 숫자열 획득
+    ' 예: 02)123-4567, (031)1234-5678, +82-10-1234-5678
+    source = Replace(source, "(", "")
+    source = Replace(source, ")", "")
+    digits = DigitsOnly(source)
+    If Len(digits) = 0 Then Exit Function
+
+    ' 국제전화 접두어(0082 또는 82)를 국내 형식(0)으로 변환
+    If Left$(digits, 4) = "0082" Then digits = "0" & Mid$(digits, 5)
+    If Left$(digits, 2) = "82" Then digits = "0" & Mid$(digits, 3)
+
+    If Left$(digits, 2) = "02" Then
+        ' ── 서울 지역번호 (02) ──────────────────────────────
+        ' 02 포함 9자리: 02-XXX-XXXX
+        ' 02 포함 10자리: 02-XXXX-XXXX
+        Select Case Len(digits)
+            Case 9
+                valueOut = "02-" & Mid$(digits, 3, 3) & "-" & Right$(digits, 4)
+            Case 10
+                valueOut = "02-" & Mid$(digits, 3, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function  ' 자릿수가 맞지 않으면 정규화 불가
+        End Select
+    ElseIf Left$(digits, 3) Like "01#" Then
+        ' ── 휴대전화 (010, 011, 016, 017, 018, 019) ─────────
+        ' 10자리: 01X-XXX-XXXX
+        ' 11자리: 01X-XXXX-XXXX
+        Select Case Len(digits)
+            Case 10
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 3) & "-" & Right$(digits, 4)
+            Case 11
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
+    ElseIf Left$(digits, 2) = "10" Then
+        ' 엑셀이 숫자로 읽으며 휴대전화의 선행 0을 제거한 경우 복원
+        digits = "0" & digits
+        Select Case Len(digits)
+            Case 11
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
+    ElseIf Left$(digits, 3) Like "0##" Then
+        ' ── 기타 지역번호 (031, 032, 051, 052 … 등) ─────────
+        ' 10자리: 0XX-XXX-XXXX
+        ' 11자리: 0XX-XXXX-XXXX
+        Select Case Len(digits)
+            Case 10
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 3) & "-" & Right$(digits, 4)
+            Case 11
+                valueOut = Left$(digits, 3) & "-" & Mid$(digits, 4, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
+    Else
+        ' 위 패턴에 해당하지 않으면 인식 불가 → False 반환
+        Exit Function
+    End If
+
+    NormalizeKoreanPhone = True
+End Function
+
+' ============================================================
+' 함  수 : DigitsOnly (내부 전용)
+' 설  명  : 입력 문자열에서 0~9 사이의 문자만 추출하여 반환한다.
+'           전화번호의 하이픈, 괄호, 공백 등을 제거할 때 사용한다.
+' 파라미터 : source - 원본 문자열
+' 반환값  : 숫자 문자만으로 이루어진 문자열
+' ============================================================
+Private Function DigitsOnly(ByVal source As String) As String
+    Dim i As Long
+    Dim ch As String
+    For i = 1 To Len(source)
+        ch = Mid$(source, i, 1)
+        If ch >= "0" And ch <= "9" Then DigitsOnly = DigitsOnly & ch
+    Next i
+End Function
+
+' ============================================================
+' 사업자등록번호 정리 및 국세청 상태조회 API
+' ============================================================
+Public Sub BizNo_SetApiKey()
+    Dim currentKey As String
+    Dim newKey As Variant
+
+    currentKey = Biz_GetApiKey()
+    newKey = Application.InputBox( _
+        "공공데이터포털 일반 인증키를 입력하세요." & vbCrLf & _
+        "Encoding 키와 Decoding 키 모두 사용할 수 있습니다.", _
+        "사업자등록 API 인증키 설정", currentKey, Type:=2)
+
+    If VarType(newKey) = vbBoolean Then Exit Sub
+    If Len(Trim$(CStr(newKey))) = 0 Then
+        MsgBox "인증키가 비어 있어 저장하지 않았습니다.", vbExclamation, "사업자등록 API"
+        Exit Sub
+    End If
+
+    SaveSetting BIZ_APP_NAME, BIZ_APP_SECTION, BIZ_APP_KEY, Trim$(CStr(newKey))
+    MsgBox "인증키를 저장했습니다.", vbInformation, "사업자등록 API"
+End Sub
+
+Public Sub BizNo_MergeThreeColumns()
+    Dim targetRange As Range
+    Dim ws As Worksheet
+    Dim outputCol As Long
+    Dim r As Long
+    Dim firstRow As Long
+    Dim lastRow As Long
+    Dim dataStartRow As Long
+    Dim formatted As String
+
+    If Not Toolkit_GetRangeFromUserForm("사업자등록번호 3열 병합", _
+        "사업자등록번호가 3개 열로 나뉜 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
+
+    If targetRange.Columns.Count < 3 Then
+        MsgBox "3개 열로 나뉜 범위를 선택해야 합니다." & vbCrLf & _
+               "예: 123 / 45 / 67890 형태의 세 열", vbExclamation, "사업자등록번호 병합"
+        Exit Sub
+    End If
+
+    Set ws = targetRange.Worksheet
+    firstRow = targetRange.Row
+    lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    outputCol = targetRange.Column + targetRange.Columns.Count
+    dataStartRow = firstRow
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) <> 3 Or _
+       Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column + 1).Value))) <> 2 Or _
+       Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column + 2).Value))) <> 5 Then
+        dataStartRow = firstRow + 1
+    End If
+
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+    If dataStartRow > firstRow Then
+        ws.Cells(firstRow, outputCol).Value = "사업자등록번호"
+        ws.Cells(firstRow, outputCol).NumberFormat = "@"
+    End If
+
+    For r = dataStartRow To lastRow
+        formatted = Biz_FormatNoFromParts( _
+            CStr(ws.Cells(r, targetRange.Column).Value), _
+            CStr(ws.Cells(r, targetRange.Column + 1).Value), _
+            CStr(ws.Cells(r, targetRange.Column + 2).Value))
+        ws.Cells(r, outputCol).NumberFormat = "@"
+        ws.Cells(r, outputCol).Value = formatted
+    Next r
+
+    ws.Columns(outputCol).AutoFit
+    MsgBox "사업자등록번호 병합을 완료했습니다." & vbCrLf & _
+           "형식: 000-00-00000", vbInformation, "사업자등록번호 병합"
+End Sub
+
+Public Sub BizNo_QueryStatusForSelection()
+    Dim targetRange As Range
+    Dim apiKey As String
+    Dim ws As Worksheet
+    Dim firstRow As Long
+    Dim lastRow As Long
+    Dim dataStartRow As Long
+    Dim headerRow As Long
+    Dim outputCol As Long
+    Dim rowIndex As Long
+    Dim requestCount As Long
+    Dim successCount As Long
+    Dim failCount As Long
+    Dim batchNos(1 To 100) As String
+    Dim batchRows(1 To 100) As Long
+    Dim batchCount As Long
+
+    If Not Toolkit_GetRangeFromUserForm("사업자등록 상태조회", _
+        "조회할 사업자등록번호 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        targetRange) Then Exit Sub
+
+    Set targetRange = targetRange.Areas(1)
+    If targetRange.Columns.Count > 1 Then
+        Set targetRange = targetRange.Columns(1)
+    End If
+
+    apiKey = Biz_GetApiKey()
+    If Len(apiKey) = 0 Then
+        MsgBox "저장된 인증키가 없습니다. 먼저 [인증키 설정]을 실행하세요.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    Set ws = targetRange.Worksheet
+    firstRow = targetRange.Row
+    lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    dataStartRow = firstRow
+    headerRow = firstRow
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) = 10 Then
+        If firstRow > 1 Then
+            headerRow = firstRow - 1
+        Else
+            headerRow = 0
+        End If
+    Else
+        dataStartRow = firstRow + 1
+    End If
+
+    If dataStartRow > lastRow Then
+        MsgBox "조회할 사업자등록번호가 없습니다.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    outputCol = targetRange.Column + targetRange.Columns.Count
+    ws.Columns(outputCol).Resize(, Biz_OutputFieldCount()).Insert Shift:=xlToRight
+    If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol
+
+    Application.ScreenUpdating = False
+    On Error GoTo CleanFail
+
+    For rowIndex = dataStartRow To lastRow
+        Dim bizNo As String
+        bizNo = DigitsOnly(CStr(ws.Cells(rowIndex, targetRange.Column).Value))
+        If Len(bizNo) = 10 Then
+            batchCount = batchCount + 1
+            batchNos(batchCount) = bizNo
+            batchRows(batchCount) = rowIndex
+            requestCount = requestCount + 1
+
+            If batchCount = 100 Then
+                Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+                batchCount = 0
+            End If
+        ElseIf Len(Trim$(CStr(ws.Cells(rowIndex, targetRange.Column).Value))) > 0 Then
+            failCount = failCount + 1
+            Biz_WriteStatusError ws, rowIndex, outputCol, CStr(ws.Cells(rowIndex, targetRange.Column).Value), "사업자등록번호는 숫자 10자리여야 합니다."
+        End If
+    Next rowIndex
+
+    If batchCount > 0 Then
+        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+    End If
+
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + Biz_OutputFieldCount() - 1)).EntireColumn.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "사업자등록 상태조회를 완료했습니다." & vbCrLf & _
+           "요청: " & requestCount & "건" & vbCrLf & _
+           "성공: " & successCount & "건" & vbCrLf & _
+           "확인 필요: " & failCount & "건", vbInformation, "사업자등록 상태조회"
+    Exit Sub
+
+CleanFail:
+    Application.ScreenUpdating = True
+    MsgBox "조회 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "사업자등록 상태조회"
+End Sub
+
+Private Function Biz_GetApiKey() As String
+    Biz_GetApiKey = GetSetting(BIZ_APP_NAME, BIZ_APP_SECTION, BIZ_APP_KEY, "")
+End Function
+
+Private Function Biz_FormatNoFromParts(ByVal part1 As String, ByVal part2 As String, ByVal part3 As String) As String
+    Dim p1 As String, p2 As String, p3 As String
+    p1 = Right$("000" & DigitsOnly(part1), 3)
+    p2 = Right$("00" & DigitsOnly(part2), 2)
+    p3 = Right$("00000" & DigitsOnly(part3), 5)
+    Biz_FormatNoFromParts = p1 & "-" & p2 & "-" & p3
+End Function
+
+Private Function Biz_FormatNo(ByVal valueIn As String) As String
+    Dim digits As String
+    digits = DigitsOnly(valueIn)
+    If Len(digits) = 10 Then
+        Biz_FormatNo = Left$(digits, 3) & "-" & Mid$(digits, 4, 2) & "-" & Right$(digits, 5)
+    Else
+        Biz_FormatNo = valueIn
+    End If
+End Function
+
+Private Function Biz_OutputFieldCount() As Long
+    Biz_OutputFieldCount = 13
+End Function
+
+Private Sub Biz_WriteStatusHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
+    Dim headers As Variant
+    headers = Array( _
+        "status_code(응답상태코드)", _
+        "requested_b_no(요청 사업자등록번호)", _
+        "b_no(사업자등록번호)", _
+        "b_stt(납세자상태)", _
+        "b_stt_cd(납세자상태코드)", _
+        "tax_type(과세유형)", _
+        "tax_type_cd(과세유형코드)", _
+        "end_dt(폐업일자)", _
+        "utcc_yn(단위과세전환폐업여부)", _
+        "tax_type_change_dt(과세유형전환일자)", _
+        "invoice_apply_dt(세금계산서적용일자)", _
+        "rbf_tax_type(직전과세유형)", _
+        "rbf_tax_type_cd(직전과세유형코드)")
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    Next i
+End Sub
+
+Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByRef successCount As Long, ByRef failCount As Long)
+    Dim responseText As String
+    Dim statusCode As String
+    Dim dataObjects As Collection
+    Dim i As Long
+
+    responseText = Biz_PostStatus(batchNos, batchCount, apiKey)
+    statusCode = Biz_JsonString(responseText, "status_code")
+    If Len(statusCode) = 0 Then statusCode = "UNKNOWN"
+
+    Set dataObjects = Biz_ExtractDataObjects(responseText)
+    For i = 1 To batchCount
+        If i <= dataObjects.Count Then
+            Biz_WriteStatusRow ws, batchRows(i), outputCol, statusCode, batchNos(i), CStr(dataObjects(i))
+            successCount = successCount + 1
+        Else
+            failCount = failCount + 1
+            Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "응답 데이터가 없습니다. status_code=" & statusCode
+        End If
+    Next i
+End Sub
+
+Private Function Biz_PostStatus(ByRef batchNos() As String, ByVal batchCount As Long, ByVal apiKey As String) As String
+    Dim http As Object
+    Dim url As String
+    Dim body As String
+    Dim i As Long
+
+    body = "{""b_no"":["
+    For i = 1 To batchCount
+        If i > 1 Then body = body & ","
+        body = body & """" & batchNos(i) & """"
+    Next i
+    body = body & "]}"
+
+    url = BIZ_API_BASE_URL & "?serviceKey=" & Biz_ServiceKeyForUrl(apiKey)
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.Open "POST", url, False
+    http.setRequestHeader "Content-Type", "application/json; charset=utf-8"
+    http.setRequestHeader "Accept", "application/json"
+    http.send body
+
+    If http.Status < 200 Or http.Status >= 300 Then
+        Err.Raise vbObjectError + 701, "Biz_PostStatus", "HTTP " & http.Status & ": " & http.responseText
+    End If
+    Biz_PostStatus = CStr(http.responseText)
+End Function
+
+Private Function Biz_ServiceKeyForUrl(ByVal apiKey As String) As String
+    If InStr(1, apiKey, "%", vbBinaryCompare) > 0 Then
+        Biz_ServiceKeyForUrl = apiKey
+    Else
+        Biz_ServiceKeyForUrl = Replace(Replace(Replace(apiKey, "+", "%2B"), "/", "%2F"), "=", "%3D")
+    End If
+End Function
+
+Private Sub Biz_WriteStatusRow(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal statusCode As String, ByVal requestedNo As String, ByVal dataObject As String)
+    ws.Cells(rowIndex, outputCol).Value = statusCode
+    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
+    ws.Cells(rowIndex, outputCol + 2).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 2).Value = Biz_FormatNo(Biz_JsonString(dataObject, "b_no"))
+    ws.Cells(rowIndex, outputCol + 3).Value = Biz_JsonString(dataObject, "b_stt")
+    ws.Cells(rowIndex, outputCol + 4).Value = Biz_JsonString(dataObject, "b_stt_cd")
+    ws.Cells(rowIndex, outputCol + 5).Value = Biz_JsonString(dataObject, "tax_type")
+    ws.Cells(rowIndex, outputCol + 6).Value = Biz_JsonString(dataObject, "tax_type_cd")
+    ws.Cells(rowIndex, outputCol + 7).Value = Biz_JsonString(dataObject, "end_dt")
+    ws.Cells(rowIndex, outputCol + 8).Value = Biz_JsonString(dataObject, "utcc_yn")
+    ws.Cells(rowIndex, outputCol + 9).Value = Biz_JsonString(dataObject, "tax_type_change_dt")
+    ws.Cells(rowIndex, outputCol + 10).Value = Biz_JsonString(dataObject, "invoice_apply_dt")
+    ws.Cells(rowIndex, outputCol + 11).Value = Biz_JsonString(dataObject, "rbf_tax_type")
+    ws.Cells(rowIndex, outputCol + 12).Value = Biz_JsonString(dataObject, "rbf_tax_type_cd")
+End Sub
+
+Private Sub Biz_WriteStatusError(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal requestedNo As String, ByVal message As String)
+    ws.Cells(rowIndex, outputCol).Value = "ERROR"
+    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
+    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
+    ws.Cells(rowIndex, outputCol + 3).Value = message
+End Sub
+
+Private Function Biz_ExtractDataObjects(ByVal jsonText As String) As Collection
+    Dim result As New Collection
+    Dim dataPos As Long
+    Dim arrStart As Long
+    Dim i As Long
+    Dim depth As Long
+    Dim objStart As Long
+    Dim inString As Boolean
+    Dim ch As String
+    Dim prevCh As String
+
+    dataPos = InStr(1, jsonText, """data""", vbTextCompare)
+    If dataPos = 0 Then
+        Set Biz_ExtractDataObjects = result
+        Exit Function
+    End If
+
+    arrStart = InStr(dataPos, jsonText, "[")
+    If arrStart = 0 Then
+        Set Biz_ExtractDataObjects = result
+        Exit Function
+    End If
+
+    For i = arrStart + 1 To Len(jsonText)
+        ch = Mid$(jsonText, i, 1)
+        If ch = """" And prevCh <> "\" Then inString = Not inString
+        If Not inString Then
+            If ch = "{" Then
+                If depth = 0 Then objStart = i
+                depth = depth + 1
+            ElseIf ch = "}" Then
+                depth = depth - 1
+                If depth = 0 And objStart > 0 Then result.Add Mid$(jsonText, objStart, i - objStart + 1)
+            ElseIf ch = "]" And depth = 0 Then
+                Exit For
+            End If
+        End If
+        prevCh = ch
+    Next i
+
+    Set Biz_ExtractDataObjects = result
+End Function
+
+Private Function Biz_JsonString(ByVal jsonText As String, ByVal key As String) As String
+    Dim re As Object
+    Dim matches As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.IgnoreCase = False
+    re.Pattern = """" & key & """" & "\s*:\s*""(([^""\\]|\\.)*)"""
+    Set matches = re.Execute(jsonText)
+    If matches.Count > 0 Then Biz_JsonString = Biz_JsonUnescape(CStr(matches(0).SubMatches(0)))
+End Function
+
+Private Function Biz_JsonUnescape(ByVal valueIn As String) As String
+    Biz_JsonUnescape = Replace(Replace(Replace(Replace(valueIn, "\""", """"), "\\", "\"), "\/", "/"), "\n", vbLf)
+End Function
+
+' ============================================================
+' 함  수 : EnsureVersionSheet (내부 전용)
+' 설  명  : VERSION_SHEET 이름의 시트가 없으면 새로 만들고
+'           맨 앞에 배치한 뒤 반환한다. 이미 있으면 기존 시트를 반환한다.
+' 반환값  : 버전 정보 기록용 Worksheet 객체
+' ============================================================
+Private Function EnsureVersionSheet() As Worksheet
+    ' 오류 무시 후 시트 이름으로 참조 시도 (없으면 Nothing 상태 유지)
+    On Error Resume Next
+    Set EnsureVersionSheet = ThisWorkbook.Worksheets(VERSION_SHEET)
+    On Error GoTo 0
+
+    If EnsureVersionSheet Is Nothing Then
+        ' 시트가 없으면 첫 번째 시트 앞에 새로 삽입
+        Set EnsureVersionSheet = ThisWorkbook.Worksheets.Add(Before:=ThisWorkbook.Worksheets(1))
+        EnsureVersionSheet.Name = VERSION_SHEET
+    End If
+End Function
+
+' ============================================================
+' ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+'  이상치 탐지 및 대체 (OutlierDetector)
+'  · OutlierDetect_Setup : 설정 시트 생성/갱신
+'  · OutlierDetect_Run   : 이상치 탐지 및 결과 시트 출력
+' ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+' ============================================================
+
+Private Const OD_CFG_SHEET As String = "_이상치탐지_설정"
+Private Const OD_MIN_N     As Long   = 30
+
+Private Const OD_IQR15  As String = "IQR × 1.5"
+Private Const OD_IQR20  As String = "IQR × 2.0"
+Private Const OD_P95    As String = "상위 5% 제외"
+Private Const OD_P99    As String = "상위 1% 제외"
+
+Private Const OD_CAP    As String = "상한값 대체"
+Private Const OD_MEDIAN As String = "중앙값 대체"
+Private Const OD_MEAN   As String = "평균값 대체"
+Private Const OD_REVIEW As String = "직접 검토(복사만)"
+
+' 설정 시트 셀 주소
+Private Const OD_C_SRC  As String = "B3"
+Private Const OD_C_VAR  As String = "B4"
+Private Const OD_C_CRIT As String = "B5"
+Private Const OD_C_METH As String = "B6"
+Private Const OD_C_MEMO As String = "B8"
+
+' ============================================================
+' 프로시저 : OutlierDetect_Setup
+' 설    명  : 설정 시트를 생성하거나 갱신한다.
+'             소스 시트를 변경했을 때 다시 실행하면
+'             분석 변수 드롭다운이 최신 컬럼 목록으로 갱신된다.
+' ============================================================
+Public Sub OutlierDetect_Setup()
+    Dim cfg As Worksheet
+    Set cfg = OD_EnsureConfigSheet()
+
+    ' ── 소스 시트 목록 ──────────────────────────────────
+    Dim ws As Worksheet
+    Dim sheetList As String
+    For Each ws In ThisWorkbook.Worksheets
+        If Not OD_IsInternal(ws.Name) Then
+            If Len(sheetList) > 0 Then sheetList = sheetList & ","
+            sheetList = sheetList & ws.Name
+        End If
+    Next ws
+
+    If Len(sheetList) = 0 Then
+        MsgBox "분석 대상 시트가 없습니다.", vbExclamation, "이상치 탐지"
+        Exit Sub
+    End If
+
+    OD_SetListVal cfg.Range(OD_C_SRC), sheetList
+
+    ' 소스 시트 기본값 (비어있거나 이미 삭제된 경우)
+    Dim curSrc As String: curSrc = Trim$(cfg.Range(OD_C_SRC).Value)
+    If Len(curSrc) = 0 Or Not OD_SheetExists(curSrc) Then
+        If Not OD_IsInternal(ActiveSheet.Name) Then
+            cfg.Range(OD_C_SRC).Value = ActiveSheet.Name
+        Else
+            cfg.Range(OD_C_SRC).Value = Split(sheetList, ",")(0)
+        End If
+    End If
+
+    ' ── 고정 드롭다운 ────────────────────────────────────
+    OD_SetListVal cfg.Range(OD_C_CRIT), OD_IQR15 & "," & OD_IQR20 & "," & OD_P95 & "," & OD_P99
+    OD_SetListVal cfg.Range(OD_C_METH), OD_CAP & "," & OD_MEDIAN & "," & OD_MEAN
+
+    If Len(cfg.Range(OD_C_CRIT).Value) = 0 Then cfg.Range(OD_C_CRIT).Value = OD_IQR15
+    If Len(cfg.Range(OD_C_METH).Value) = 0 Then cfg.Range(OD_C_METH).Value = OD_CAP
+
+    ' ── 분석 변수 드롭다운 갱신 ──────────────────────────
+    OD_RefreshVarDropdown cfg
+
+    cfg.Activate
+    cfg.Range(OD_C_SRC).Select
+
+    MsgBox "설정 시트가 준비되었습니다." & vbCrLf & vbCrLf & _
+           "① B3~B6 항목을 설정하세요." & vbCrLf & _
+           "② 소스 시트를 변경한 경우 이 매크로를 다시 실행하세요." & vbCrLf & _
+           "③ 설정 완료 후 OutlierDetect_Run 을 실행하세요.", _
+           vbInformation, "이상치 탐지 설정"
+End Sub
+
+' ============================================================
+' 프로시저 : OutlierDetect_Run
+' 설    명  : 설정 시트 값을 읽어 이상치 탐지 및 대체를 수행하고
+'             결과를 새 시트에 출력한다.
+'             원본 시트는 수정하지 않는다.
+' ============================================================
+Public Sub OutlierDetect_Run()
+    ' ── 실행 입력값 수집 ─────────────────────────────────
+    Dim srcWs As Worksheet
+    Dim dataArea As Range
+    Dim analysisCol As Long
+    Dim varName As String
+    Dim criteria As String
+    Dim method As String
+    Dim memo As String
+    Dim srcName As String
+
+    If Not OD_CollectRunInputs(srcWs, dataArea, analysisCol, varName, criteria, method, memo) Then Exit Sub
+    srcName = srcWs.Name
+
+    ' ── 보이는 데이터 행 수집 ────────────────────────────
+    Dim firstData As Long: firstData = dataArea.Row + 1
+    Dim lastRow   As Long: lastRow   = dataArea.Row + dataArea.Rows.Count - 1
+    Dim rowCount  As Long: rowCount  = 0
+    Dim r As Long
+
+    For r = firstData To lastRow
+        If Not srcWs.Rows(r).Hidden Then rowCount = rowCount + 1
+    Next r
+
+    If rowCount = 0 Then
+        MsgBox "필터 적용 후 보이는 데이터 행이 없습니다.", vbExclamation, "이상치 탐지"
+        Exit Sub
+    End If
+
+    ' 실행 전 확인 대화상자
+    If MsgBox("분석 대상 행: " & rowCount & "개" & vbCrLf & _
+              "분석 변수: " & varName & vbCrLf & _
+              "이상치 기준: " & criteria & vbCrLf & _
+              "대체 방식: " & method & vbCrLf & vbCrLf & "계속하시겠습니까?", _
+              vbQuestion + vbYesNo, "이상치 탐지 확인") = vbNo Then Exit Sub
+
+    ' 행 인덱스 배열
+    Dim dataRows() As Long: ReDim dataRows(1 To rowCount)
+    Dim idx As Long: idx = 0
+    For r = firstData To lastRow
+        If Not srcWs.Rows(r).Hidden Then
+            idx = idx + 1
+            dataRows(idx) = r
+        End If
+    Next r
+
+    ' ── 수치 값 추출 ──────────────────────────────────────
+    Dim values()   As Double:  ReDim values(1 To rowCount)
+    Dim isNumRow() As Boolean: ReDim isNumRow(1 To rowCount)
+    Dim numCount   As Long: numCount = 0
+
+    For idx = 1 To rowCount
+        Dim cv As Variant: cv = srcWs.Cells(dataRows(idx), analysisCol).Value
+        If Not IsError(cv) And Not IsEmpty(cv) And IsNumeric(cv) Then
+            numCount = numCount + 1
+            values(numCount) = CDbl(cv)
+            isNumRow(idx) = True
+        End If
+    Next idx
+
+    If numCount = 0 Then
+        MsgBox "'" & varName & "' 컬럼에 유효한 숫자값이 없습니다.", _
+               vbExclamation, "이상치 탐지"
+        Exit Sub
+    End If
+
+    ReDim Preserve values(1 To numCount)
+
+    ' 사례수 부족 경고
+    If numCount < OD_MIN_N Then
+        If MsgBox("유효 사례수(" & numCount & ")가 " & OD_MIN_N & "개 미만입니다." & vbCrLf & _
+                  "통계량이 불안정할 수 있습니다. 계속하시겠습니까?", _
+                  vbWarning + vbYesNo, "사례수 경고") = vbNo Then Exit Sub
+    End If
+
+    ' ── 통계량 계산 ──────────────────────────────────────
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, numCount, sortedValues
+
+    Dim q1     As Double: q1     = OD_PercentileIncSorted(sortedValues, numCount, 0.25)
+    Dim q3     As Double: q3     = OD_PercentileIncSorted(sortedValues, numCount, 0.75)
+    Dim iqrVal As Double: iqrVal = q3 - q1
+    Dim medV   As Double: medV   = OD_PercentileIncSorted(sortedValues, numCount, 0.5)
+    Dim meanV  As Double: meanV  = OD_AverageValues(values, numCount)
+    Dim minV   As Double: minV   = sortedValues(1)
+    Dim maxV   As Double: maxV   = sortedValues(numCount)
+
+    Dim lo As Double, hi As Double
+    Select Case criteria
+        Case OD_IQR15: lo = q1 - 1.5 * iqrVal:                    hi = q3 + 1.5 * iqrVal
+        Case OD_IQR20: lo = q1 - 2.0 * iqrVal:                    hi = q3 + 2.0 * iqrVal
+        Case OD_P95:   lo = OD_PercentileIncSorted(sortedValues, numCount, 0.05): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.95)
+        Case OD_P99:   lo = OD_PercentileIncSorted(sortedValues, numCount, 0.01): hi = OD_PercentileIncSorted(sortedValues, numCount, 0.99)
+    End Select
+
+    ' 중앙값/평균값 대체 기준: 이상치 제외 후 계산
+    Dim replBase As Double
+    If method = OD_MEDIAN Or method = OD_MEAN Then
+        Dim trimVals() As Double: ReDim trimVals(1 To numCount)
+        Dim trimN As Long: trimN = 0
+        Dim vi As Long
+        For vi = 1 To numCount
+            If values(vi) >= lo And values(vi) <= hi Then
+                trimN = trimN + 1
+                trimVals(trimN) = values(vi)
+            End If
+        Next vi
+        If trimN > 0 Then
+            ReDim Preserve trimVals(1 To trimN)
+            If method = OD_MEDIAN Then replBase = OD_MedianValues(trimVals, trimN)
+            If method = OD_MEAN Then replBase = OD_AverageValues(trimVals, trimN)
+        Else
+            ' 이상치 제외 후 데이터가 없는 극단적 경우 전체 통계량 사용
+            If method = OD_MEDIAN Then replBase = medV Else replBase = meanV
+        End If
+    End If
+
+    ' ── 이상치 분류 및 대체값 결정 ───────────────────────
+    Dim outlierType() As Integer: ReDim outlierType(1 To rowCount)  ' 1=상한, -1=하한, 0=정상
+    Dim replVal()     As Double:  ReDim replVal(1 To rowCount)
+    Dim outlierCount  As Long: outlierCount = 0
+    Dim numIdx        As Long: numIdx = 0  ' values() 배열 인덱스
+
+    For idx = 1 To rowCount
+        If isNumRow(idx) Then
+            numIdx = numIdx + 1
+            Dim dv As Double: dv = values(numIdx)
+            If dv > hi Then
+                outlierType(idx) = 1
+                outlierCount = outlierCount + 1
+                If method = OD_CAP Then replVal(idx) = hi Else replVal(idx) = replBase
+            ElseIf dv < lo Then
+                outlierType(idx) = -1
+                outlierCount = outlierCount + 1
+                If method = OD_CAP Then replVal(idx) = lo Else replVal(idx) = replBase
+            Else
+                outlierType(idx) = 0
+                replVal(idx) = dv
+            End If
+        End If
+    Next idx
+
+    ' ── 결과 시트 이름 생성 ──────────────────────────────
+    Dim memoSuf As String
+    If Len(memo) > 0 Then memoSuf = "_" & OD_CleanName(memo)
+
+    Dim baseName As String
+    baseName = "이상치대체_" & OD_CleanName(varName) & memoSuf & "_" & Format(Now, "yyyymmdd_hhmm")
+
+    Dim finalName As String: finalName = Left$(baseName, 31)
+    Dim attempt   As Long:   attempt = 0
+    Do While OD_SheetExists(finalName)
+        attempt = attempt + 1
+        finalName = Left$(baseName, 28) & "_" & attempt
+    Loop
+
+    ' ── 결과 시트 생성 ────────────────────────────────────
+    Dim rWs As Worksheet
+    Set rWs = ThisWorkbook.Worksheets.Add(After:=srcWs)
+    rWs.Name = finalName
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+
+    Dim wr As Long: wr = 1
+
+    ' 섹션 1: 실행 조건 요약
+    OD_WriteHdr rWs, wr, "실행 조건 요약"
+    OD_WriteKV  rWs, wr, "실행 일시",    Format(Now, "yyyy-mm-dd hh:nn:ss")
+    OD_WriteKV  rWs, wr, "소스 시트",    srcName
+    OD_WriteKV  rWs, wr, "분석 변수",    varName
+    OD_WriteKV  rWs, wr, "이상치 기준",  criteria
+    OD_WriteKV  rWs, wr, "대체 방식",    method
+    OD_WriteKV  rWs, wr, "쿼터 메모",    memo
+    OD_WriteKV  rWs, wr, "분석 행 수",   rowCount
+    OD_WriteKV  rWs, wr, "유효 수치 수", numCount
+    OD_WriteKV  rWs, wr, "이상치 수",    outlierCount
+    wr = wr + 1
+
+    ' 섹션 2: 기본 통계량
+    OD_WriteHdr rWs, wr, "기본 통계량"
+
+    Dim sHdrs As Variant
+    sHdrs = Array("N", "최솟값", "최댓값", "평균", "중앙값", "Q1", "Q3", "IQR", "하한", "상한")
+    Dim sVals As Variant
+    sVals = Array(numCount, minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi)
+
+    Dim i As Long
+    For i = 0 To UBound(sHdrs)
+        With rWs.Cells(wr, i + 1)
+            .Value = sHdrs(i)
+            .Font.Bold = True
+            .Interior.Color = RGB(220, 230, 245)
+        End With
+        rWs.Cells(wr + 1, i + 1).Value = sVals(i)
+    Next i
+    wr = wr + 3
+
+    ' 섹션 3: 데이터 테이블
+    OD_WriteHdr rWs, wr, "원본 데이터 및 이상치 대체 결과"
+
+    Dim srcFC As Long: srcFC = dataArea.Column
+    Dim colN  As Long: colN  = dataArea.Columns.Count
+
+    ' 원본 헤더
+    For i = 0 To colN - 1
+        With rWs.Cells(wr, i + 1)
+            .Value = srcWs.Cells(dataArea.Row, srcFC + i).Value
+            .Font.Bold = True
+            .Interior.Color = RGB(220, 230, 245)
+        End With
+    Next i
+
+    ' 추가 컬럼 헤더
+    Dim cOrig As Long: cOrig = colN + 1
+    Dim cRepl As Long: cRepl = colN + 2
+    Dim cFlag As Long: cFlag = colN + 3
+    Dim cRsn  As Long: cRsn  = colN + 4
+    Dim cDiff As Long: cDiff = colN + 5
+
+    Dim addHdrs As Variant
+    addHdrs = Array(varName & "_원본", varName & "_대체값", "이상치여부", "대체방식", "원본-대체값")
+    For i = 0 To UBound(addHdrs)
+        With rWs.Cells(wr, cOrig + i)
+            .Value = addHdrs(i)
+            .Font.Bold = True
+            .Interior.Color = RGB(255, 235, 185)
+        End With
+    Next i
+    wr = wr + 1
+
+    ' 데이터 행 쓰기
+    For idx = 1 To rowCount
+        Dim srcR As Long: srcR = dataRows(idx)
+        For i = 0 To colN - 1
+            rWs.Cells(wr, i + 1).Value = srcWs.Cells(srcR, srcFC + i).Value
+        Next i
+
+        Dim origV As Variant: origV = srcWs.Cells(srcR, analysisCol).Value
+        rWs.Cells(wr, cOrig).Value = origV
+
+        If isNumRow(idx) Then
+            Dim rv As Double: rv = replVal(idx)
+            rWs.Cells(wr, cRepl).Value = rv
+            rWs.Cells(wr, cDiff).Value = CDbl(origV) - rv
+
+            If outlierType(idx) = 1 Then
+                rWs.Cells(wr, cFlag).Value = "상한초과"
+                rWs.Cells(wr, cRsn).Value  = criteria & " / " & method
+                rWs.Cells(wr, cRepl).Interior.Color = RGB(255, 200, 200)  ' 연빨강
+            ElseIf outlierType(idx) = -1 Then
+                rWs.Cells(wr, cFlag).Value = "하한미만"
+                rWs.Cells(wr, cRsn).Value  = criteria & " / " & method
+                rWs.Cells(wr, cRepl).Interior.Color = RGB(200, 220, 255)  ' 연파랑
+            Else
+                rWs.Cells(wr, cFlag).Value = "-"
+                rWs.Cells(wr, cRsn).Value  = "-"
+            End If
+        Else
+            rWs.Cells(wr, cFlag).Value = "비해당"
+            rWs.Cells(wr, cRsn).Value  = "-"
+        End If
+
+        wr = wr + 1
+    Next idx
+
+    rWs.UsedRange.Columns.AutoFit
+    rWs.Activate
+    Application.ScreenUpdating = True
+
+    MsgBox "완료: " & finalName & vbCrLf & _
+           "이상치 " & outlierCount & "개 / 유효값 " & numCount & "개", _
+           vbInformation, "이상치 탐지"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    rWs.Delete
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, "이상치 탐지"
+End Sub
+
+' ============================================================
+' 프로시저 : OutlierDetect_ApplyToSelection
+' 설    명  : 선택한 숫자 범위 바로 옆 열에 이상치 대체 결과를 만들고,
+'             원본 이상치에는 조건부 서식과 강조 색을 적용한다.
+' ============================================================
+Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As String = "", _
+                                          Optional ByVal methodOverride As String = "", _
+                                          Optional ByVal skipConfirm As Boolean = False)
+    On Error GoTo ErrHandler
+
+    Dim suppressPrompts As Boolean
+    suppressPrompts = skipConfirm _
+                      Or Len(Trim$(criteriaOverride)) > 0 _
+                      Or Len(Trim$(methodOverride)) > 0 _
+                      Or Not Application.Visible
+
+    Dim dataArea As Range
+    Dim targetRange As Range
+    Dim analysisRelativeCol As Long
+
+    Dim defaultAddress As String
+    If TypeName(Selection) = "Range" Then
+        defaultAddress = Selection.Areas(1).Address
+    End If
+
+    If suppressPrompts Then
+        If TypeName(Selection) <> "Range" Then
+            Err.Raise vbObjectError + 8101, "OutlierDetect_ApplyToSelection", "분석할 숫자 범위를 선택하세요."
+        End If
+        Set dataArea = Selection.Areas(1)
+    Else
+        If Not Toolkit_GetRangeFromUserForm("이상치 확인 - 범위 선택", _
+            "엑셀 시트에서 이상치 확인 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+            dataArea) Then Exit Sub
+    End If
+
+    If dataArea Is Nothing Then Exit Sub
+    If dataArea.Areas.Count > 1 Then
+        MsgBox "이상치 대체는 한 번에 하나의 연속된 범위만 처리합니다." & vbCrLf & _
+               "분석할 숫자 열 하나 또는 표 범위 하나를 다시 선택하세요.", _
+               vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    Set dataArea = OD_TrimToUsedRange(dataArea)
+    If dataArea Is Nothing Then
+        MsgBox "선택한 범위에서 사용 중인 데이터를 찾지 못했습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    If dataArea.Columns.Count > 1 Then
+        If Not OD_SelectNumericColumnFromRange(dataArea, suppressPrompts, analysisRelativeCol) Then Exit Sub
+        Set targetRange = dataArea.Columns(analysisRelativeCol)
+    Else
+        Set targetRange = dataArea
+    End If
+
+    Dim ws As Worksheet: Set ws = targetRange.Worksheet
+    Dim firstRow As Long: firstRow = targetRange.Row
+    Dim lastRow As Long: lastRow = targetRange.Row + targetRange.Rows.Count - 1
+    Dim headerRow As Long: headerRow = 0
+    Dim firstDataRow As Long: firstDataRow = firstRow
+    Dim varName As String
+
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, targetRange.Column).Value))) = 0 Or Not IsNumeric(ws.Cells(firstRow, targetRange.Column).Value) Then
+        headerRow = firstRow
+        firstDataRow = firstRow + 1
+        varName = Trim$(CStr(ws.Cells(firstRow, targetRange.Column).Value))
+    End If
+    If Len(varName) = 0 Then varName = ws.Cells(firstDataRow, targetRange.Column).Address(False, False)
+
+    If firstDataRow > lastRow Then
+        MsgBox "분석할 숫자 데이터가 없습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    Dim rowCount As Long: rowCount = lastRow - firstDataRow + 1
+    Dim values() As Double: ReDim values(1 To rowCount)
+    Dim rowMap() As Long: ReDim rowMap(1 To rowCount)
+    Dim numCount As Long: numCount = 0
+    Dim blankCount As Long: blankCount = 0
+    Dim nonNumericCount As Long: nonNumericCount = 0
+    Dim r As Long
+
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim cellValue As Variant
+            cellValue = ws.Cells(r, targetRange.Column).Value
+            If Not IsError(cellValue) And Not IsEmpty(cellValue) And IsNumeric(cellValue) Then
+                numCount = numCount + 1
+                values(numCount) = CDbl(cellValue)
+                rowMap(numCount) = r
+            ElseIf IsError(cellValue) Or IsEmpty(cellValue) Or Len(Trim$(CStr(cellValue))) = 0 Then
+                blankCount = blankCount + 1
+            Else
+                nonNumericCount = nonNumericCount + 1
+            End If
+        End If
+    Next r
+
+    If numCount = 0 Then
+        MsgBox "선택 범위에서 유효한 숫자값을 찾지 못했습니다.", vbExclamation, "이상치 대체"
+        Exit Sub
+    End If
+
+    ReDim Preserve values(1 To numCount)
+    ReDim Preserve rowMap(1 To numCount)
+
+    If Not suppressPrompts Then
+        If MsgBox("범위 확인" & vbCrLf & vbCrLf & _
+                  "선택 범위: " & targetRange.Address(False, False) & vbCrLf & _
+                  "헤더/변수명: " & varName & vbCrLf & _
+                  "데이터 행 범위: " & firstDataRow & "행 ~ " & lastRow & "행" & vbCrLf & _
+                  "숫자값: " & numCount & "개" & vbCrLf & _
+                  "빈칸/오류: " & blankCount & "개" & vbCrLf & _
+                  "숫자가 아닌 값: " & nonNumericCount & "개" & vbCrLf & vbCrLf & _
+                  "이 범위로 기초통계량표와 Q1/Q3 검토열을 생성할까요?", _
+                  vbQuestion + vbYesNo, "이상치 확인 - 범위 검증") = vbNo Then Exit Sub
+    End If
+
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, numCount, sortedValues
+
+    Dim q1 As Double: q1 = OD_PercentileIncSorted(sortedValues, numCount, 0.25)
+    Dim q3 As Double: q3 = OD_PercentileIncSorted(sortedValues, numCount, 0.75)
+    Dim iqrVal As Double: iqrVal = q3 - q1
+    Dim medV As Double: medV = OD_PercentileIncSorted(sortedValues, numCount, 0.5)
+    Dim meanV As Double: meanV = OD_AverageValues(values, numCount)
+    Dim minV As Double: minV = sortedValues(1)
+    Dim maxV As Double: maxV = sortedValues(numCount)
+    Dim lo As Double: lo = q1 - 1.5 * iqrVal
+    Dim hi As Double: hi = q3 + 1.5 * iqrVal
+    Dim reviewCount As Long: reviewCount = 0
+    Dim thresholdCol As Long: thresholdCol = targetRange.Column + 1
+    Dim copyCol As Long: copyCol = targetRange.Column + 2
+    Dim statsCol As Long: statsCol = targetRange.Column + 8
+
+    Application.ScreenUpdating = False
+    OD_WriteQuartileReviewStats ws, headerRow, firstDataRow, statsCol, _
+                                varName, targetRange.Address(False, False), numCount, _
+                                blankCount, nonNumericCount, minV, maxV, meanV, medV, _
+                                q1, q3, iqrVal, lo, hi
+
+    ws.Columns(thresholdCol).Resize(, 2).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, thresholdCol).Value = varName & "_Q1_Q3기준"
+        ws.Cells(headerRow, copyCol).Value = varName & "_검토복사"
+        ws.Range(ws.Cells(headerRow, thresholdCol), ws.Cells(headerRow, copyCol)).Font.Bold = True
+        ws.Range(ws.Cells(headerRow, thresholdCol), ws.Cells(headerRow, copyCol)).Interior.Color = RGB(255, 235, 185)
+    End If
+
+    Dim sourceDataRange As Range
+    Dim thresholdDataRange As Range
+    Dim copiedDataRange As Range
+    Set sourceDataRange = ws.Range(ws.Cells(firstDataRow, targetRange.Column), ws.Cells(lastRow, targetRange.Column))
+    Set thresholdDataRange = ws.Range(ws.Cells(firstDataRow, thresholdCol), ws.Cells(lastRow, thresholdCol))
+    Set copiedDataRange = ws.Range(ws.Cells(firstDataRow, copyCol), ws.Cells(lastRow, copyCol))
+    copiedDataRange.NumberFormat = sourceDataRange.NumberFormat
+    copiedDataRange.Value = sourceDataRange.Value
+
+    Dim i As Long
+    For i = 1 To numCount
+        Dim v As Double: v = values(i)
+        Dim outR As Long: outR = rowMap(i)
+        If v < q1 Then
+            reviewCount = reviewCount + 1
+            ws.Cells(outR, thresholdCol).Value = q1
+        ElseIf v > q3 Then
+            reviewCount = reviewCount + 1
+            ws.Cells(outR, thresholdCol).Value = q3
+        End If
+    Next i
+
+    thresholdDataRange.NumberFormat = sourceDataRange.NumberFormat
+    OD_ApplyQuartileReviewFormatting copiedDataRange, thresholdDataRange
+
+    Dim displayTopRow As Long
+    If headerRow > 0 Then displayTopRow = headerRow Else displayTopRow = firstDataRow
+    ws.Range(ws.Cells(displayTopRow, thresholdCol), ws.Cells(lastRow, copyCol)).Columns.AutoFit
+    ws.Range(ws.Cells(displayTopRow, statsCol + 2), ws.Cells(displayTopRow + 24, statsCol + 3)).Columns.AutoFit
+    Application.ScreenUpdating = True
+
+    If Not suppressPrompts Then
+        MsgBox "Q1/Q3 검토열을 만들었습니다." & vbCrLf & _
+               "유효값: " & numCount & "개" & vbCrLf & _
+               "Q1 미만 또는 Q3 초과 표시: " & reviewCount & "개" & vbCrLf & _
+               "기준값 열: " & ws.Cells(1, thresholdCol).EntireColumn.Address(False, False) & vbCrLf & _
+               "검토복사 열: " & ws.Cells(1, copyCol).EntireColumn.Address(False, False), _
+               vbInformation, "이상치 확인 완료"
+    End If
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    If suppressPrompts Then
+        Err.Raise Err.Number, "OutlierDetect_ApplyToSelection", Err.Description
+    Else
+        MsgBox "이상치 대체 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "이상치 대체"
+    End If
+End Sub
+
+' ──────────────────────────────────────────────────────────────
+' OutlierDetector 내부 헬퍼
+' ──────────────────────────────────────────────────────────────
+
+Private Function OD_TrimToUsedRange(ByVal selectedRange As Range) As Range
+    Dim usedPart As Range
+    On Error Resume Next
+    Set usedPart = Application.Intersect(selectedRange, selectedRange.Worksheet.UsedRange)
+    On Error GoTo 0
+
+    If usedPart Is Nothing Then
+        Set OD_TrimToUsedRange = selectedRange
+    Else
+        Set OD_TrimToUsedRange = usedPart
+    End If
+End Function
+
+Private Sub OD_CopyAndSortValues(ByRef sourceValues() As Double, _
+                                 ByVal countN As Long, _
+                                 ByRef sortedValues() As Double)
+    If countN <= 0 Then Err.Raise vbObjectError + 8201, "OD_CopyAndSortValues", "정렬할 숫자값이 없습니다."
+
+    ReDim sortedValues(1 To countN)
+
+    Dim i As Long
+    For i = 1 To countN
+        sortedValues(i) = sourceValues(i)
+    Next i
+
+    If countN > 1 Then OD_QuickSortDoubles sortedValues, 1, countN
+End Sub
+
+Private Sub OD_QuickSortDoubles(ByRef values() As Double, ByVal firstIdx As Long, ByVal lastIdx As Long)
+    Dim lowIdx As Long: lowIdx = firstIdx
+    Dim highIdx As Long: highIdx = lastIdx
+    Dim pivot As Double: pivot = values((firstIdx + lastIdx) \ 2)
+    Dim tempValue As Double
+
+    Do While lowIdx <= highIdx
+        Do While values(lowIdx) < pivot
+            lowIdx = lowIdx + 1
+        Loop
+        Do While values(highIdx) > pivot
+            highIdx = highIdx - 1
+        Loop
+
+        If lowIdx <= highIdx Then
+            tempValue = values(lowIdx)
+            values(lowIdx) = values(highIdx)
+            values(highIdx) = tempValue
+            lowIdx = lowIdx + 1
+            highIdx = highIdx - 1
+        End If
+    Loop
+
+    If firstIdx < highIdx Then OD_QuickSortDoubles values, firstIdx, highIdx
+    If lowIdx < lastIdx Then OD_QuickSortDoubles values, lowIdx, lastIdx
+End Sub
+
+Private Function OD_PercentileIncSorted(ByRef sortedValues() As Double, _
+                                        ByVal countN As Long, _
+                                        ByVal percentile As Double) As Double
+    If countN <= 0 Then Err.Raise vbObjectError + 8202, "OD_PercentileIncSorted", "백분위수를 계산할 숫자값이 없습니다."
+    If percentile < 0 Or percentile > 1 Then Err.Raise vbObjectError + 8203, "OD_PercentileIncSorted", "백분위수는 0과 1 사이여야 합니다."
+    If countN = 1 Then
+        OD_PercentileIncSorted = sortedValues(1)
+        Exit Function
+    End If
+
+    Dim position As Double
+    position = 1 + (countN - 1) * percentile
+
+    Dim lowerIdx As Long
+    lowerIdx = Fix(position)
+
+    Dim upperIdx As Long
+    upperIdx = lowerIdx + 1
+    If upperIdx > countN Then upperIdx = countN
+
+    Dim fraction As Double
+    fraction = position - lowerIdx
+
+    OD_PercentileIncSorted = sortedValues(lowerIdx) + fraction * (sortedValues(upperIdx) - sortedValues(lowerIdx))
+End Function
+
+Private Function OD_MedianValues(ByRef values() As Double, ByVal countN As Long) As Double
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, countN, sortedValues
+    OD_MedianValues = OD_PercentileIncSorted(sortedValues, countN, 0.5)
+End Function
+
+Private Function OD_AverageValues(ByRef values() As Double, ByVal countN As Long) As Double
+    If countN <= 0 Then Err.Raise vbObjectError + 8204, "OD_AverageValues", "평균을 계산할 숫자값이 없습니다."
+
+    Dim total As Double
+    Dim i As Long
+    For i = 1 To countN
+        total = total + values(i)
+    Next i
+
+    OD_AverageValues = total / countN
+End Function
+
+Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
+    Dim criteriaInput As String
+    criteriaInput = InputBox( _
+        "이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_IQR15 & " : 일반적인 윈저라이징 기준" & vbCrLf & _
+        "2. " & OD_IQR20 & " : 조금 더 완화된 IQR 기준" & vbCrLf & _
+        "3. " & OD_P95 & " : 하위 5% / 상위 5% 기준" & vbCrLf & _
+        "4. " & OD_P99 & " : 하위 1% / 상위 1% 기준", _
+        "이상치 대체 - 기준 선택", "1")
+    If Len(Trim$(criteriaInput)) = 0 Then Exit Function
+
+    If Not OD_MapEasyCriteria(criteriaInput, criteria) Then
+        MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    OD_SelectEasyCriteria = True
+End Function
+
+Private Function OD_SelectNumericColumnFromRange(ByVal dataArea As Range, _
+                                                 ByVal skipConfirm As Boolean, _
+                                                 ByRef relativeCol As Long) As Boolean
+    Dim numericCols As Collection
+    Set numericCols = New Collection
+
+    Dim c As Long
+    For c = 1 To dataArea.Columns.Count
+        Dim firstDataRow As Long
+        Dim headerText As String
+        Dim n As Long
+        Dim outN As Long
+
+        firstDataRow = OD_FirstDataRowForColumn(dataArea, c, headerText)
+        n = OD_CountNumericValues(dataArea.Worksheet, dataArea.Column + c - 1, firstDataRow, dataArea.Row + dataArea.Rows.Count - 1)
+        If n > 0 Then
+            outN = OD_CountIqrOutliers(dataArea.Worksheet, dataArea.Column + c - 1, firstDataRow, dataArea.Row + dataArea.Rows.Count - 1)
+            If Len(headerText) = 0 Then headerText = "열" & c
+            numericCols.Add Array(c, headerText, n, outN)
+        End If
+    Next c
+
+    If numericCols.Count = 0 Then
+        MsgBox "선택 범위에서 숫자형 열을 찾지 못했습니다." & vbCrLf & _
+               "숫자가 텍스트로 저장된 경우 먼저 [숫자 변환]을 실행하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    If numericCols.Count = 1 Then
+        Dim onlyItem As Variant
+        onlyItem = numericCols(1)
+        relativeCol = CLng(onlyItem(0))
+        OD_SelectNumericColumnFromRange = True
+        Exit Function
+    End If
+
+    If skipConfirm Then
+        Dim bestIdx As Long: bestIdx = 1
+        Dim bestItem As Variant
+        Dim curItem As Variant
+        For c = 2 To numericCols.Count
+            curItem = numericCols(c)
+            bestItem = numericCols(bestIdx)
+            If CLng(curItem(3)) > CLng(bestItem(3)) Then bestIdx = c
+        Next c
+        bestItem = numericCols(bestIdx)
+        relativeCol = CLng(bestItem(0))
+        OD_SelectNumericColumnFromRange = True
+        Exit Function
+    End If
+
+    Dim prompt As String
+    prompt = "선택 범위에서 숫자형 열을 찾았습니다." & vbCrLf & _
+             "이상치를 탐지할 열 번호를 선택하세요." & vbCrLf & vbCrLf
+
+    For c = 1 To numericCols.Count
+        Dim listItem As Variant
+        listItem = numericCols(c)
+        prompt = prompt & c & ". " & CStr(listItem(1)) & _
+                 " (유효값 " & CLng(listItem(2)) & _
+                 "개, IQR 이상치 " & CLng(listItem(3)) & "개)" & vbCrLf
+    Next c
+
+    Dim userInput As String
+    userInput = InputBox(prompt, "이상치 대체 - 숫자 열 선택", "1")
+    If Len(Trim$(userInput)) = 0 Then Exit Function
+    If Not IsNumeric(userInput) Then
+        MsgBox "목록의 번호를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    Dim selectedIdx As Long
+    selectedIdx = CLng(userInput)
+    If selectedIdx < 1 Or selectedIdx > numericCols.Count Then
+        MsgBox "선택 번호가 범위를 벗어났습니다.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    Dim selectedItem As Variant
+    selectedItem = numericCols(selectedIdx)
+    relativeCol = CLng(selectedItem(0))
+    OD_SelectNumericColumnFromRange = True
+End Function
+
+Private Function OD_FirstDataRowForColumn(ByVal dataArea As Range, _
+                                          ByVal relativeCol As Long, _
+                                          ByRef headerText As String) As Long
+    Dim firstCell As Range
+    Set firstCell = dataArea.Cells(1, relativeCol)
+    headerText = Trim$(CStr(firstCell.Value))
+
+    If Len(headerText) = 0 Or Not IsNumeric(firstCell.Value) Then
+        OD_FirstDataRowForColumn = dataArea.Row + 1
+    Else
+        headerText = ""
+        OD_FirstDataRowForColumn = dataArea.Row
+    End If
+End Function
+
+Private Function OD_CountNumericValues(ByVal ws As Worksheet, _
+                                       ByVal absoluteCol As Long, _
+                                       ByVal firstDataRow As Long, _
+                                       ByVal lastRow As Long) As Long
+    Dim r As Long
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim v As Variant
+            v = ws.Cells(r, absoluteCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                OD_CountNumericValues = OD_CountNumericValues + 1
+            End If
+        End If
+    Next r
+End Function
+
+Private Function OD_CountIqrOutliers(ByVal ws As Worksheet, _
+                                     ByVal absoluteCol As Long, _
+                                     ByVal firstDataRow As Long, _
+                                     ByVal lastRow As Long) As Long
+    Dim countN As Long
+    countN = OD_CountNumericValues(ws, absoluteCol, firstDataRow, lastRow)
+    If countN = 0 Then Exit Function
+
+    Dim values() As Double
+    ReDim values(1 To countN)
+
+    Dim r As Long
+    Dim idx As Long
+    For r = firstDataRow To lastRow
+        If Not ws.Rows(r).Hidden Then
+            Dim v As Variant
+            v = ws.Cells(r, absoluteCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                idx = idx + 1
+                values(idx) = CDbl(v)
+            End If
+        End If
+    Next r
+
+    Dim sortedValues() As Double
+    OD_CopyAndSortValues values, countN, sortedValues
+
+    Dim q1 As Double: q1 = OD_PercentileIncSorted(sortedValues, countN, 0.25)
+    Dim q3 As Double: q3 = OD_PercentileIncSorted(sortedValues, countN, 0.75)
+    Dim lo As Double: lo = q1 - 1.5 * (q3 - q1)
+    Dim hi As Double: hi = q3 + 1.5 * (q3 - q1)
+
+    For idx = 1 To countN
+        If values(idx) < lo Or values(idx) > hi Then OD_CountIqrOutliers = OD_CountIqrOutliers + 1
+    Next idx
+End Function
+
+Private Function OD_SelectEasyMethod(ByRef method As String) As Boolean
+    Dim methodInput As String
+    methodInput = InputBox( _
+        "이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_CAP & " : 하한보다 작으면 하한, 상한보다 크면 상한으로 대체" & vbCrLf & _
+        "2. " & OD_MEDIAN & " : 정상 범위 데이터의 중앙값으로 대체" & vbCrLf & _
+        "3. " & OD_MEAN & " : 정상 범위 데이터의 평균으로 대체" & vbCrLf & _
+        "4. " & OD_REVIEW & " : 옆 열에 원본을 복사하고 이상치만 표시", _
+        "이상치 대체 - 방식 선택", "1")
+    If Len(Trim$(methodInput)) = 0 Then Exit Function
+
+    If Not OD_MapEasyMethod(methodInput, method) Then
+        MsgBox "대체 방식은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 대체"
+        Exit Function
+    End If
+
+    OD_SelectEasyMethod = True
+End Function
+
+Private Function OD_MapEasyCriteria(ByVal userInput As String, ByRef criteria As String) As Boolean
+    Select Case Trim$(userInput)
+        Case "1", OD_IQR15
+            criteria = OD_IQR15
+        Case "2", OD_IQR20
+            criteria = OD_IQR20
+        Case "3", OD_P95
+            criteria = OD_P95
+        Case "4", OD_P99
+            criteria = OD_P99
+        Case Else
+            Exit Function
+    End Select
+    OD_MapEasyCriteria = True
+End Function
+
+Private Function OD_MapEasyMethod(ByVal userInput As String, ByRef method As String) As Boolean
+    Select Case Trim$(userInput)
+        Case "1", OD_CAP
+            method = OD_CAP
+        Case "2", OD_MEDIAN
+            method = OD_MEDIAN
+        Case "3", OD_MEAN
+            method = OD_MEAN
+        Case "4", OD_REVIEW
+            method = OD_REVIEW
+        Case Else
+            Exit Function
+    End Select
+    OD_MapEasyMethod = True
+End Function
+
+Private Function OD_ReplacementBase(ByRef values() As Double, _
+                                    ByVal numCount As Long, _
+                                    ByVal lo As Double, _
+                                    ByVal hi As Double, _
+                                    ByVal method As String, _
+                                    ByVal medV As Double, _
+                                    ByVal meanV As Double) As Double
+    Dim trimVals() As Double
+    Dim trimN As Long
+    Dim i As Long
+
+    ReDim trimVals(1 To numCount)
+    For i = 1 To numCount
+        If values(i) >= lo And values(i) <= hi Then
+            trimN = trimN + 1
+            trimVals(trimN) = values(i)
+        End If
+    Next i
+
+    If trimN = 0 Then
+        If method = OD_MEDIAN Then OD_ReplacementBase = medV Else OD_ReplacementBase = meanV
+        Exit Function
+    End If
+
+    ReDim Preserve trimVals(1 To trimN)
+    If method = OD_MEDIAN Then
+        OD_ReplacementBase = OD_MedianValues(trimVals, trimN)
+    Else
+        OD_ReplacementBase = OD_AverageValues(trimVals, trimN)
+    End If
+End Function
+
+Private Sub OD_ApplyOutlierConditionalFormatting(ByVal target As Range, ByVal lo As Double, ByVal hi As Double)
+    On Error Resume Next
+    target.FormatConditions.Delete
+    On Error GoTo 0
+
+    Dim lowerRule As FormatCondition
+    Dim upperRule As FormatCondition
+    Set lowerRule = target.FormatConditions.Add(Type:=xlCellValue, Operator:=xlLess, Formula1:=CStr(lo))
+    lowerRule.Interior.Color = RGB(210, 225, 255)
+    lowerRule.Font.Color = RGB(0, 60, 150)
+
+    Set upperRule = target.FormatConditions.Add(Type:=xlCellValue, Operator:=xlGreater, Formula1:=CStr(hi))
+    upperRule.Interior.Color = RGB(255, 210, 210)
+    upperRule.Font.Color = RGB(160, 0, 0)
+End Sub
+
+Private Sub OD_ApplyQuartileReviewFormatting(ByVal copiedDataRange As Range, ByVal thresholdDataRange As Range)
+    On Error Resume Next
+    copiedDataRange.FormatConditions.Delete
+    thresholdDataRange.FormatConditions.Delete
+    On Error GoTo 0
+
+    Dim formulaText As String
+    formulaText = "=" & thresholdDataRange.Cells(1, 1).Address(RowAbsolute:=False, ColumnAbsolute:=True) & "<>" & Chr$(34) & Chr$(34)
+
+    Dim copyRule As FormatCondition
+    Set copyRule = copiedDataRange.FormatConditions.Add(Type:=xlExpression, Formula1:=formulaText)
+    copyRule.Interior.Color = RGB(255, 245, 190)
+    copyRule.Font.Bold = True
+
+    Dim thresholdRule As FormatCondition
+    Set thresholdRule = thresholdDataRange.FormatConditions.Add(Type:=xlCellValue, Operator:=xlNotEqual, Formula1:="=" & Chr$(34) & Chr$(34))
+    thresholdRule.Interior.Color = RGB(255, 235, 185)
+    thresholdRule.Font.Color = RGB(160, 90, 0)
+    thresholdRule.Font.Bold = True
+End Sub
+
+Private Sub OD_WriteQuartileReviewStats(ws As Worksheet, _
+                                        ByVal headerRow As Long, _
+                                        ByVal firstDataRow As Long, _
+                                        ByVal startCol As Long, _
+                                        ByVal varName As String, _
+                                        ByVal selectedAddress As String, _
+                                        ByVal numCount As Long, _
+                                        ByVal blankCount As Long, _
+                                        ByVal nonNumericCount As Long, _
+                                        ByVal minV As Double, _
+                                        ByVal maxV As Double, _
+                                        ByVal meanV As Double, _
+                                        ByVal medV As Double, _
+                                        ByVal q1 As Double, _
+                                        ByVal q3 As Double, _
+                                        ByVal iqrVal As Double, _
+                                        ByVal lo As Double, _
+                                        ByVal hi As Double)
+    Dim topRow As Long
+    If headerRow > 0 Then topRow = headerRow Else topRow = firstDataRow
+    If topRow < 1 Then topRow = 1
+
+    Dim leftCol As Long: leftCol = startCol
+    Dim valueCol As Long: valueCol = startCol + 1
+
+    ws.Range(ws.Cells(topRow, leftCol), ws.Cells(topRow + 18, valueCol)).Clear
+    ws.Cells(topRow, leftCol).Value = "기초통계량"
+    ws.Cells(topRow, leftCol).Font.Bold = True
+    ws.Cells(topRow, leftCol).Font.Size = 12
+    ws.Cells(topRow, leftCol).Interior.Color = RGB(40, 75, 115)
+    ws.Cells(topRow, leftCol).Font.Color = RGB(255, 255, 255)
+    ws.Cells(topRow, valueCol).Interior.Color = RGB(40, 75, 115)
+
+    Dim rowNo As Long: rowNo = topRow + 1
+    OD_WriteStatRow ws, rowNo, leftCol, "변수명", varName
+    OD_WriteStatRow ws, rowNo, leftCol, "선택 범위", selectedAddress
+    OD_WriteStatRow ws, rowNo, leftCol, "숫자값", numCount
+    OD_WriteStatRow ws, rowNo, leftCol, "빈칸/오류", blankCount
+    OD_WriteStatRow ws, rowNo, leftCol, "숫자가 아닌 값", nonNumericCount
+    OD_WriteStatRow ws, rowNo, leftCol, "최솟값", minV
+    OD_WriteStatRow ws, rowNo, leftCol, "Q1", q1
+    OD_WriteStatRow ws, rowNo, leftCol, "중앙값", medV
+    OD_WriteStatRow ws, rowNo, leftCol, "평균", meanV
+    OD_WriteStatRow ws, rowNo, leftCol, "Q3", q3
+    OD_WriteStatRow ws, rowNo, leftCol, "최댓값", maxV
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR", iqrVal
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR 하한", lo
+    OD_WriteStatRow ws, rowNo, leftCol, "IQR 상한", hi
+
+    With ws.Range(ws.Cells(topRow + 1, leftCol), ws.Cells(rowNo - 1, valueCol))
+        .Borders.LineStyle = xlContinuous
+        .Borders.Color = RGB(215, 220, 230)
+    End With
+    ws.Range(ws.Cells(topRow + 1, leftCol), ws.Cells(rowNo - 1, leftCol)).Interior.Color = RGB(235, 240, 248)
+    ws.Range(ws.Cells(topRow + 1, valueCol), ws.Cells(rowNo - 1, valueCol)).NumberFormat = "0.####"
+End Sub
+
+Private Sub OD_WriteStatRow(ws As Worksheet, ByRef rowNo As Long, ByVal startCol As Long, ByVal labelText As String, ByVal valueData As Variant)
+    ws.Cells(rowNo, startCol).Value = labelText
+    ws.Cells(rowNo, startCol + 1).Value = valueData
+    rowNo = rowNo + 1
+End Sub
+
+Private Sub OD_WriteEasyStats(ws As Worksheet, _
+                              ByVal headerRow As Long, _
+                              ByVal firstDataRow As Long, _
+                              ByVal startCol As Long, _
+                              ByVal varName As String, _
+                              ByVal criteria As String, _
+                              ByVal method As String, _
+                              ByVal numCount As Long, _
+                              ByVal outlierCount As Long, _
+                              ByVal minV As Double, _
+                              ByVal maxV As Double, _
+                              ByVal meanV As Double, _
+                              ByVal medV As Double, _
+                              ByVal q1 As Double, _
+                              ByVal q3 As Double, _
+                              ByVal iqrVal As Double, _
+                              ByVal lo As Double, _
+                              ByVal hi As Double, _
+                              ByVal replBase As Double)
+    Dim topRow As Long
+    If headerRow > 0 Then topRow = headerRow Else topRow = firstDataRow
+
+    Dim labels As Variant
+    Dim vals As Variant
+    labels = Array("변수", "기준", "대체 방식", "유효값 수", "이상치 수", "최솟값", "최댓값", "평균", "중앙값", "Q1", "Q3", "IQR", "하한", "상한", "대체 기준값")
+    vals = Array(varName, criteria, method, numCount, outlierCount, minV, maxV, meanV, medV, q1, q3, iqrVal, lo, hi, IIf(method = OD_MEDIAN Or method = OD_MEAN, replBase, "-"))
+
+    With ws.Cells(topRow, startCol)
+        .Value = "이상치 대체 통계"
+        .Font.Bold = True
+        .Font.Size = 12
+        .Interior.Color = RGB(220, 230, 245)
+    End With
+    ws.Cells(topRow, startCol + 1).Value = Format(Now, "yyyy-mm-dd hh:nn:ss")
+
+    Dim i As Long
+    For i = LBound(labels) To UBound(labels)
+        ws.Cells(topRow + i + 1, startCol).Value = labels(i)
+        ws.Cells(topRow + i + 1, startCol).Font.Bold = True
+        ws.Cells(topRow + i + 1, startCol + 1).Value = vals(i)
+    Next i
+
+    ws.Cells(topRow + UBound(labels) + 3, startCol).Value = "색상 안내"
+    ws.Cells(topRow + UBound(labels) + 3, startCol).Font.Bold = True
+    ws.Cells(topRow + UBound(labels) + 4, startCol).Value = "빨강"
+    ws.Cells(topRow + UBound(labels) + 4, startCol + 1).Value = "상한 초과"
+    ws.Cells(topRow + UBound(labels) + 4, startCol).Interior.Color = RGB(255, 210, 210)
+    ws.Cells(topRow + UBound(labels) + 5, startCol).Value = "파랑"
+    ws.Cells(topRow + UBound(labels) + 5, startCol + 1).Value = "하한 미만"
+    ws.Cells(topRow + UBound(labels) + 5, startCol).Interior.Color = RGB(210, 225, 255)
+End Sub
+
+
+Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
+                                     ByRef dataArea As Range, _
+                                     ByRef analysisCol As Long, _
+                                     ByRef varName As String, _
+                                     ByRef criteria As String, _
+                                     ByRef method As String, _
+                                     ByRef memo As String) As Boolean
+    Dim selectedRange As Range
+    If Not Toolkit_GetRangeFromUserForm("이상치 탐지 - 데이터 범위", _
+        "헤더 행을 포함한 분석 범위를 선택하세요. 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
+        selectedRange) Then Exit Function
+    If selectedRange Is Nothing Then Exit Function
+
+    If selectedRange.Rows.Count < 2 Then
+        MsgBox "헤더 1행과 데이터 1행 이상을 포함해서 선택하세요.", vbExclamation, "이상치 탐지"
+        Exit Function
+    End If
+
+    Set dataArea = selectedRange
+    Set srcWs = dataArea.Worksheet
+
+    Dim headerList As String
+    Dim defaultIndex As Long: defaultIndex = 0
+    Dim c As Long
+    For c = 1 To dataArea.Columns.Count
+        Dim headerText As String
+        headerText = Trim$(CStr(dataArea.Cells(1, c).Value))
+        If Len(headerText) = 0 Then headerText = "열" & c
+        headerList = headerList & c & ". " & headerText & vbCrLf
+        If defaultIndex = 0 And OD_ColumnHasNumericValue(dataArea, c) Then defaultIndex = c
+    Next c
+    If defaultIndex = 0 Then defaultIndex = 1
+
+    Dim varInput As String
+    varInput = InputBox( _
+        "② 이상치를 탐지할 분석 변수를 선택하세요." & vbCrLf & vbCrLf & _
+        "아래 목록에서 번호 또는 변수명을 입력하세요." & vbCrLf & vbCrLf & headerList, _
+        "이상치 탐지 - 분석 변수", CStr(defaultIndex))
+    If Len(Trim$(varInput)) = 0 Then Exit Function
+
+    Dim varIndex As Long
+    If IsNumeric(varInput) Then
+        varIndex = CLng(varInput)
+        If varIndex < 1 Or varIndex > dataArea.Columns.Count Then
+            MsgBox "분석 변수 번호가 범위를 벗어났습니다.", vbExclamation, "이상치 탐지"
+            Exit Function
+        End If
+    Else
+        For c = 1 To dataArea.Columns.Count
+            If Trim$(CStr(dataArea.Cells(1, c).Value)) = Trim$(varInput) Then
+                varIndex = c
+                Exit For
+            End If
+        Next c
+        If varIndex = 0 Then
+            MsgBox "입력한 변수명을 선택 범위의 첫 행에서 찾을 수 없습니다.", vbExclamation, "이상치 탐지"
+            Exit Function
+        End If
+    End If
+
+    analysisCol = dataArea.Columns(varIndex).Column
+    varName = Trim$(CStr(dataArea.Cells(1, varIndex).Value))
+    If Len(varName) = 0 Then varName = "열" & varIndex
+
+    Dim criteriaInput As String
+    criteriaInput = InputBox( _
+        "③ 이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_IQR15 & vbCrLf & _
+        "2. " & OD_IQR20 & vbCrLf & _
+        "3. " & OD_P95 & vbCrLf & _
+        "4. " & OD_P99, _
+        "이상치 탐지 - 기준", "1")
+    If Len(Trim$(criteriaInput)) = 0 Then Exit Function
+
+    Select Case Trim$(criteriaInput)
+        Case "1", OD_IQR15: criteria = OD_IQR15
+        Case "2", OD_IQR20: criteria = OD_IQR20
+        Case "3", OD_P95: criteria = OD_P95
+        Case "4", OD_P99: criteria = OD_P99
+        Case Else
+            MsgBox "이상치 기준은 1~4 중 하나를 입력하세요.", vbExclamation, "이상치 탐지"
+            Exit Function
+    End Select
+
+    Dim methodInput As String
+    methodInput = InputBox( _
+        "④ 이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. " & OD_CAP & vbCrLf & _
+        "2. " & OD_MEDIAN & vbCrLf & _
+        "3. " & OD_MEAN, _
+        "이상치 탐지 - 대체 방식", "1")
+    If Len(Trim$(methodInput)) = 0 Then Exit Function
+
+    Select Case Trim$(methodInput)
+        Case "1", OD_CAP: method = OD_CAP
+        Case "2", OD_MEDIAN: method = OD_MEDIAN
+        Case "3", OD_MEAN: method = OD_MEAN
+        Case Else
+            MsgBox "대체 방식은 1~3 중 하나를 입력하세요.", vbExclamation, "이상치 탐지"
+            Exit Function
+    End Select
+
+    memo = InputBox( _
+        "⑤ 결과 시트명에 붙일 메모를 입력하세요." & vbCrLf & vbCrLf & _
+        "비워두어도 됩니다. 예: 1차검토, 매출, 쿼터A", _
+        "이상치 탐지 - 메모", "")
+
+    OD_CollectRunInputs = True
+End Function
+
+Private Function OD_ColumnHasNumericValue(ByVal dataArea As Range, ByVal relativeCol As Long) As Boolean
+    Dim r As Long
+    For r = 2 To dataArea.Rows.Count
+        If Not dataArea.Worksheet.Rows(dataArea.Row + r - 1).Hidden Then
+            Dim v As Variant
+            v = dataArea.Cells(r, relativeCol).Value
+            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+                OD_ColumnHasNumericValue = True
+                Exit Function
+            End If
+        End If
+    Next r
+End Function
+Private Function OD_EnsureConfigSheet() As Worksheet
+    On Error Resume Next
+    Set OD_EnsureConfigSheet = ThisWorkbook.Worksheets(OD_CFG_SHEET)
+    On Error GoTo 0
+    If OD_EnsureConfigSheet Is Nothing Then
+        Set OD_EnsureConfigSheet = ThisWorkbook.Worksheets.Add(Before:=ThisWorkbook.Worksheets(1))
+        OD_EnsureConfigSheet.Name = OD_CFG_SHEET
+        OD_InitCfgLayout OD_EnsureConfigSheet
+    End If
+End Function
+
+Private Sub OD_InitCfgLayout(ws As Worksheet)
+    With ws.Range("A1")
+        .Value = "이상치 탐지 및 대체 설정"
+        .Font.Bold = True
+        .Font.Size = 13
+    End With
+
+    Dim labels As Variant
+    labels = Array("데이터 소스 시트", "분석 대상 변수", "이상치 기준", "대체 방식")
+    Dim r As Long
+    For r = 0 To 3
+        With ws.Cells(3 + r, 1)
+            .Value = labels(r)
+            .Font.Bold = True
+        End With
+    Next r
+
+    With ws.Cells(8, 1)
+        .Value = "쿼터 메모 (결과 시트명에 포함)"
+        .Font.Bold = True
+    End With
+
+    ws.Range("A10").Value = "※ 소스 시트를 변경한 경우 OutlierDetect_Setup 을 다시 실행하면 분석 변수 목록이 갱신됩니다."
+    ws.Range("A11").Value = "※ 설정 완료 후 OutlierDetect_Run 을 실행하세요."
+    ws.Range("A10:A11").Font.Color = RGB(130, 130, 130)
+
+    ws.Columns("A").ColumnWidth = 36
+    ws.Columns("B").ColumnWidth = 28
+    ws.Columns("E").Hidden = True   ' 분석 변수 드롭다운 소스 목록 (자동 관리)
+End Sub
+
+Private Sub OD_RefreshVarDropdown(cfg As Worksheet)
+    Dim srcName As String: srcName = Trim$(cfg.Range(OD_C_SRC).Value)
+    If Len(srcName) = 0 Then Exit Sub
+
+    Dim srcWs As Worksheet
+    On Error Resume Next
+    Set srcWs = ThisWorkbook.Worksheets(srcName)
+    On Error GoTo 0
+    If srcWs Is Nothing Then Exit Sub
+
+    ' E열에 소스 시트의 컬럼 헤더 목록 기록 (Data Validation 255자 제한 우회)
+    cfg.Columns("E").ClearContents
+    Dim colRow As Long: colRow = 0
+    Dim hc As Range
+    For Each hc In srcWs.UsedRange.Rows(1).Cells
+        Dim hv As String: hv = Trim$(CStr(hc.Value))
+        If Len(hv) > 0 Then
+            colRow = colRow + 1
+            cfg.Cells(colRow, 5).Value = hv
+        End If
+    Next hc
+
+    If colRow = 0 Then Exit Sub
+
+    Dim listAddr As String
+    listAddr = "=" & cfg.Range(cfg.Cells(1, 5), cfg.Cells(colRow, 5)).Address(True, True, xlA1, False)
+    OD_SetListVal cfg.Range(OD_C_VAR), listAddr
+End Sub
+
+Private Sub OD_SetListVal(cel As Range, formula As String)
+    With cel.Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Formula1:=formula
+        .ShowError = False
+    End With
+End Sub
+
+Private Sub OD_WriteHdr(ws As Worksheet, ByRef row As Long, title As String)
+    With ws.Cells(row, 1)
+        .Value = "[ " & title & " ]"
+        .Font.Bold = True
+    End With
+    row = row + 1
+End Sub
+
+Private Sub OD_WriteKV(ws As Worksheet, ByRef row As Long, key As String, val As Variant)
+    ws.Cells(row, 1).Value = key
+    ws.Cells(row, 2).Value = val
+    row = row + 1
+End Sub
+
+Private Function OD_IsInternal(name As String) As Boolean
+    OD_IsInternal = (Left$(name, 1) = "_") Or (Left$(name, 3) = "이상치")
+End Function
+
+Private Function OD_SheetExists(name As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(name)
+    On Error GoTo 0
+    OD_SheetExists = Not (ws Is Nothing)
+End Function
+
+Private Function OD_CleanName(s As String) As String
+    Dim result As String: result = s
+    Dim bad As Variant
+    bad = Array("\", "/", "?", "*", "[", "]", ":")
+    Dim ch As Variant
+    For Each ch In bad
+        result = Replace(result, CStr(ch), "_")
+    Next ch
+    OD_CleanName = result
+End Function
+
+' ============================================================
+' SPSS table banner tools
+' 설  명  : SPSS 내보내기 통계표에서 선택한 가로/세로 배너 블록을 삭제하고
+'           남은 열/행을 자동으로 당겨 붙인다.
+' ============================================================
+Public Sub SPSS_DeleteSelectedBanner()
+    If TypeName(Selection) <> "Range" Then
+        MsgBox "삭제할 배너 셀을 먼저 선택하세요." & vbCrLf & _
+               "예: ◐ 지역별, ◐ 성별, ▣ 지역별", vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim selectedCell As Range
+    Set selectedCell = Selection.Cells(1, 1)
+
+    Dim bannerCell As Range
+    Set bannerCell = SPSS_FindBannerCell(selectedCell)
+    If bannerCell Is Nothing Then
+        MsgBox "선택한 셀 주변에서 배너를 찾지 못했습니다." & vbCrLf & vbCrLf & _
+               "가로 배너는 '◐ 지역별'처럼 ◐ 표시가 있는 셀을 선택하세요." & vbCrLf & _
+               "세로 배너는 '▣ 지역별'처럼 ▣ 표시가 있는 셀을 선택하세요.", _
+               vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim bannerText As String
+    bannerText = Trim$(CStr(bannerCell.Value))
+
+    If Left$(bannerText, 1) = "◐" Then
+        SPSS_DeleteHorizontalBannerBlocks bannerCell.Worksheet, SPSS_NormalizeBannerName(bannerText)
+    ElseIf Left$(bannerText, 1) = "▣" Then
+        SPSS_DeleteVerticalBannerBlocks bannerCell.Worksheet, SPSS_NormalizeBannerName(bannerText)
+    Else
+        MsgBox "지원하는 배너 표식이 아닙니다: " & bannerText, vbExclamation, "SPSS 배너 삭제"
+    End If
+End Sub
+
+Private Function SPSS_FindBannerCell(ByVal selectedCell As Range) As Range
+    Dim textValue As String
+    textValue = Trim$(CStr(selectedCell.Value))
+
+    If Left$(textValue, 1) = "◐" Or Left$(textValue, 1) = "▣" Then
+        Set SPSS_FindBannerCell = selectedCell
+        Exit Function
+    End If
+
+    ' 하위 항목 셀을 선택한 경우: 바로 위 같은 열의 가로 배너를 우선 탐색
+    Dim r As Long
+    For r = selectedCell.Row To Application.WorksheetFunction.Max(1, selectedCell.Row - 5) Step -1
+        textValue = Trim$(CStr(selectedCell.Worksheet.Cells(r, selectedCell.Column).Value))
+        If Left$(textValue, 1) = "◐" Then
+            Set SPSS_FindBannerCell = selectedCell.Worksheet.Cells(r, selectedCell.Column)
+            Exit Function
+        End If
+    Next r
+
+    ' 행 항목을 선택한 경우: 같은 행 왼쪽의 세로 배너를 탐색
+    Dim c As Long
+    For c = selectedCell.Column To 1 Step -1
+        textValue = Trim$(CStr(selectedCell.Worksheet.Cells(selectedCell.Row, c).Value))
+        If Left$(textValue, 1) = "▣" Then
+            Set SPSS_FindBannerCell = selectedCell.Worksheet.Cells(selectedCell.Row, c)
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Sub SPSS_DeleteHorizontalBannerBlocks(ByVal ws As Worksheet, ByVal targetName As String)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim cellText As String
+            cellText = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(cellText, 1) = "◐" And SPSS_NormalizeBannerName(cellText) = targetName Then
+                Dim endCol As Long
+                endCol = SPSS_FindHorizontalBannerEnd(ws, r, c, usedRange.Column + usedRange.Columns.Count - 1)
+                ranges(CStr(c) & ":" & CStr(endCol)) = Array(c, endCol)
+            End If
+        Next c
+    Next r
+
+    If ranges.Count = 0 Then
+        MsgBox "삭제할 가로 배너를 찾지 못했습니다: " & targetName, vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim msg As String
+    msg = "가로 배너 '" & targetName & "' 열 구간 " & ranges.Count & "개를 삭제합니다." & vbCrLf & _
+          "삭제 후 오른쪽 열은 자동으로 당겨 붙습니다." & vbCrLf & vbCrLf & _
+          "계속하시겠습니까?"
+    If MsgBox(msg, vbQuestion + vbYesNo, "SPSS 배너 삭제") = vbNo Then Exit Sub
+
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortColumnRangesDescending items
+
+    Application.ScreenUpdating = False
+    For r = LBound(items) To UBound(items)
+        ws.Range(ws.Columns(CLng(items(r)(0))), ws.Columns(CLng(items(r)(1)))).Delete Shift:=xlToLeft
+    Next r
+    Application.ScreenUpdating = True
+
+    MsgBox "완료: 가로 배너 '" & targetName & "' 삭제", vbInformation, "SPSS 배너 삭제"
+End Sub
+
+Private Function SPSS_FindHorizontalBannerEnd(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal startCol As Long, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = startCol + 1 To lastCol
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(headerRow, c).Value))
+        If Left$(textValue, 1) = "◐" Then
+            SPSS_FindHorizontalBannerEnd = c - 1
+            Exit Function
+        End If
+    Next c
+    SPSS_FindHorizontalBannerEnd = lastCol
+End Function
+
+Private Sub SPSS_DeleteVerticalBannerBlocks(ByVal ws As Worksheet, ByVal targetName As String)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim cellText As String
+        cellText = Trim$(CStr(ws.Cells(r, usedRange.Column).Value))
+        If Left$(cellText, 1) = "▣" And SPSS_NormalizeBannerName(cellText) = targetName Then
+            Dim endRow As Long
+            endRow = SPSS_FindVerticalBannerEnd(ws, r, usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column)
+            ranges(CStr(r) & ":" & CStr(endRow)) = Array(r, endRow)
+        End If
+    Next r
+
+    If ranges.Count = 0 Then
+        MsgBox "삭제할 세로 배너를 찾지 못했습니다: " & targetName, vbExclamation, "SPSS 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim msg As String
+    msg = "세로 배너 '" & targetName & "' 행 구간 " & ranges.Count & "개를 삭제합니다." & vbCrLf & _
+          "삭제 후 아래 행은 자동으로 당겨 붙습니다." & vbCrLf & vbCrLf & _
+          "계속하시겠습니까?"
+    If MsgBox(msg, vbQuestion + vbYesNo, "SPSS 배너 삭제") = vbNo Then Exit Sub
+
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortRowRangesDescending items
+
+    Application.ScreenUpdating = False
+    For r = LBound(items) To UBound(items)
+        ws.Rows(CLng(items(r)(0)) & ":" & CLng(items(r)(1))).Delete Shift:=xlUp
+    Next r
+    Application.ScreenUpdating = True
+
+    MsgBox "완료: 세로 배너 '" & targetName & "' 삭제", vbInformation, "SPSS 배너 삭제"
+End Sub
+
+Private Function SPSS_FindVerticalBannerEnd(ByVal ws As Worksheet, ByVal startRow As Long, ByVal lastRow As Long, ByVal markerCol As Long) As Long
+    Dim r As Long
+    For r = startRow + 1 To lastRow
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(r, markerCol).Value))
+        If Left$(textValue, 1) = "▣" Or Left$(textValue, 1) = "[" Then
+            SPSS_FindVerticalBannerEnd = r - 1
+            Exit Function
+        End If
+    Next r
+    SPSS_FindVerticalBannerEnd = lastRow
+End Function
+
+Private Function SPSS_NormalizeBannerName(ByVal bannerText As String) As String
+    Dim result As String
+    result = Trim$(bannerText)
+    If Len(result) > 0 Then
+        If Left$(result, 1) = "◐" Or Left$(result, 1) = "▣" Then result = Mid$(result, 2)
+    End If
+    SPSS_NormalizeBannerName = Trim$(result)
+End Function
+
+Private Sub SPSS_SortColumnRangesDescending(ByRef items As Variant)
+    Dim i As Long, j As Long
+    For i = LBound(items) To UBound(items) - 1
+        For j = i + 1 To UBound(items)
+            If CLng(items(i)(0)) < CLng(items(j)(0)) Then
+                Dim temp As Variant
+                temp = items(i)
+                items(i) = items(j)
+                items(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
+Private Sub SPSS_SortRowRangesDescending(ByRef items As Variant)
+    Dim i As Long, j As Long
+    For i = LBound(items) To UBound(items) - 1
+        For j = i + 1 To UBound(items)
+            If CLng(items(i)(0)) < CLng(items(j)(0)) Then
+                Dim temp As Variant
+                temp = items(i)
+                items(i) = items(j)
+                items(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
+Public Sub SPSS_RebuildTablesFromIndex()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 1 Then
+        MsgBox "집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 표 재구성"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim indexWs As Worksheet
+    Dim dataWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
+
+    Dim tables As Collection
+    If indexWs Is Nothing Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    End If
+    If tables.Count = 0 Then
+        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 표 재구성"
+        Exit Sub
+    End If
+
+    Dim deleteTables As Object
+    Dim deleteTableInput As String
+    Dim deleteBannerInput As String
+    Dim orderInput As String
+
+    Dim banners As Collection
+    Set deleteTables = CreateObject("Scripting.Dictionary")
+    Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
+
+    If SPSS_ShowRebuildOptionsForm(tables, banners, deleteTableInput, deleteBannerInput, orderInput) Then
+        Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+    Else
+        Dim tableList As String
+        tableList = SPSS_FormatTableList(tables)
+
+        deleteTableInput = InputBox( _
+            "탐지한 표 목록입니다. 삭제할 표 번호만 입력하세요." & vbCrLf & _
+            "비워두면 모든 표를 남깁니다. 예: 2,5-7" & vbCrLf & vbCrLf & tableList, _
+            "SPSS 표 재구성 - 삭제할 표", "")
+        Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
+
+        Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
+        If banners.Count = 0 Then
+            If MsgBox("선택된 표에서 배너를 찾지 못했습니다." & vbCrLf & _
+                      "표 삭제만 반영해 신규 표/목차 시트를 생성할까요?", _
+                      vbQuestion + vbYesNo, "SPSS 표 재구성") = vbNo Then Exit Sub
+        End If
+
+        Dim bannerList As String
+        bannerList = SPSS_FormatBannerList(banners)
+
+        If banners.Count > 0 Then
+            deleteBannerInput = InputBox( _
+                "탐지한 배너 목록입니다. 삭제할 배너 번호만 입력하세요." & vbCrLf & _
+                "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
+                "SPSS 표 재구성 - 삭제할 배너", "")
+
+        End If
+    End If
+
+    Dim deleteBanners As Object
+    Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteBannerInput, banners)
+
+    Application.ScreenUpdating = False
+    Dim outData As Worksheet
+    dataWs.Copy After:=dataWs
+    Set outData = ActiveSheet
+    outData.Name = SPSS_UniqueSheetName(wb, "SPSS_표정리")
+
+    SPSS_ApplyTableDeletes outData, tables, deleteTables
+    SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
+    SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
+    SPSS_ApplyHorizontalBannerDeletes outData, deleteBanners
+    SPSS_EnsureOneBlankRowBetweenTables outData
+
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=outData)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, outData
+
+    outIndex.Columns("A:D").AutoFit
+    outData.UsedRange.Columns.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "신규 표 시트와 목차 시트를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & outData.Name, vbInformation, "SPSS 표 재구성 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "SPSS 표 재구성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 표 재구성"
+End Sub
+
+Public Sub SPSS_DeleteVerticalBannersFromIndex()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 1 Then
+        MsgBox "집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim indexWs As Worksheet
+    Dim dataWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
+
+    Dim tables As Collection
+    If indexWs Is Nothing Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    End If
+    If tables.Count = 0 Then
+        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim verticalBanners As Collection
+    Set verticalBanners = SPSS_CollectVerticalBanners(tables, dataWs)
+    If verticalBanners.Count = 0 Then
+        MsgBox "삭제할 세로 배너를 찾지 못했습니다.", vbInformation, "SPSS 세로 배너 삭제"
+        Exit Sub
+    End If
+
+    Dim deleteInput As String
+    deleteInput = InputBox( _
+        "삭제할 세로 배너 번호를 입력하세요." & vbCrLf & _
+        "BOT/TOP/MID 계열은 세로 배너로 분류합니다. 예: 1,3-4" & vbCrLf & vbCrLf & _
+        SPSS_FormatBannerList(verticalBanners), _
+        "SPSS 세로 배너 삭제", "")
+    If Len(Trim$(deleteInput)) = 0 Then Exit Sub
+
+    Dim deleteBanners As Object
+    Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteInput, verticalBanners)
+
+    Application.ScreenUpdating = False
+    Dim outData As Worksheet
+    dataWs.Copy After:=dataWs
+    Set outData = ActiveSheet
+    outData.Name = SPSS_UniqueSheetName(wb, "SPSS_세로배너삭제")
+
+    SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
+    SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
+    SPSS_EnsureOneBlankRowBetweenTables outData
+
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=outData)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, outData
+
+    outIndex.Columns("A:D").AutoFit
+    outData.UsedRange.Columns.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "세로 배너 삭제 결과 시트와 목차를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & outData.Name, vbInformation, "SPSS 세로 배너 삭제 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "세로 배너 삭제 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 세로 배너 삭제"
+End Sub
+
+Public Sub SPSS_CreateIndexForActiveSheet()
+    On Error GoTo ErrHandler
+
+    If ActiveWorkbook Is Nothing Or TypeName(ActiveSheet) <> "Worksheet" Then
+        MsgBox "목차를 만들 집계표 시트를 먼저 선택하세요.", vbExclamation, "SPSS 목차 생성"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim dataWs As Worksheet: Set dataWs = ActiveSheet
+
+    Dim tables As Collection
+    Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    If tables.Count = 0 Then
+        MsgBox "현재 시트에서 표 제목 행을 찾지 못했습니다." & vbCrLf & _
+               "표 제목이 [표 ...]처럼 '['로 시작하는지 확인하세요.", vbExclamation, "SPSS 목차 생성"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=dataWs)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, dataWs
+    outIndex.Columns("A:D").AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "목차 시트를 생성했습니다." & vbCrLf & _
+           "목차: " & outIndex.Name & vbCrLf & _
+           "표: " & dataWs.Name, vbInformation, "SPSS 목차 생성 완료"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "SPSS 목차 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "SPSS 목차 생성"
+End Sub
+
+Private Function SPSS_CollectTablesFromIndex(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet) As Collection
+    Dim tables As Collection
+    Set tables = New Collection
+
+    Dim seenRows As Object
+    Set seenRows = CreateObject("Scripting.Dictionary")
+
+    Dim usedRange As Range
+    Set usedRange = indexWs.UsedRange
+
+    Dim cell As Range
+    For Each cell In usedRange.Cells
+        If cell.Hyperlinks.Count > 0 Then
+            Dim subAddress As String
+            subAddress = cell.Hyperlinks(1).SubAddress
+            If Len(subAddress) > 0 Then
+                Dim targetRow As Long
+                targetRow = SPSS_RowFromSubAddress(dataWs, subAddress)
+                If targetRow > 0 And Not seenRows.Exists(CStr(targetRow)) Then
+                    seenRows(CStr(targetRow)) = True
+                    tables.Add Array(SPSS_FindIndexTitle(indexWs, cell.Row, cell.Column, dataWs.Cells(targetRow, 1).Value), targetRow, 0)
+                End If
+            End If
+        End If
+    Next cell
+
+    If tables.Count = 0 Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        SPSS_SortTablesByStartRow tables
+        SPSS_SetTableEndRows tables, dataWs.UsedRange.Row + dataWs.UsedRange.Rows.Count - 1
+    End If
+
+    Set SPSS_CollectTablesFromIndex = tables
+End Function
+
+Private Function SPSS_CollectTablesFromDataSheet(ByVal dataWs As Worksheet) As Collection
+    Dim tables As Collection
+    Set tables = New Collection
+
+    Dim usedRange As Range
+    Set usedRange = dataWs.UsedRange
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then
+            tables.Add Array(titleText, r, 0)
+        End If
+    Next r
+
+    SPSS_SortTablesByStartRow tables
+    SPSS_SetTableEndRows tables, usedRange.Row + usedRange.Rows.Count - 1
+    Set SPSS_CollectTablesFromDataSheet = tables
+End Function
+
+Private Sub SPSS_ResolveIndexAndDataSheets(ByVal wb As Workbook, ByRef indexWs As Worksheet, ByRef dataWs As Worksheet)
+    Set indexWs = Nothing
+    Set dataWs = Nothing
+
+    If wb.Worksheets.Count >= 2 And SPSS_WorksheetHasHyperlinks(wb.Worksheets(1)) Then
+        Set indexWs = wb.Worksheets(1)
+        Set dataWs = wb.Worksheets(2)
+    ElseIf TypeName(ActiveSheet) = "Worksheet" Then
+        Set dataWs = ActiveSheet
+    Else
+        Set dataWs = wb.Worksheets(1)
+    End If
+End Sub
+
+Private Function SPSS_WorksheetHasHyperlinks(ByVal ws As Worksheet) As Boolean
+    SPSS_WorksheetHasHyperlinks = (ws.Hyperlinks.Count > 0)
+End Function
+
+Private Function SPSS_RowFromSubAddress(ByVal dataWs As Worksheet, ByVal subAddress As String) As Long
+    Dim addr As String
+    addr = subAddress
+    If InStr(1, addr, "!", vbTextCompare) > 0 Then addr = Mid$(addr, InStrRev(addr, "!") + 1)
+    addr = Replace(addr, "'", "")
+
+    On Error Resume Next
+    SPSS_RowFromSubAddress = dataWs.Range(addr).Row
+    On Error GoTo 0
+End Function
+
+Private Function SPSS_FindIndexTitle(ByVal indexWs As Worksheet, ByVal rowNo As Long, ByVal linkCol As Long, ByVal fallbackTitle As String) As String
+    Dim c As Long
+    For c = linkCol - 1 To 1 Step -1
+        Dim textValue As String
+        textValue = Trim$(CStr(indexWs.Cells(rowNo, c).Value))
+        If Len(textValue) > 0 And textValue <> "GO" Then
+            SPSS_FindIndexTitle = textValue
+            Exit Function
+        End If
+    Next c
+    SPSS_FindIndexTitle = Trim$(CStr(fallbackTitle))
+End Function
+
+Private Sub SPSS_SortTablesByStartRow(ByRef tables As Collection)
+    Dim arr() As Variant
+    Dim i As Long, j As Long
+    ReDim arr(1 To tables.Count)
+    For i = 1 To tables.Count
+        arr(i) = tables(i)
+    Next i
+
+    For i = 1 To UBound(arr) - 1
+        For j = i + 1 To UBound(arr)
+            If CLng(arr(i)(1)) > CLng(arr(j)(1)) Then
+                Dim temp As Variant
+                temp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = temp
+            End If
+        Next j
+    Next i
+
+    Set tables = New Collection
+    For i = 1 To UBound(arr)
+        tables.Add arr(i)
+    Next i
+End Sub
+
+Private Sub SPSS_SetTableEndRows(ByRef tables As Collection, ByVal lastUsedRow As Long)
+    Dim rebuilt As Collection
+    Set rebuilt = New Collection
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim item As Variant
+        item = tables(i)
+        Dim endRow As Long
+        If i < tables.Count Then
+            Dim nextItem As Variant
+            nextItem = tables(i + 1)
+            endRow = CLng(nextItem(1)) - 1
+        Else
+            endRow = lastUsedRow
+        End If
+        rebuilt.Add Array(CStr(item(0)), CLng(item(1)), endRow)
+    Next i
+
+    Set tables = rebuilt
+End Sub
+
+Private Function SPSS_FormatTableList(ByVal tables As Collection) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim item As Variant
+        item = tables(i)
+        result = result & i & ". " & CStr(item(0)) & "  (행 " & CLng(item(1)) & "-" & CLng(item(2)) & ")" & vbCrLf
+    Next i
+    SPSS_FormatTableList = result
+End Function
+
+Private Function SPSS_ShowRebuildOptionsForm(ByVal tables As Collection, _
+                                             ByVal banners As Collection, _
+                                             ByRef deleteTableInput As String, _
+                                             ByRef deleteBannerInput As String, _
+                                             ByRef orderInput As String) As Boolean
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmSpssRebuildOptions")
+    form.InitializeOptions tables, banners
+    form.Show
+
+    If form.Cancelled Then
+        Unload form
+        Err.Raise vbObjectError + 8301, "SPSS_ShowRebuildOptionsForm", "사용자가 작업을 취소했습니다."
+    End If
+
+    deleteTableInput = CStr(form.DeleteTablesText)
+    deleteBannerInput = CStr(form.DeleteBannersText)
+    orderInput = CStr(form.BannerOrderText)
+
+    Unload form
+    SPSS_ShowRebuildOptionsForm = True
+    Exit Function
+
+Fallback:
+    If Err.Number = vbObjectError + 8301 Then Err.Raise Err.Number, Err.Source, Err.Description
+    Err.Clear
+    SPSS_ShowRebuildOptionsForm = False
+End Function
+
+Private Function SPSS_CollectUniqueBanners(ByVal tables As Collection, ByVal dataWs As Worksheet, ByVal deleteTables As Object) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        If Not deleteTables.Exists(CStr(i)) Then
+            Dim tableInfo As Variant
+            tableInfo = tables(i)
+            SPSS_AddTableBanners result, seen, dataWs, CLng(tableInfo(1)), CLng(tableInfo(2))
+        End If
+    Next i
+
+    Set SPSS_CollectUniqueBanners = result
+End Function
+
+Private Function SPSS_CollectVerticalBanners(ByVal tables As Collection, ByVal dataWs As Worksheet) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        Dim tableInfo As Variant
+        tableInfo = tables(i)
+        Dim lastCol As Long
+        lastCol = SPSS_TableLastCol(dataWs, CLng(tableInfo(1)), CLng(tableInfo(2)))
+
+        Dim r As Long, c As Long
+        For r = CLng(tableInfo(1)) To CLng(tableInfo(2))
+            Dim firstText As String
+            firstText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+            If Left$(firstText, 1) = "▣" Then SPSS_AddBannerName result, seen, firstText
+
+            For c = 1 To lastCol
+                Dim textValue As String
+                textValue = Trim$(CStr(dataWs.Cells(r, c).Value))
+                If Left$(textValue, 1) = "◐" And SPSS_IsVerticalBannerLikeName(SPSS_NormalizeBannerName(textValue)) Then
+                    SPSS_AddBannerName result, seen, textValue
+                End If
+            Next c
+        Next r
+    Next i
+
+    Set SPSS_CollectVerticalBanners = result
+End Function
+
+Private Sub SPSS_AddTableBanners(ByVal result As Collection, ByVal seen As Object, ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long)
+    Dim lastCol As Long
+    lastCol = SPSS_TableLastCol(ws, startRow, endRow)
+
+    Dim r As Long, c As Long
+    For r = startRow To endRow
+        Dim firstText As String
+        firstText = Trim$(CStr(ws.Cells(r, 1).Value))
+        If Left$(firstText, 1) = "▣" Then SPSS_AddBannerName result, seen, firstText
+
+        For c = 1 To lastCol
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then SPSS_AddBannerName result, seen, textValue
+        Next c
+    Next r
+End Sub
+
+Private Sub SPSS_AddBannerName(ByVal result As Collection, ByVal seen As Object, ByVal bannerText As String)
+    Dim name As String
+    name = SPSS_NormalizeBannerName(bannerText)
+    If Len(name) = 0 Then Exit Sub
+    If Not seen.Exists(name) Then
+        seen(name) = True
+        result.Add name
+    End If
+End Sub
+
+Private Function SPSS_FormatBannerList(ByVal banners As Collection) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To banners.Count
+        result = result & i & ". " & CStr(banners(i)) & vbCrLf
+    Next i
+    SPSS_FormatBannerList = result
+End Function
+
+Private Function SPSS_ParseIndexSelection(ByVal inputText As String, ByVal maxIndex As Long) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    inputText = Replace(Trim$(inputText), " ", "")
+    If Len(inputText) = 0 Then
+        Set SPSS_ParseIndexSelection = result
+        Exit Function
+    End If
+
+    Dim parts As Variant
+    parts = Split(inputText, ",")
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        Dim token As String
+        token = CStr(parts(i))
+        If InStr(1, token, "-", vbTextCompare) > 0 Then
+            Dim pair As Variant
+            pair = Split(token, "-")
+            If UBound(pair) = 1 And IsNumeric(pair(0)) And IsNumeric(pair(1)) Then
+                Dim a As Long: a = CLng(pair(0))
+                Dim b As Long: b = CLng(pair(1))
+                Dim n As Long
+                For n = a To b
+                    If n >= 1 And n <= maxIndex Then result(CStr(n)) = True
+                Next n
+            End If
+        ElseIf IsNumeric(token) Then
+            Dim idx As Long: idx = CLng(token)
+            If idx >= 1 And idx <= maxIndex Then result(CStr(idx)) = True
+        End If
+    Next i
+
+    Set SPSS_ParseIndexSelection = result
+End Function
+
+Private Function SPSS_ParseBannerDeleteSelection(ByVal inputText As String, ByVal banners As Collection) As Object
+    Dim indexSelection As Object
+    Set indexSelection = SPSS_ParseIndexSelection(inputText, banners.Count)
+
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    Dim key As Variant
+    For Each key In indexSelection.Keys
+        result(CStr(banners(CLng(key)))) = True
+    Next key
+
+    Set SPSS_ParseBannerDeleteSelection = result
+End Function
+
+Private Function SPSS_ParseBannerOrder(ByVal inputText As String, ByVal banners As Collection, ByVal deleteBanners As Object) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim added As Object
+    Set added = CreateObject("Scripting.Dictionary")
+
+    Dim indexSelection As Object
+    Set indexSelection = SPSS_ParseIndexSelection(inputText, banners.Count)
+    Dim parts As Variant
+    inputText = Replace(Trim$(inputText), " ", "")
+    If Len(inputText) > 0 Then
+        parts = Split(inputText, ",")
+        Dim i As Long
+        For i = LBound(parts) To UBound(parts)
+            If IsNumeric(parts(i)) Then
+                Dim idx As Long: idx = CLng(parts(i))
+                If idx >= 1 And idx <= banners.Count Then
+                    Dim name As String: name = CStr(banners(idx))
+                    If Not deleteBanners.Exists(name) And Not added.Exists(name) Then
+                        result.Add name
+                        added(name) = True
+                    End If
+                End If
+            End If
+        Next i
+    End If
+
+    Set SPSS_ParseBannerOrder = result
+End Function
+
+Private Sub SPSS_InitRebuiltIndex(ByVal ws As Worksheet)
+    ws.Range("A1").Value = "재구성 표 목차"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+    ws.Range("A2").Value = "번호"
+    ws.Range("B2").Value = "표 제목"
+    ws.Range("C2").Value = "이동"
+    ws.Range("A2:C2").Font.Bold = True
+End Sub
+
+Private Sub SPSS_WriteRebuiltIndexRow(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal title As String, ByVal dataSheetName As String, ByVal targetRow As Long)
+    ws.Cells(rowNo, 1).Value = rowNo - 2
+    ws.Cells(rowNo, 2).Value = title
+    ws.Cells(rowNo, 3).Value = "GO"
+    ws.Hyperlinks.Add Anchor:=ws.Cells(rowNo, 3), Address:="", _
+                      SubAddress:="'" & dataSheetName & "'!A" & targetRow, _
+                      TextToDisplay:="GO"
+End Sub
+
+Private Sub SPSS_ApplyTableDeletes(ByVal ws As Worksheet, ByVal tables As Collection, ByVal deleteTables As Object)
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim i As Long
+    For i = 1 To tables.Count
+        If deleteTables.Exists(CStr(i)) Then
+            Dim item As Variant
+            item = tables(i)
+            ranges.Add Array(CLng(item(1)), CLng(item(2)))
+        End If
+    Next i
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyVerticalBannerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim textValue As String
+        textValue = Trim$(CStr(ws.Cells(r, usedRange.Column).Value))
+        If Left$(textValue, 1) = "▣" Then
+            Dim bannerName As String
+            bannerName = SPSS_NormalizeBannerName(textValue)
+            If deleteBanners.Exists(bannerName) Then
+                ranges.Add Array(r, SPSS_FindVerticalBannerEnd(ws, r, usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column))
+            End If
+        End If
+    Next r
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyVerticalLikeMarkerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim ranges As Collection
+    Set ranges = New Collection
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then
+                Dim bannerName As String
+                bannerName = SPSS_NormalizeBannerName(textValue)
+                If deleteBanners.Exists(bannerName) And SPSS_IsVerticalBannerLikeName(bannerName) Then
+                    ranges.Add Array(r, r)
+                    Exit For
+                End If
+            End If
+        Next c
+    Next r
+
+    SPSS_DeleteRowRanges ws, ranges
+End Sub
+
+Private Sub SPSS_ApplyHorizontalBannerDeletes(ByVal ws As Worksheet, ByVal deleteBanners As Object)
+    If deleteBanners.Count = 0 Then Exit Sub
+
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+    Dim ranges As Object
+    Set ranges = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long, c As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        For c = usedRange.Column To usedRange.Column + usedRange.Columns.Count - 1
+            Dim textValue As String
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Then
+                Dim bannerName As String
+                bannerName = SPSS_NormalizeBannerName(textValue)
+                If deleteBanners.Exists(bannerName) And Not SPSS_IsVerticalBannerLikeName(bannerName) Then
+                    Dim endCol As Long
+                    endCol = SPSS_FindHorizontalBannerEnd(ws, r, c, usedRange.Column + usedRange.Columns.Count - 1)
+                    ranges(CStr(c) & ":" & CStr(endCol)) = Array(c, endCol)
+                End If
+            End If
+        Next c
+    Next r
+
+    If ranges.Count = 0 Then Exit Sub
+    Dim items As Variant
+    items = ranges.Items
+    SPSS_SortColumnRangesDescending items
+
+    For r = LBound(items) To UBound(items)
+        ws.Range(ws.Columns(CLng(items(r)(0))), ws.Columns(CLng(items(r)(1)))).Delete Shift:=xlToLeft
+    Next r
+End Sub
+
+Private Sub SPSS_DeleteRowRanges(ByVal ws As Worksheet, ByVal ranges As Collection)
+    If ranges.Count = 0 Then Exit Sub
+
+    Dim items() As Variant
+    Dim i As Long
+    ReDim items(0 To ranges.Count - 1)
+    For i = 1 To ranges.Count
+        items(i - 1) = ranges(i)
+    Next i
+    SPSS_SortRowRangesDescending items
+
+    For i = LBound(items) To UBound(items)
+        ws.Rows(CLng(items(i)(0)) & ":" & CLng(items(i)(1))).Delete Shift:=xlUp
+    Next i
+End Sub
+
+Private Sub SPSS_EnsureOneBlankRowBetweenTables(ByVal ws As Worksheet)
+    Dim usedRange As Range
+    Set usedRange = ws.UsedRange
+
+    Dim titleRows As Collection
+    Set titleRows = New Collection
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(ws.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then titleRows.Add r
+    Next r
+
+    If titleRows.Count < 2 Then Exit Sub
+
+    Dim i As Long
+    For i = titleRows.Count To 2 Step -1
+        Dim titleRow As Long
+        titleRow = CLng(titleRows(i))
+
+        Dim blankCount As Long
+        Dim scanRow As Long
+        scanRow = titleRow - 1
+        Do While scanRow > 1 And SPSS_IsRowValueBlank(ws, scanRow)
+            blankCount = blankCount + 1
+            scanRow = scanRow - 1
+        Loop
+
+        If blankCount = 0 Then
+            ws.Rows(titleRow).Insert Shift:=xlDown
+        ElseIf blankCount > 1 Then
+            ws.Rows((titleRow - blankCount) & ":" & (titleRow - 2)).Delete Shift:=xlUp
+        End If
+    Next i
+End Sub
+
+Private Function SPSS_IsRowValueBlank(ByVal ws As Worksheet, ByVal rowIndex As Long) As Boolean
+    SPSS_IsRowValueBlank = (Application.WorksheetFunction.CountA(ws.Rows(rowIndex)) = 0)
+End Function
+
+Private Sub SPSS_RebuildIndexFromDataSheet(ByVal indexWs As Worksheet, ByVal dataWs As Worksheet)
+    SPSS_InitRebuiltIndex indexWs
+
+    Dim indexRow As Long: indexRow = 3
+    Dim usedRange As Range
+    Set usedRange = dataWs.UsedRange
+
+    Dim r As Long
+    For r = usedRange.Row To usedRange.Row + usedRange.Rows.Count - 1
+        Dim titleText As String
+        titleText = Trim$(CStr(dataWs.Cells(r, 1).Value))
+        If Left$(titleText, 1) = "[" Then
+            SPSS_WriteRebuiltIndexRow indexWs, indexRow, titleText, dataWs.Name, r
+            indexRow = indexRow + 1
+        End If
+    Next r
+End Sub
+
+Private Function SPSS_IsVerticalBannerLikeName(ByVal bannerName As String) As Boolean
+    Dim textValue As String
+    textValue = UCase$(Trim$(bannerName))
+    SPSS_IsVerticalBannerLikeName = (InStr(1, textValue, "BOT", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "BOTTOM", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "TOP", vbTextCompare) > 0 _
+                                  Or InStr(1, textValue, "MID", vbTextCompare) > 0)
+End Function
+
+Private Sub SPSS_CopyRebuiltTable(ByVal srcWs As Worksheet, _
+                                  ByVal dstWs As Worksheet, _
+                                  ByVal tableInfo As Variant, _
+                                  ByRef dstStartRow As Long, _
+                                  ByVal deleteBanners As Object, _
+                                  ByVal orderNames As Collection)
+    Dim startRow As Long: startRow = CLng(tableInfo(1))
+    Dim endRow As Long: endRow = CLng(tableInfo(2))
+    Dim lastCol As Long: lastCol = SPSS_TableLastCol(srcWs, startRow, endRow)
+
+    Dim rowSegments As Collection
+    Set rowSegments = SPSS_BuildRowSegments(srcWs, startRow, endRow)
+    Dim colSegments As Collection
+    Set colSegments = SPSS_BuildColumnSegments(srcWs, startRow, endRow, lastCol)
+
+    Dim orderedRows As Collection
+    Set orderedRows = SPSS_OrderSegments(rowSegments, deleteBanners, orderNames)
+    Dim orderedCols As Collection
+    Set orderedCols = SPSS_OrderSegments(colSegments, deleteBanners, orderNames)
+
+    Dim dstRow As Long: dstRow = dstStartRow
+    Dim rIdx As Long, cIdx As Long
+    For rIdx = 1 To orderedRows.Count
+        Dim rowSeg As Variant
+        rowSeg = orderedRows(rIdx)
+        Dim dstCol As Long: dstCol = 1
+        For cIdx = 1 To orderedCols.Count
+            Dim colSeg As Variant
+            colSeg = orderedCols(cIdx)
+            srcWs.Range(srcWs.Cells(CLng(rowSeg(0)), CLng(colSeg(0))), srcWs.Cells(CLng(rowSeg(1)), CLng(colSeg(1)))).Copy _
+                Destination:=dstWs.Cells(dstRow, dstCol)
+            dstCol = dstCol + (CLng(colSeg(1)) - CLng(colSeg(0)) + 1)
+        Next cIdx
+        dstRow = dstRow + (CLng(rowSeg(1)) - CLng(rowSeg(0)) + 1)
+    Next rIdx
+
+    dstStartRow = dstRow
+End Sub
+
+Private Function SPSS_TableLastCol(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Long
+    Dim lastCol As Long: lastCol = 1
+    Dim r As Long
+    For r = startRow To endRow
+        Dim c As Long
+        c = ws.Cells(r, ws.Columns.Count).End(xlToLeft).Column
+        If c > lastCol Then lastCol = c
+    Next r
+    SPSS_TableLastCol = lastCol
+End Function
+
+Private Function SPSS_BuildRowSegments(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim bannerRows As Collection
+    Set bannerRows = New Collection
+    Dim r As Long
+    For r = startRow To endRow
+        If Left$(Trim$(CStr(ws.Cells(r, 1).Value)), 1) = "▣" Then bannerRows.Add r
+    Next r
+
+    If bannerRows.Count = 0 Then
+        result.Add Array(startRow, endRow, "", "fixed")
+        Set SPSS_BuildRowSegments = result
+        Exit Function
+    End If
+
+    If CLng(bannerRows(1)) > startRow Then result.Add Array(startRow, CLng(bannerRows(1)) - 1, "", "fixed")
+    Dim i As Long
+    For i = 1 To bannerRows.Count
+        Dim segStart As Long: segStart = CLng(bannerRows(i))
+        Dim segEnd As Long
+        If i < bannerRows.Count Then segEnd = CLng(bannerRows(i + 1)) - 1 Else segEnd = endRow
+        result.Add Array(segStart, segEnd, SPSS_NormalizeBannerName(CStr(ws.Cells(segStart, 1).Value)), "banner")
+    Next i
+
+    Set SPSS_BuildRowSegments = result
+End Function
+
+Private Function SPSS_BuildColumnSegments(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim bannerRow As Long: bannerRow = 0
+    Dim starts As Collection
+    Set starts = New Collection
+
+    Dim r As Long, c As Long
+    For r = startRow To endRow
+        Set starts = New Collection
+        For c = 1 To lastCol
+            If Left$(Trim$(CStr(ws.Cells(r, c).Value)), 1) = "◐" Then starts.Add c
+        Next c
+        If starts.Count > 0 Then
+            bannerRow = r
+            Exit For
+        End If
+    Next r
+
+    If bannerRow = 0 Then
+        result.Add Array(1, lastCol, "", "fixed")
+        Set SPSS_BuildColumnSegments = result
+        Exit Function
+    End If
+
+    If CLng(starts(1)) > 1 Then result.Add Array(1, CLng(starts(1)) - 1, "", "fixed")
+    Dim i As Long
+    For i = 1 To starts.Count
+        Dim segStart As Long: segStart = CLng(starts(i))
+        Dim segEnd As Long
+        If i < starts.Count Then segEnd = CLng(starts(i + 1)) - 1 Else segEnd = lastCol
+        result.Add Array(segStart, segEnd, SPSS_NormalizeBannerName(CStr(ws.Cells(bannerRow, segStart).Value)), "banner")
+    Next i
+
+    Set SPSS_BuildColumnSegments = result
+End Function
+
+Private Function SPSS_OrderSegments(ByVal sourceSegments As Collection, ByVal deleteBanners As Object, ByVal orderNames As Collection) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim added As Object
+    Set added = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To sourceSegments.Count
+        Dim seg As Variant
+        seg = sourceSegments(i)
+        If CStr(seg(3)) <> "banner" Then
+            result.Add seg
+            added(CStr(i)) = True
+        End If
+    Next i
+
+    Dim orderIdx As Long
+    For orderIdx = 1 To orderNames.Count
+        Dim targetName As String
+        targetName = CStr(orderNames(orderIdx))
+        For i = 1 To sourceSegments.Count
+            seg = sourceSegments(i)
+            If CStr(seg(3)) = "banner" And CStr(seg(2)) = targetName Then
+                If Not deleteBanners.Exists(CStr(seg(2))) And Not added.Exists(CStr(i)) Then
+                    result.Add seg
+                    added(CStr(i)) = True
+                End If
+            End If
+        Next i
+    Next orderIdx
+
+    For i = 1 To sourceSegments.Count
+        seg = sourceSegments(i)
+        If Not added.Exists(CStr(i)) Then
+            If CStr(seg(3)) <> "banner" Or Not deleteBanners.Exists(CStr(seg(2))) Then
+                result.Add seg
+            End If
+        End If
+    Next i
+
+    Set SPSS_OrderSegments = result
+End Function
+
+Private Function SPSS_UniqueSheetName(ByVal wb As Workbook, ByVal baseName As String) As String
+    Dim name As String
+    name = Left$(baseName & "_" & Format(Now, "mmdd_hhnn"), 31)
+    Dim candidate As String: candidate = name
+    Dim n As Long: n = 1
+    Do While SPSS_WorksheetExists(wb, candidate)
+        n = n + 1
+        candidate = Left$(name, 28) & "_" & n
+    Loop
+    SPSS_UniqueSheetName = candidate
+End Function
+
+Private Function SPSS_WorksheetExists(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = wb.Worksheets(sheetName)
+    On Error GoTo 0
+    SPSS_WorksheetExists = Not ws Is Nothing
+End Function
+' ============================================================
+' Ribbon callbacks
+' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
+' ============================================================
+Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
+    Toolkit_About
+End Sub
+
+Public Sub Ribbon_ResetAllSheetsToTop(control As IRibbonControl)
+    Toolkit_ResetAllSheetsToTop
+End Sub
+
+Public Sub Ribbon_SelectA1OnAllSheets(control As IRibbonControl)
+    Toolkit_SelectA1OnAllSheets
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInSelection(control As IRibbonControl)
+    ConvertTextNumbersWithForm
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInUsedRange(control As IRibbonControl)
+    ConvertTextNumbersInCurrentSheetDataRange
+End Sub
+
+Public Sub Ribbon_ConvertTextNumbersInColumns(control As IRibbonControl)
+    ConvertTextNumbersWithForm
+End Sub
+
+Public Sub Ribbon_NormalizePhonesInSelection(control As IRibbonControl)
+    NormalizePhonesWithForm
+End Sub
+
+Public Sub Ribbon_NormalizePhonesInColumns(control As IRibbonControl)
+    NormalizePhonesWithForm
+End Sub
+
+Public Sub Ribbon_RemovePhoneDashes(control As IRibbonControl)
+    RemovePhoneDashesToCopiedColumns
+End Sub
+
+Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
+    BizNo_SetApiKey
+End Sub
+
+Public Sub Ribbon_RemoveBizNoDashes(control As IRibbonControl)
+    RemoveBizNoDashesToCopiedColumns
+End Sub
+
+Public Sub Ribbon_BizNoMergeThreeColumns(control As IRibbonControl)
+    BizNo_MergeThreeColumns
+End Sub
+
+Public Sub Ribbon_BizNoQueryStatus(control As IRibbonControl)
+    BizNo_QueryStatusForSelection
+End Sub
+
+Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)
+    OutlierDetect_Setup
+End Sub
+
+Public Sub Ribbon_OutlierDetectRun(control As IRibbonControl)
+    OutlierDetect_ApplyToSelection
+End Sub
+
+Public Sub Ribbon_SPSSDeleteSelectedBanner(control As IRibbonControl)
+    SPSS_DeleteSelectedBanner
+End Sub
+
+Public Sub Ribbon_SPSSCreateIndexForActiveSheet(control As IRibbonControl)
+    SPSS_CreateIndexForActiveSheet
+End Sub
+
+Public Sub Ribbon_SPSSRebuildTablesFromIndex(control As IRibbonControl)
+    SPSS_RebuildTablesFromIndex
+End Sub
+
+Public Sub Ribbon_SPSSDeleteVerticalBanners(control As IRibbonControl)
+    SPSS_DeleteVerticalBannersFromIndex
+End Sub
+
+
+
+
+
+
