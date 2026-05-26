@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.8.16`
+`0.9.0`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -44,6 +44,8 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - SPSS 표/배너 삭제 결과에서 표와 표 사이 공백 행을 1개로 자동 정리
 - 목차가 없는 SPSS 집계표 시트에서 표 제목을 탐지해 목차 링크 시트 생성
 - SPSS BOT/TOP/MID 계열 세로형 배너 삭제 기능 분리
+- 0.9.0 리본 UI 정리: 중복 버튼 축소, 작업 중심 라벨, 기능 연상 아이콘/설명 개선
+- 0.9.0 UserForm 개선: 버튼/목록 폭 확대, 긴 한글 버튼과 표/배너명이 잘리지 않도록 배치 조정
 
 ## 개발용 통합문서 확인
 
@@ -67,10 +69,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.8.16/DataEditingMacroToolkit_v0.8.16.xlam`
-- `release/v0.8.16/DataEditingMacroToolkit_v0.8.16.xlsm`
-- `release/v0.8.16/MacroToolkit.bas`
-- `release/v0.8.16/manifest.json`
+- `release/v0.9.0/DataEditingMacroToolkit_v0.9.0.xlam`
+- `release/v0.9.0/DataEditingMacroToolkit_v0.9.0.xlsm`
+- `release/v0.9.0/MacroToolkit.bas`
+- `release/v0.9.0/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -83,11 +85,11 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 설치 후 Excel 상단 리본의 `보기` 탭 옆에 `데이터 툴킷` 탭이 추가됩니다. 기능은 이 탭의 버튼으로 실행합니다.
 
-- `데이터 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리, 전화번호 대시 제거
-- `사업자등록`: 인증키 설정, 대시 제거, 3열 병합, 상태조회
-- `SPSS 표 정리`: 목차 생성, 선택 배너 삭제, 목차 기반 재구성
+- `값 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리, 전화번호 숫자만
+- `사업자등록`: 인증키 설정, 번호 숫자만, 3열 병합, 상태조회
+- `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
-- `정보`: 모든 시트 A1 선택, 모든 시트 최상단, 버전 정보
+- `정보`: 모든 시트 A1 선택, 버전 정보
 설치 대상 파일:
 
 `release/latest/DataEditingMacroToolkit_latest.xlam`

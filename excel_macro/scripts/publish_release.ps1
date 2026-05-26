@@ -41,46 +41,46 @@ function Add-SpssRebuildUserForm {
     $form.Name = "frmSpssRebuildOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "SPSS 표/배너 재구성"
-    $form.Properties.Item("Width").Value = 620
-    $form.Properties.Item("Height").Value = 430
+    $form.Properties.Item("Width").Value = 700
+    $form.Properties.Item("Height").Value = 470
 
     $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
     $lblHelp.Caption = "삭제할 표와 배너를 선택하세요. Shift+클릭은 연속 선택, Ctrl+클릭은 개별 추가 선택입니다."
     $lblHelp.Left = 12
     $lblHelp.Top = 10
-    $lblHelp.Width = 580
-    $lblHelp.Height = 18
+    $lblHelp.Width = 660
+    $lblHelp.Height = 28
 
     $lblTables = $designer.Controls.Add("Forms.Label.1", "lblTables", $true)
     $lblTables.Caption = "삭제할 표"
     $lblTables.Left = 12
-    $lblTables.Top = 34
-    $lblTables.Width = 260
+    $lblTables.Top = 44
+    $lblTables.Width = 310
     $lblTables.Height = 16
 
     $lstTables = $designer.Controls.Add("Forms.ListBox.1", "lstTables", $true)
     $lstTables.Left = 12
-    $lstTables.Top = 52
-    $lstTables.Width = 280
-    $lstTables.Height = 292
+    $lstTables.Top = 64
+    $lstTables.Width = 320
+    $lstTables.Height = 306
     $lstTables.ColumnCount = 2
-    $lstTables.ColumnWidths = "240 pt;0 pt"
+    $lstTables.ColumnWidths = "290 pt;0 pt"
     $lstTables.MultiSelect = 2
 
     $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
     $lblBanners.Caption = "삭제할 배너"
-    $lblBanners.Left = 312
-    $lblBanners.Top = 34
-    $lblBanners.Width = 220
+    $lblBanners.Left = 352
+    $lblBanners.Top = 44
+    $lblBanners.Width = 310
     $lblBanners.Height = 16
 
     $lstBanners = $designer.Controls.Add("Forms.ListBox.1", "lstBanners", $true)
-    $lstBanners.Left = 312
-    $lstBanners.Top = 52
-    $lstBanners.Width = 280
-    $lstBanners.Height = 292
+    $lstBanners.Left = 352
+    $lstBanners.Top = 64
+    $lstBanners.Width = 320
+    $lstBanners.Height = 306
     $lstBanners.ColumnCount = 2
-    $lstBanners.ColumnWidths = "180 pt;0 pt"
+    $lstBanners.ColumnWidths = "290 pt;0 pt"
     $lstBanners.MultiSelect = 2
 
     $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
@@ -102,23 +102,23 @@ function Add-SpssRebuildUserForm {
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
     $lblTip.Caption = "선택된 항목은 삭제됩니다. 원본 시트를 복사한 뒤 결과를 만들며, BOT/TOP/MID 계열은 세로 배너 삭제 버튼에서 별도로 처리하세요."
     $lblTip.Left = 12
-    $lblTip.Top = 354
-    $lblTip.Width = 580
-    $lblTip.Height = 28
+    $lblTip.Top = 382
+    $lblTip.Width = 660
+    $lblTip.Height = 34
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 414
-    $cmdOk.Top = 386
-    $cmdOk.Width = 82
-    $cmdOk.Height = 26
+    $cmdOk.Left = 486
+    $cmdOk.Top = 424
+    $cmdOk.Width = 86
+    $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 510
-    $cmdCancel.Top = 386
-    $cmdCancel.Width = 82
-    $cmdCancel.Height = 26
+    $cmdCancel.Left = 586
+    $cmdCancel.Top = 424
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
 
     $formCode = @'
 Option Explicit
@@ -235,47 +235,47 @@ function Add-RangeSelectUserForm {
     $form.Name = "frmRangeSelectOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "범위 선택"
-    $form.Properties.Item("Width").Value = 440
-    $form.Properties.Item("Height").Value = 220
+    $form.Properties.Item("Width").Value = 520
+    $form.Properties.Item("Height").Value = 240
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Left = 12
     $lblTitle.Top = 10
-    $lblTitle.Width = 400
+    $lblTitle.Width = 480
     $lblTitle.Height = 18
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
     $lblGuide.Left = 12
     $lblGuide.Top = 34
-    $lblGuide.Width = 400
-    $lblGuide.Height = 58
+    $lblGuide.Width = 480
+    $lblGuide.Height = 66
 
     $txtRange = $designer.Controls.Add("Forms.TextBox.1", "txtRange", $true)
     $txtRange.Left = 12
-    $txtRange.Top = 102
-    $txtRange.Width = 300
+    $txtRange.Top = 112
+    $txtRange.Width = 350
     $txtRange.Height = 22
 
     $cmdPick = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickRange", $true)
     $cmdPick.Caption = "현재 선택 사용"
-    $cmdPick.Left = 322
-    $cmdPick.Top = 100
-    $cmdPick.Width = 86
-    $cmdPick.Height = 24
+    $cmdPick.Left = 374
+    $cmdPick.Top = 110
+    $cmdPick.Width = 118
+    $cmdPick.Height = 26
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 232
-    $cmdOk.Top = 150
-    $cmdOk.Width = 82
-    $cmdOk.Height = 26
+    $cmdOk.Left = 306
+    $cmdOk.Top = 166
+    $cmdOk.Width = 86
+    $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 326
-    $cmdCancel.Top = 150
-    $cmdCancel.Width = 82
-    $cmdCancel.Height = 26
+    $cmdCancel.Left = 406
+    $cmdCancel.Top = 166
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
 
     $formCode = @'
 Option Explicit
@@ -355,21 +355,21 @@ function Add-RibbonCustomUi {
   <ribbon>
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
-        <group id="grpNumberTools" label="데이터 정리">
-          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="텍스트 숫자 변환" supertip="Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 범위를 선택한 뒤 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="현재 시트 데이터 영역 숫자 변환" supertip="현재 활성 시트에서 실제 값이나 수식이 있는 마지막 행과 열까지만 잡아 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
-          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 정리" supertip="Excel 시트에서 범위를 선택하면 원본 오른쪽에 복사본 열을 만들고 한국 전화번호 형식을 표준 형식으로 정리합니다." />
-          <button id="btnPhoneDashless" label="전화번호 대시 제거" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 대시 제거" supertip="선택한 전화번호 범위를 원본 오른쪽에 복사한 뒤 대시와 구분기호를 제거해 숫자만 남깁니다." />
+        <group id="grpNumberTools" label="값 정리">
+          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="선택 범위 숫자 변환" supertip="선택한 범위에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
+          <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
+          <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
+          <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
-          <button id="btnBizDashless" label="대시 제거" imageMso="ClearFormats" onAction="Ribbon_RemoveBizNoDashes" screentip="사업자등록번호 대시 제거" supertip="선택한 사업자등록번호 범위를 원본 오른쪽에 복사한 뒤 대시와 구분기호를 제거해 숫자 10자리 형태로 정리합니다." />
-          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 병합" supertip="Excel 시트에서 3개 열 범위를 선택한 뒤 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
-          <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="Excel 시트에서 사업자등록번호 범위를 선택한 뒤 국세청 상태조회 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
+          <button id="btnBizDashless" label="번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemoveBizNoDashes" screentip="사업자등록번호 숫자만 남기기" supertip="선택한 사업자등록번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자 10자리 형태로 정리합니다." />
+          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 3열 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
+          <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
-          <button id="btnSpssRebuildFromIndex" label="목차 기반 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="목차 기반 표/배너 재구성" supertip="첫 시트의 목차 링크와 다음 시트의 집계표를 탐지한 뒤 원본 집계표 시트를 복사해 표/배너 삭제를 반영하고 새 목차 링크를 생성합니다." />
+          <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표와 배너 목록을 선택해 원본 집계표 시트의 복사본에 삭제 내용을 반영하고 새 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
@@ -377,7 +377,6 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpToolkitInfo" label="정보">
           <button id="btnSelectA1AllSheets" label="모든 시트 A1 선택" imageMso="GoToTop" onAction="Ribbon_SelectA1OnAllSheets" screentip="모든 시트 A1 선택" supertip="통합문서의 모든 워크시트를 순회하며 선택 셀을 A1로 변경하고 화면 위치도 최상단으로 맞춥니다." />
-          <button id="btnResetAllSheetsTop" label="모든 시트 최상단" imageMso="GoToTop" onAction="Ribbon_ResetAllSheetsToTop" screentip="모든 시트 화면 위치 정렬" supertip="통합문서의 모든 워크시트를 A1 기준 최상단으로 이동시키고 원래 보던 시트로 돌아옵니다." />
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
         </group>
       </tab>
