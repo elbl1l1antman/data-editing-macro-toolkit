@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.1"
+Public Const TOOLKIT_VERSION As String = "0.9.2"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -62,18 +62,19 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A12").Value = "RemovePhoneDashesToCopiedColumns"
     ws.Range("A13").Value = "RemoveBizNoDashesToCopiedColumns"
     ws.Range("A14").Value = "CompanyName_CleanWithOptions"
-    ws.Range("A15").Value = "OutlierDetect_Setup"
-    ws.Range("A16").Value = "OutlierDetect_Run"
-    ws.Range("A17").Value = "SPSS_DeleteSelectedBanner"
-    ws.Range("A18").Value = "BizNo_SetApiKey"
-    ws.Range("A19").Value = "BizNo_MergeThreeColumns"
-    ws.Range("A20").Value = "BizNo_QueryStatusForSelection"
-    ws.Range("A21").Value = "OutlierDetect_ApplyToSelection"
-    ws.Range("A22").Value = "SPSS_RebuildTablesFromIndex"
-    ws.Range("A23").Value = "SPSS_DeleteVerticalBannersFromIndex"
-    ws.Range("A24").Value = "Toolkit_ResetAllSheetsToTop"
-    ws.Range("A25").Value = "SPSS_CreateIndexForActiveSheet"
-    ws.Range("A26").Value = "Toolkit_SelectA1OnAllSheets"
+    ws.Range("A15").Value = "Address_ConvertOldToRoad"
+    ws.Range("A16").Value = "OutlierDetect_Setup"
+    ws.Range("A17").Value = "OutlierDetect_Run"
+    ws.Range("A18").Value = "SPSS_DeleteSelectedBanner"
+    ws.Range("A19").Value = "BizNo_SetApiKey"
+    ws.Range("A20").Value = "BizNo_MergeThreeColumns"
+    ws.Range("A21").Value = "BizNo_QueryStatusForSelection"
+    ws.Range("A22").Value = "OutlierDetect_ApplyToSelection"
+    ws.Range("A23").Value = "SPSS_RebuildTablesFromIndex"
+    ws.Range("A24").Value = "SPSS_DeleteVerticalBannersFromIndex"
+    ws.Range("A25").Value = "Toolkit_ResetAllSheetsToTop"
+    ws.Range("A26").Value = "SPSS_CreateIndexForActiveSheet"
+    ws.Range("A27").Value = "Toolkit_SelectA1OnAllSheets"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -703,6 +704,236 @@ Private Function CompanyName_AlphabetKorean(ByVal ch As String) As String
         Case "Z": CompanyName_AlphabetKorean = "지"
         Case Else: CompanyName_AlphabetKorean = ch
     End Select
+End Function
+
+Public Sub Address_ConvertOldToRoad()
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("도로명주소 변환 - 원본 주소", _
+        "변환할 구주소 범위를 선택하세요. 결과는 오른쪽에 우편번호, 도로명주소, 변환결과 열로 생성됩니다.", _
+        addressRange) Then Exit Sub
+
+    Dim mapRange As Range
+    Set mapRange = Address_FindMappingRange(ActiveWorkbook)
+    If mapRange Is Nothing Then
+        If Not Toolkit_GetRangeFromUserForm("도로명주소 변환 - 변환표", _
+            "구주소, 도로명주소, 우편번호 헤더가 포함된 변환표 범위를 선택하세요.", _
+            mapRange) Then Exit Sub
+    End If
+
+    Address_ConvertRangeWithMapping addressRange, mapRange
+End Sub
+
+Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal mapRange As Range)
+    If addressRange.Areas.Count > 1 Then
+        MsgBox "주소 변환은 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "도로명주소 변환"
+        Exit Sub
+    End If
+
+    Dim oldCol As Long, roadCol As Long, zipCol As Long
+    If Not Address_DetectMappingColumns(mapRange, oldCol, roadCol, zipCol) Then
+        MsgBox "변환표에서 '구주소', '도로명주소', '우편번호' 헤더를 찾지 못했습니다.", vbExclamation, "도로명주소 변환"
+        Exit Sub
+    End If
+
+    Dim records As Collection
+    Set records = Address_LoadMappingRecords(mapRange, oldCol, roadCol, zipCol)
+    If records.Count = 0 Then
+        MsgBox "변환표에 사용할 주소 데이터가 없습니다.", vbExclamation, "도로명주소 변환"
+        Exit Sub
+    End If
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(addressRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 변환할 주소를 찾지 못했습니다.", vbInformation, "도로명주소 변환"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = workRange.Worksheet
+
+    Dim firstRow As Long, lastRow As Long, dataStartRow As Long, headerRow As Long
+    firstRow = workRange.Row
+    lastRow = workRange.Row + workRange.Rows.Count - 1
+    If Address_LooksLikeHeader(CStr(workRange.Cells(1, 1).Value)) Then
+        headerRow = firstRow
+        dataStartRow = firstRow + 1
+    Else
+        dataStartRow = firstRow
+        If firstRow > 1 Then headerRow = firstRow - 1
+    End If
+
+    Dim outputCol As Long
+    outputCol = workRange.Column + workRange.Columns.Count
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, 3).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, outputCol).Value = "우편번호"
+        ws.Cells(headerRow, outputCol + 1).Value = "도로명주소"
+        ws.Cells(headerRow, outputCol + 2).Value = "변환결과"
+        ws.Range(ws.Cells(headerRow, outputCol), ws.Cells(headerRow, outputCol + 2)).Font.Bold = True
+    End If
+
+    ws.Columns(outputCol).Resize(, 3).NumberFormat = "@"
+
+    Dim r As Long, successCount As Long, failCount As Long
+    For r = dataStartRow To lastRow
+        Dim sourceAddress As String
+        sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
+        If Len(sourceAddress) > 0 Then
+            Dim matched As Variant
+            matched = Address_FindBestMatch(sourceAddress, records)
+            If CBool(matched(0)) Then
+                ws.Cells(r, outputCol).Value = CStr(matched(2))
+                ws.Cells(r, outputCol + 1).Value = CStr(matched(1))
+                ws.Cells(r, outputCol + 2).Value = "성공"
+                successCount = successCount + 1
+            Else
+                ws.Cells(r, outputCol + 2).Value = "실패"
+                failCount = failCount + 1
+            End If
+        End If
+    Next r
+
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 2)).EntireColumn.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "도로명주소 변환을 완료했습니다." & vbCrLf & _
+           "성공: " & successCount & "건" & vbCrLf & _
+           "실패: " & failCount & "건", vbInformation, "도로명주소 변환"
+End Sub
+
+Private Function Address_FindMappingRange(ByVal wb As Workbook) As Range
+    If wb Is Nothing Then Exit Function
+
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        Dim usedRange As Range
+        Set usedRange = ws.UsedRange
+        Dim r As Long
+        For r = usedRange.Row To WorksheetFunction.Min(usedRange.Row + usedRange.Rows.Count - 1, usedRange.Row + 20)
+            Dim testRange As Range
+            Set testRange = ws.Range(ws.Cells(r, usedRange.Column), ws.Cells(usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column + usedRange.Columns.Count - 1))
+            Dim oldCol As Long, roadCol As Long, zipCol As Long
+            If Address_DetectMappingColumns(testRange, oldCol, roadCol, zipCol) Then
+                Set Address_FindMappingRange = testRange
+                Exit Function
+            End If
+        Next r
+    Next ws
+End Function
+
+Private Function Address_DetectMappingColumns(ByVal mapRange As Range, ByRef oldCol As Long, ByRef roadCol As Long, ByRef zipCol As Long) As Boolean
+    oldCol = 0: roadCol = 0: zipCol = 0
+
+    Dim c As Long
+    For c = 1 To mapRange.Columns.Count
+        Dim headerText As String
+        headerText = Replace(Trim$(CStr(mapRange.Cells(1, c).Value)), " ", "")
+        If headerText = "구주소" Or headerText = "지번주소" Then oldCol = c
+        If headerText = "도로명주소" Or headerText = "도로명" Then roadCol = c
+        If headerText = "우편번호" Then zipCol = c
+    Next c
+
+    Address_DetectMappingColumns = (oldCol > 0 And roadCol > 0 And zipCol > 0)
+End Function
+
+Private Function Address_LoadMappingRecords(ByVal mapRange As Range, ByVal oldCol As Long, ByVal roadCol As Long, ByVal zipCol As Long) As Collection
+    Dim records As Collection
+    Set records = New Collection
+
+    Dim r As Long
+    For r = 2 To mapRange.Rows.Count
+        Dim oldAddress As String, roadAddress As String, zipCode As String
+        oldAddress = Trim$(CStr(mapRange.Cells(r, oldCol).Value))
+        roadAddress = Trim$(CStr(mapRange.Cells(r, roadCol).Value))
+        zipCode = Trim$(CStr(mapRange.Cells(r, zipCol).Value))
+        If Len(oldAddress) > 0 And Len(roadAddress) > 0 Then
+            records.Add Array(Address_NormalizeKey(oldAddress), oldAddress, roadAddress, zipCode)
+        End If
+    Next r
+
+    Set Address_LoadMappingRecords = records
+End Function
+
+Private Function Address_FindBestMatch(ByVal sourceAddress As String, ByVal records As Collection) As Variant
+    Dim sourceKey As String
+    sourceKey = Address_NormalizeKey(sourceAddress)
+
+    Dim bestScore As Long
+    Dim bestRoad As String
+    Dim bestZip As String
+
+    Dim i As Long
+    For i = 1 To records.Count
+        Dim item As Variant
+        item = records(i)
+        Dim oldKey As String
+        oldKey = CStr(item(0))
+        If Len(oldKey) >= 8 And Len(sourceKey) >= 8 Then
+            Dim score As Long
+            If sourceKey = oldKey Then
+                score = 100000 + Len(oldKey)
+            ElseIf InStr(1, sourceKey, oldKey, vbTextCompare) > 0 Then
+                score = 50000 + Len(oldKey)
+            ElseIf InStr(1, oldKey, sourceKey, vbTextCompare) > 0 Then
+                score = 30000 + Len(sourceKey)
+            End If
+
+            If score > bestScore Then
+                bestScore = score
+                bestRoad = CStr(item(2))
+                bestZip = CStr(item(3))
+            End If
+        End If
+    Next i
+
+    Address_FindBestMatch = Array(bestScore > 0, bestRoad, bestZip)
+End Function
+
+Private Function Address_NormalizeKey(ByVal addressText As String) As String
+    Dim textValue As String
+    textValue = Trim$(CStr(addressText))
+    textValue = Address_NormalizeRegionNames(textValue)
+    textValue = Replace(textValue, ChrW(160), "")
+    textValue = Replace(textValue, vbTab, "")
+    textValue = Replace(textValue, " ", "")
+    textValue = Replace(textValue, "번지", "")
+    textValue = Replace(textValue, "<", "")
+    textValue = Replace(textValue, ">", "")
+    textValue = Replace(textValue, "(", "")
+    textValue = Replace(textValue, ")", "")
+    textValue = Replace(textValue, ",", "")
+    Address_NormalizeKey = textValue
+End Function
+
+Private Function Address_NormalizeRegionNames(ByVal addressText As String) As String
+    Dim textValue As String
+    textValue = addressText
+    textValue = Replace(textValue, "서울시", "서울특별시")
+    textValue = Replace(textValue, "부산시", "부산광역시")
+    textValue = Replace(textValue, "대구시", "대구광역시")
+    textValue = Replace(textValue, "인천시", "인천광역시")
+    textValue = Replace(textValue, "광주시", "광주광역시")
+    textValue = Replace(textValue, "대전시", "대전광역시")
+    textValue = Replace(textValue, "울산시", "울산광역시")
+    textValue = Replace(textValue, "세종시", "세종특별자치시")
+    textValue = Replace(textValue, "경기 ", "경기도 ")
+    textValue = Replace(textValue, "강원 ", "강원도 ")
+    textValue = Replace(textValue, "충북 ", "충청북도 ")
+    textValue = Replace(textValue, "충남 ", "충청남도 ")
+    textValue = Replace(textValue, "전북 ", "전라북도 ")
+    textValue = Replace(textValue, "전남 ", "전라남도 ")
+    textValue = Replace(textValue, "경북 ", "경상북도 ")
+    textValue = Replace(textValue, "경남 ", "경상남도 ")
+    textValue = Replace(textValue, "제주도", "제주특별자치도")
+    Address_NormalizeRegionNames = textValue
+End Function
+
+Private Function Address_LooksLikeHeader(ByVal textValue As String) As Boolean
+    textValue = Replace(Trim$(textValue), " ", "")
+    Address_LooksLikeHeader = (InStr(1, textValue, "주소", vbTextCompare) > 0)
 End Function
 
 ' ============================================================
@@ -3775,6 +4006,10 @@ End Sub
 
 Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)
     CompanyName_CleanWithOptions
+End Sub
+
+Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)
+    Address_ConvertOldToRoad
 End Sub
 
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)

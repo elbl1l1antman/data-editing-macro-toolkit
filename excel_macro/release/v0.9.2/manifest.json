@@ -1,0 +1,17 @@
+﻿{
+    "name":  "Data Editing Macro Toolkit",
+    "version":  "0.9.2",
+    "versionTag":  "v0.9.2",
+    "publishedAt":  "2026-05-26 12:20:39 +09:00",
+    "gitCommit":  "afbd888-dirty",
+    "addin":  "DataEditingMacroToolkit_v0.9.2.xlam",
+    "workbook":  "DataEditingMacroToolkit_v0.9.2.xlsm",
+    "sourceModule":  "MacroToolkit.bas",
+    "installFile":  "DataEditingMacroToolkit_v0.9.2.xlam",
+    "containsVbaModule":  true,
+    "containsRibbonTab":  true,
+    "ribbonTab":  "데이터 툴킷",
+    "ribbonInsertAfter":  "보기",
+    "vbaImportEncoding":  "CP949",
+    "notes":  "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View."
+}
