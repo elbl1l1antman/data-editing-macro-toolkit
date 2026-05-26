@@ -346,6 +346,141 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-CompanyNameOptionsUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmCompanyNameOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "기업체명/사업체명 정리 옵션"
+    $form.Properties.Item("Width").Value = 500
+    $form.Properties.Item("Height").Value = 430
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
+    $lblTitle.Left = 12
+    $lblTitle.Top = 10
+    $lblTitle.Width = 460
+    $lblTitle.Height = 18
+
+    $labels = @(
+        @("chkTrimOuter", "앞뒤 공백 제거", 12, 42, $false),
+        @("chkRemoveSpaces", "모든 공백 제거", 12, 68, $true),
+        @("chkNormalizeCorpSymbol", "㈜ 를 (주) 로 통일", 12, 94, $false),
+        @("chkNormalizeCorpText", "주식회사 를 (주) 로 통일", 12, 120, $false),
+        @("chkMoveCorpToFront", "(주)를 회사명 앞으로 이동", 12, 146, $false),
+        @("chkMoveCorpToEnd", "(주)를 회사명 뒤로 이동", 12, 172, $false),
+        @("chkRemoveCorpMarkers", "(주), ㈜, 주식회사 삭제", 250, 42, $true),
+        @("chkAddCorpPrefix", "회사형태가 없으면 앞에 (주) 추가", 250, 68, $false),
+        @("chkAddCorpSuffix", "회사형태가 없으면 뒤에 (주) 추가", 250, 94, $false),
+        @("chkCutBeforePossessive", "'의 ' 앞부분만 남기기", 250, 120, $true),
+        @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 146, $true)
+    )
+
+    foreach ($item in $labels) {
+        $chk = $designer.Controls.Add("Forms.CheckBox.1", $item[0], $true)
+        $chk.Caption = $item[1]
+        $chk.Left = [int]$item[2]
+        $chk.Top = [int]$item[3]
+        $chk.Width = 220
+        $chk.Height = 20
+        $chk.Value = [bool]$item[4]
+    }
+
+    $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
+    $lblTip.Caption = "기본값은 제공된 기업이름정리.xlsm의 체크 상태를 따릅니다. 결과는 원본 오른쪽 복사본 열에 생성됩니다."
+    $lblTip.Left = 12
+    $lblTip.Top = 214
+    $lblTip.Width = 460
+    $lblTip.Height = 42
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 286
+    $cmdOk.Top = 330
+    $cmdOk.Width = 86
+    $cmdOk.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 386
+    $cmdCancel.Top = 330
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+End Sub
+
+Public Property Get TrimOuter() As Boolean
+    TrimOuter = CBool(chkTrimOuter.Value)
+End Property
+
+Public Property Get RemoveSpaces() As Boolean
+    RemoveSpaces = CBool(chkRemoveSpaces.Value)
+End Property
+
+Public Property Get NormalizeCorpSymbol() As Boolean
+    NormalizeCorpSymbol = CBool(chkNormalizeCorpSymbol.Value)
+End Property
+
+Public Property Get NormalizeCorpText() As Boolean
+    NormalizeCorpText = CBool(chkNormalizeCorpText.Value)
+End Property
+
+Public Property Get MoveCorpToFront() As Boolean
+    MoveCorpToFront = CBool(chkMoveCorpToFront.Value)
+End Property
+
+Public Property Get MoveCorpToEnd() As Boolean
+    MoveCorpToEnd = CBool(chkMoveCorpToEnd.Value)
+End Property
+
+Public Property Get RemoveCorpMarkers() As Boolean
+    RemoveCorpMarkers = CBool(chkRemoveCorpMarkers.Value)
+End Property
+
+Public Property Get AddCorpPrefix() As Boolean
+    AddCorpPrefix = CBool(chkAddCorpPrefix.Value)
+End Property
+
+Public Property Get AddCorpSuffix() As Boolean
+    AddCorpSuffix = CBool(chkAddCorpSuffix.Value)
+End Property
+
+Public Property Get CutBeforePossessive() As Boolean
+    CutBeforePossessive = CBool(chkCutBeforePossessive.Value)
+End Property
+
+Public Property Get SpellAlphabetKorean() As Boolean
+    SpellAlphabetKorean = CBool(chkSpellAlphabetKorean.Value)
+End Property
+
+Private Sub cmdOK_Click()
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Cancelled = True
+    Cancel = True
+    Me.Hide
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -360,6 +495,7 @@ function Add-RibbonCustomUi {
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
+          <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
@@ -478,7 +614,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -486,6 +622,7 @@ try {
         $imported.Name = "MacroToolkit"
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-RangeSelectUserForm -Workbook $workbook
+        Add-CompanyNameOptionsUserForm -Workbook $workbook
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"

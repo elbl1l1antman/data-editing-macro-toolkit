@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.0"
+Public Const TOOLKIT_VERSION As String = "0.9.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -61,18 +61,19 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A11").Value = "NormalizePhonesInColumns"
     ws.Range("A12").Value = "RemovePhoneDashesToCopiedColumns"
     ws.Range("A13").Value = "RemoveBizNoDashesToCopiedColumns"
-    ws.Range("A14").Value = "OutlierDetect_Setup"
-    ws.Range("A15").Value = "OutlierDetect_Run"
-    ws.Range("A16").Value = "SPSS_DeleteSelectedBanner"
-    ws.Range("A17").Value = "BizNo_SetApiKey"
-    ws.Range("A18").Value = "BizNo_MergeThreeColumns"
-    ws.Range("A19").Value = "BizNo_QueryStatusForSelection"
-    ws.Range("A20").Value = "OutlierDetect_ApplyToSelection"
-    ws.Range("A21").Value = "SPSS_RebuildTablesFromIndex"
-    ws.Range("A22").Value = "SPSS_DeleteVerticalBannersFromIndex"
-    ws.Range("A23").Value = "Toolkit_ResetAllSheetsToTop"
-    ws.Range("A24").Value = "SPSS_CreateIndexForActiveSheet"
-    ws.Range("A25").Value = "Toolkit_SelectA1OnAllSheets"
+    ws.Range("A14").Value = "CompanyName_CleanWithOptions"
+    ws.Range("A15").Value = "OutlierDetect_Setup"
+    ws.Range("A16").Value = "OutlierDetect_Run"
+    ws.Range("A17").Value = "SPSS_DeleteSelectedBanner"
+    ws.Range("A18").Value = "BizNo_SetApiKey"
+    ws.Range("A19").Value = "BizNo_MergeThreeColumns"
+    ws.Range("A20").Value = "BizNo_QueryStatusForSelection"
+    ws.Range("A21").Value = "OutlierDetect_ApplyToSelection"
+    ws.Range("A22").Value = "SPSS_RebuildTablesFromIndex"
+    ws.Range("A23").Value = "SPSS_DeleteVerticalBannersFromIndex"
+    ws.Range("A24").Value = "Toolkit_ResetAllSheetsToTop"
+    ws.Range("A25").Value = "SPSS_CreateIndexForActiveSheet"
+    ws.Range("A26").Value = "Toolkit_SelectA1OnAllSheets"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -491,6 +492,218 @@ ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, resultTitle
 End Sub
+
+Public Sub CompanyName_CleanWithOptions()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("기업체명/사업체명 정리", _
+        "정리할 기업체명 또는 사업체명 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 선택한 규칙을 적용합니다.", _
+        targetRange) Then Exit Sub
+
+    Dim options As Object
+    Set options = CompanyName_GetOptionsFromUser()
+    If options Is Nothing Then Exit Sub
+
+    CompanyName_CleanRangeToCopiedColumns targetRange, options
+End Sub
+
+Private Function CompanyName_GetOptionsFromUser() As Object
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmCompanyNameOptions")
+    form.Show
+
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Dim options As Object
+    Set options = CreateObject("Scripting.Dictionary")
+    options("trimOuter") = CBool(form.TrimOuter)
+    options("removeSpaces") = CBool(form.RemoveSpaces)
+    options("normalizeCorpSymbol") = CBool(form.NormalizeCorpSymbol)
+    options("normalizeCorpText") = CBool(form.NormalizeCorpText)
+    options("moveCorpToFront") = CBool(form.MoveCorpToFront)
+    options("moveCorpToEnd") = CBool(form.MoveCorpToEnd)
+    options("removeCorpMarkers") = CBool(form.RemoveCorpMarkers)
+    options("addCorpPrefix") = CBool(form.AddCorpPrefix)
+    options("addCorpSuffix") = CBool(form.AddCorpSuffix)
+    options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
+    options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
+
+    Unload form
+    Set CompanyName_GetOptionsFromUser = options
+    Exit Function
+
+Fallback:
+    Set CompanyName_GetOptionsFromUser = CompanyName_DefaultOptions()
+End Function
+
+Private Function CompanyName_DefaultOptions() As Object
+    Dim options As Object
+    Set options = CreateObject("Scripting.Dictionary")
+    options("trimOuter") = False
+    options("removeSpaces") = True
+    options("normalizeCorpSymbol") = False
+    options("normalizeCorpText") = False
+    options("moveCorpToFront") = False
+    options("moveCorpToEnd") = False
+    options("removeCorpMarkers") = True
+    options("addCorpPrefix") = False
+    options("addCorpSuffix") = False
+    options("cutBeforePossessive") = True
+    options("spellAlphabetKorean") = True
+    Set CompanyName_DefaultOptions = options
+End Function
+
+Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal options As Object)
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(target)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 기업체명/사업체명을 찾지 못했습니다.", vbInformation, "기업체명 정리"
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "기업명_정리")
+    If outputRange Is Nothing Then Exit Sub
+
+    Dim cell As Range
+    Dim changedCount As Long
+    Dim skippedFormulaCount As Long
+    Dim cleaned As String
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    For Each cell In outputRange.Cells
+        If cell.HasFormula Then
+            skippedFormulaCount = skippedFormulaCount + 1
+        Else
+            cleaned = CompanyName_CleanOne(CStr(cell.Value), options)
+            If CStr(cell.Value) <> cleaned Then
+                cell.NumberFormat = "@"
+                cell.Value = cleaned
+                changedCount = changedCount + 1
+            End If
+        End If
+    Next cell
+
+    outputRange.Columns.AutoFit
+    Application.ScreenUpdating = True
+    MsgBox changedCount & "개 기업체명/사업체명을 정리했습니다." & vbCrLf & _
+           skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
+           "원본 범위는 변경하지 않았습니다.", vbInformation, "기업체명 정리"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "기업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업체명 정리"
+End Sub
+
+Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As Object) As String
+    Dim textValue As String
+    textValue = CStr(valueIn)
+
+    If CBool(options("cutBeforePossessive")) Then
+        Dim cutPos As Long
+        cutPos = InStr(1, textValue, "의 ", vbTextCompare)
+        If cutPos > 0 Then textValue = Left$(textValue, cutPos - 1)
+    End If
+
+    If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
+    If CBool(options("removeSpaces")) Then textValue = CompanyName_RemoveSpaces(textValue)
+    If CBool(options("normalizeCorpSymbol")) Then textValue = Replace(textValue, "㈜", "(주)")
+    If CBool(options("normalizeCorpText")) Then textValue = Replace(textValue, "주식회사", "(주)")
+    If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
+    If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
+    If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
+    If CBool(options("addCorpPrefix")) Then
+        If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
+    End If
+    If CBool(options("addCorpSuffix")) Then
+        If Not CompanyName_HasCorpMarker(textValue) Then textValue = textValue & "(주)"
+    End If
+    If CBool(options("spellAlphabetKorean")) Then textValue = CompanyName_SpellAlphabetKorean(textValue)
+
+    CompanyName_CleanOne = textValue
+End Function
+
+Private Function CompanyName_RemoveSpaces(ByVal textValue As String) As String
+    textValue = Replace(textValue, ChrW(160), "")
+    textValue = Replace(textValue, vbTab, "")
+    textValue = Replace(textValue, " ", "")
+    CompanyName_RemoveSpaces = textValue
+End Function
+
+Private Function CompanyName_HasCorpMarker(ByVal textValue As String) As Boolean
+    CompanyName_HasCorpMarker = (InStr(1, textValue, "(주)", vbTextCompare) > 0 _
+                             Or InStr(1, textValue, "㈜", vbTextCompare) > 0 _
+                             Or InStr(1, textValue, "주식회사", vbTextCompare) > 0)
+End Function
+
+Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As String
+    textValue = Replace(textValue, "(주)", "")
+    textValue = Replace(textValue, "㈜", "")
+    textValue = Replace(textValue, "주식회사", "")
+    CompanyName_RemoveCorpMarkers = textValue
+End Function
+
+Private Function CompanyName_MoveCorpMarker(ByVal textValue As String, ByVal moveToFront As Boolean) As String
+    If Not CompanyName_HasCorpMarker(textValue) Then
+        CompanyName_MoveCorpMarker = textValue
+        Exit Function
+    End If
+
+    Dim baseName As String
+    baseName = CompanyName_RemoveCorpMarkers(textValue)
+    If moveToFront Then
+        CompanyName_MoveCorpMarker = "(주)" & baseName
+    Else
+        CompanyName_MoveCorpMarker = baseName & "(주)"
+    End If
+End Function
+
+Private Function CompanyName_SpellAlphabetKorean(ByVal textValue As String) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To Len(textValue)
+        result = result & CompanyName_AlphabetKorean(Mid$(textValue, i, 1))
+    Next i
+    CompanyName_SpellAlphabetKorean = result
+End Function
+
+Private Function CompanyName_AlphabetKorean(ByVal ch As String) As String
+    Select Case UCase$(ch)
+        Case "A": CompanyName_AlphabetKorean = "에이"
+        Case "B": CompanyName_AlphabetKorean = "비"
+        Case "C": CompanyName_AlphabetKorean = "씨"
+        Case "D": CompanyName_AlphabetKorean = "디"
+        Case "E": CompanyName_AlphabetKorean = "이"
+        Case "F": CompanyName_AlphabetKorean = "에프"
+        Case "G": CompanyName_AlphabetKorean = "지"
+        Case "H": CompanyName_AlphabetKorean = "에이치"
+        Case "I": CompanyName_AlphabetKorean = "아이"
+        Case "J": CompanyName_AlphabetKorean = "제이"
+        Case "K": CompanyName_AlphabetKorean = "케이"
+        Case "L": CompanyName_AlphabetKorean = "엘"
+        Case "M": CompanyName_AlphabetKorean = "엠"
+        Case "N": CompanyName_AlphabetKorean = "엔"
+        Case "O": CompanyName_AlphabetKorean = "오"
+        Case "P": CompanyName_AlphabetKorean = "피"
+        Case "Q": CompanyName_AlphabetKorean = "큐"
+        Case "R": CompanyName_AlphabetKorean = "알"
+        Case "S": CompanyName_AlphabetKorean = "에스"
+        Case "T": CompanyName_AlphabetKorean = "티"
+        Case "U": CompanyName_AlphabetKorean = "유"
+        Case "V": CompanyName_AlphabetKorean = "브이"
+        Case "W": CompanyName_AlphabetKorean = "더블유"
+        Case "X": CompanyName_AlphabetKorean = "엑스"
+        Case "Y": CompanyName_AlphabetKorean = "와이"
+        Case "Z": CompanyName_AlphabetKorean = "지"
+        Case Else: CompanyName_AlphabetKorean = ch
+    End Select
+End Function
 
 ' ============================================================
 ' 함  수 : TryNumberFromText (내부 전용)
@@ -3558,6 +3771,10 @@ End Sub
 
 Public Sub Ribbon_RemovePhoneDashes(control As IRibbonControl)
     RemovePhoneDashesToCopiedColumns
+End Sub
+
+Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)
+    CompanyName_CleanWithOptions
 End Sub
 
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
