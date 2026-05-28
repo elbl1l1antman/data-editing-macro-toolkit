@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.3"
+Public Const TOOLKIT_VERSION As String = "0.9.4"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -84,6 +84,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A28").Value = "NaverLocal_SetApiCredentials"
     ws.Range("A29").Value = "NaverLocal_BuildListByDong"
     ws.Range("A30").Value = "NaverLocal_VerifyExistingData"
+    ws.Range("A31").Value = "Address_SplitDongAndRoad"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -732,6 +733,82 @@ Public Sub Address_ConvertOldToRoad()
     Address_ConvertRangeWithMapping addressRange, mapRange
 End Sub
 
+Public Sub Address_SplitDongAndRoad()
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("주소 체계 분리", _
+        "동 기준 주소와 도로명주소로 나눌 주소 범위를 선택하세요. 결과는 원본 오른쪽에 2개 열로 생성됩니다.", _
+        addressRange) Then Exit Sub
+
+    Address_SplitRangeDongAndRoad addressRange
+End Sub
+
+Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
+    If addressRange.Areas.Count > 1 Then
+        MsgBox "주소 체계 분리는 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "주소 체계 분리"
+        Exit Sub
+    End If
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(addressRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 처리할 주소를 찾지 못했습니다.", vbInformation, "주소 체계 분리"
+        Exit Sub
+    End If
+
+    Dim records As Collection
+    Set records = Address_LoadFlexibleMappingRecords(ActiveWorkbook)
+
+    Dim ws As Worksheet
+    Set ws = workRange.Worksheet
+
+    Dim firstRow As Long, lastRow As Long, dataStartRow As Long, headerRow As Long
+    firstRow = workRange.Row
+    lastRow = workRange.Row + workRange.Rows.Count - 1
+    If Address_LooksLikeHeader(CStr(workRange.Cells(1, 1).Value)) Then
+        headerRow = firstRow
+        dataStartRow = firstRow + 1
+    Else
+        dataStartRow = firstRow
+        If firstRow > 1 Then headerRow = firstRow - 1
+    End If
+
+    Dim outputCol As Long
+    outputCol = workRange.Column + workRange.Columns.Count
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, outputCol).Value = "동 기준 주소"
+        ws.Cells(headerRow, outputCol + 1).Value = "도로명주소"
+        ws.Range(ws.Cells(headerRow, outputCol), ws.Cells(headerRow, outputCol + 1)).Font.Bold = True
+    End If
+    ws.Columns(outputCol).Resize(, 2).NumberFormat = "@"
+
+    Dim r As Long
+    Dim matchedCount As Long
+    Dim heuristicCount As Long
+    Dim sourceAddress As String
+    Dim splitResult As Variant
+
+    For r = dataStartRow To lastRow
+        sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
+        If Len(sourceAddress) > 0 Then
+            splitResult = Address_SplitOneAddress(sourceAddress, records)
+            ws.Cells(r, outputCol).Value = CStr(splitResult(0))
+            ws.Cells(r, outputCol + 1).Value = CStr(splitResult(1))
+            If CBool(splitResult(2)) Then matchedCount = matchedCount + 1 Else heuristicCount = heuristicCount + 1
+        End If
+    Next r
+
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 1)).EntireColumn.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "주소 체계 분리를 완료했습니다." & vbCrLf & _
+           "변환표 매칭: " & matchedCount & "건" & vbCrLf & _
+           "주소 형태 기반 분리: " & heuristicCount & "건" & vbCrLf & _
+           "변환표가 있으면 지번/도로명 양방향 매칭 정확도가 높아집니다.", vbInformation, "주소 체계 분리"
+End Sub
+
 Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal mapRange As Range)
     If addressRange.Areas.Count > 1 Then
         MsgBox "주소 변환은 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "도로명주소 변환"
@@ -866,6 +943,127 @@ Private Function Address_LoadMappingRecords(ByVal mapRange As Range, ByVal oldCo
     Set Address_LoadMappingRecords = records
 End Function
 
+Private Function Address_LoadFlexibleMappingRecords(ByVal wb As Workbook) As Collection
+    Dim records As New Collection
+    If wb Is Nothing Then
+        Set Address_LoadFlexibleMappingRecords = records
+        Exit Function
+    End If
+
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        Dim usedRange As Range
+        Set usedRange = ws.UsedRange
+        If Not usedRange Is Nothing Then
+            Dim r As Long
+            For r = usedRange.Row To WorksheetFunction.Min(usedRange.Row + usedRange.Rows.Count - 1, usedRange.Row + 20)
+                Dim testRange As Range
+                Set testRange = ws.Range(ws.Cells(r, usedRange.Column), ws.Cells(usedRange.Row + usedRange.Rows.Count - 1, usedRange.Column + usedRange.Columns.Count - 1))
+
+                Dim oldCol As Long, roadCol As Long, zipCol As Long
+                If Address_DetectMappingColumnsFlexible(testRange, oldCol, roadCol, zipCol) Then
+                    Dim loaded As Collection
+                    Set loaded = Address_LoadMappingRecordsFlexible(testRange, oldCol, roadCol)
+                    Dim item As Variant
+                    For Each item In loaded
+                        records.Add item
+                    Next item
+                End If
+            Next r
+        End If
+    Next ws
+
+    Set Address_LoadFlexibleMappingRecords = records
+End Function
+
+Private Function Address_DetectMappingColumnsFlexible(ByVal mapRange As Range, ByRef oldCol As Long, ByRef roadCol As Long, ByRef zipCol As Long) As Boolean
+    oldCol = 0: roadCol = 0: zipCol = 0
+
+    Dim c As Long
+    For c = 1 To mapRange.Columns.Count
+        Dim headerText As String
+        headerText = Replace(Trim$(CStr(mapRange.Cells(1, c).Value)), " ", "")
+        If headerText = "구주소" Or headerText = "지번주소" Or headerText = "동기준주소" Or headerText = "법정동주소" Or headerText = "행정동주소" Then oldCol = c
+        If headerText = "도로명주소" Or headerText = "도로명" Then roadCol = c
+        If headerText = "우편번호" Then zipCol = c
+    Next c
+
+    Address_DetectMappingColumnsFlexible = (oldCol > 0 And roadCol > 0)
+End Function
+
+Private Function Address_LoadMappingRecordsFlexible(ByVal mapRange As Range, ByVal oldCol As Long, ByVal roadCol As Long) As Collection
+    Dim records As New Collection
+    Dim r As Long
+    For r = 2 To mapRange.Rows.Count
+        Dim oldAddress As String, roadAddress As String
+        oldAddress = Trim$(CStr(mapRange.Cells(r, oldCol).Value))
+        roadAddress = Trim$(CStr(mapRange.Cells(r, roadCol).Value))
+        If Len(oldAddress) > 0 Or Len(roadAddress) > 0 Then
+            records.Add Array(Address_NormalizeKey(oldAddress), Address_NormalizeKey(roadAddress), oldAddress, roadAddress)
+        End If
+    Next r
+    Set Address_LoadMappingRecordsFlexible = records
+End Function
+
+Private Function Address_SplitOneAddress(ByVal sourceAddress As String, ByVal records As Collection) As Variant
+    Dim matched As Variant
+    matched = Address_FindBestDongRoadMatch(sourceAddress, records)
+    If CBool(matched(0)) Then
+        Address_SplitOneAddress = Array(CStr(matched(1)), CStr(matched(2)), True)
+        Exit Function
+    End If
+
+    If Address_IsRoadAddress(sourceAddress) Then
+        Address_SplitOneAddress = Array(Address_ExtractDongBasisAddress(sourceAddress), sourceAddress, False)
+    Else
+        Address_SplitOneAddress = Array(sourceAddress, "", False)
+    End If
+End Function
+
+Private Function Address_FindBestDongRoadMatch(ByVal sourceAddress As String, ByVal records As Collection) As Variant
+    Dim sourceKey As String
+    sourceKey = Address_NormalizeKey(sourceAddress)
+
+    Dim bestScore As Long
+    Dim bestDong As String
+    Dim bestRoad As String
+
+    If records Is Nothing Then
+        Address_FindBestDongRoadMatch = Array(False, "", "")
+        Exit Function
+    End If
+
+    Dim i As Long
+    For i = 1 To records.Count
+        Dim item As Variant
+        item = records(i)
+
+        Dim score As Long
+        score = WorksheetFunction.Max( _
+            Address_MatchScore(sourceKey, CStr(item(0))), _
+            Address_MatchScore(sourceKey, CStr(item(1))))
+
+        If score > bestScore Then
+            bestScore = score
+            bestDong = CStr(item(2))
+            bestRoad = CStr(item(3))
+        End If
+    Next i
+
+    Address_FindBestDongRoadMatch = Array(bestScore > 0, bestDong, bestRoad)
+End Function
+
+Private Function Address_MatchScore(ByVal sourceKey As String, ByVal candidateKey As String) As Long
+    If Len(sourceKey) < 8 Or Len(candidateKey) < 8 Then Exit Function
+    If sourceKey = candidateKey Then
+        Address_MatchScore = 100000 + Len(candidateKey)
+    ElseIf InStr(1, sourceKey, candidateKey, vbTextCompare) > 0 Then
+        Address_MatchScore = 50000 + Len(candidateKey)
+    ElseIf InStr(1, candidateKey, sourceKey, vbTextCompare) > 0 Then
+        Address_MatchScore = 30000 + Len(sourceKey)
+    End If
+End Function
+
 Private Function Address_FindBestMatch(ByVal sourceAddress As String, ByVal records As Collection) As Variant
     Dim sourceKey As String
     sourceKey = Address_NormalizeKey(sourceAddress)
@@ -938,6 +1136,100 @@ Private Function Address_NormalizeRegionNames(ByVal addressText As String) As St
     textValue = Replace(textValue, "경남 ", "경상남도 ")
     textValue = Replace(textValue, "제주도", "제주특별자치도")
     Address_NormalizeRegionNames = textValue
+End Function
+
+Private Function Address_IsRoadAddress(ByVal addressText As String) As Boolean
+    Dim textValue As String
+    textValue = " " & Replace(Trim$(CStr(addressText)), "  ", " ") & " "
+    Address_IsRoadAddress = (InStr(1, textValue, "로 ", vbTextCompare) > 0 _
+                          Or InStr(1, textValue, "길 ", vbTextCompare) > 0 _
+                          Or InStr(1, textValue, "대로 ", vbTextCompare) > 0 _
+                          Or InStr(1, textValue, "번길 ", vbTextCompare) > 0)
+End Function
+
+Private Function Address_ExtractDongBasisAddress(ByVal roadAddress As String) As String
+    Dim textValue As String
+    textValue = Trim$(Address_NormalizeRegionNames(CStr(roadAddress)))
+
+    Dim parenValue As String
+    parenValue = Address_TextInsideLastParentheses(textValue)
+    If Address_LooksLikeDongToken(parenValue) Then
+        Dim regionPart As String
+        regionPart = Address_RegionPrefixBeforeRoad(textValue)
+        Address_ExtractDongBasisAddress = Trim$(regionPart & " " & parenValue)
+        Exit Function
+    End If
+
+    Address_ExtractDongBasisAddress = Address_PrefixThroughDongToken(textValue)
+End Function
+
+Private Function Address_TextInsideLastParentheses(ByVal textValue As String) As String
+    Dim openPos As Long
+    Dim closePos As Long
+    closePos = InStrRev(textValue, ")")
+    openPos = InStrRev(textValue, "(")
+    If openPos > 0 And closePos > openPos Then
+        Address_TextInsideLastParentheses = Mid$(textValue, openPos + 1, closePos - openPos - 1)
+    End If
+End Function
+
+Private Function Address_RegionPrefixBeforeRoad(ByVal textValue As String) As String
+    Dim parts() As String
+    parts = Split(Trim$(textValue), " ")
+
+    Dim result As String
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        If Address_LooksLikeRoadToken(parts(i)) Then Exit For
+        If Len(parts(i)) > 0 Then result = Trim$(result & " " & parts(i))
+        If Address_LooksLikeDistrictToken(parts(i)) Then Exit For
+    Next i
+
+    Address_RegionPrefixBeforeRoad = result
+End Function
+
+Private Function Address_PrefixThroughDongToken(ByVal textValue As String) As String
+    Dim cleaned As String
+    cleaned = textValue
+    If InStr(1, cleaned, "(", vbTextCompare) > 0 Then cleaned = Trim$(Left$(cleaned, InStr(1, cleaned, "(", vbTextCompare) - 1))
+
+    Dim parts() As String
+    parts = Split(Trim$(cleaned), " ")
+
+    Dim result As String
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        If Address_LooksLikeRoadToken(parts(i)) Then Exit For
+        If Len(parts(i)) > 0 Then result = Trim$(result & " " & parts(i))
+        If Address_LooksLikeDongToken(parts(i)) Then Exit For
+    Next i
+
+    Address_PrefixThroughDongToken = result
+End Function
+
+Private Function Address_LooksLikeRoadToken(ByVal token As String) As Boolean
+    token = Trim$(token)
+    Address_LooksLikeRoadToken = (Right$(token, 1) = "로" _
+                               Or Right$(token, 1) = "길" _
+                               Or Right$(token, 2) = "대로" _
+                               Or Right$(token, 2) = "번길")
+End Function
+
+Private Function Address_LooksLikeDistrictToken(ByVal token As String) As Boolean
+    token = Trim$(token)
+    Address_LooksLikeDistrictToken = (Right$(token, 1) = "구" _
+                                   Or Right$(token, 1) = "군" _
+                                   Or Right$(token, 1) = "시")
+End Function
+
+Private Function Address_LooksLikeDongToken(ByVal token As String) As Boolean
+    token = Trim$(token)
+    If Len(token) = 0 Then Exit Function
+    Address_LooksLikeDongToken = (InStr(1, token, "동", vbTextCompare) > 0 _
+                               Or InStr(1, token, "읍", vbTextCompare) > 0 _
+                               Or InStr(1, token, "면", vbTextCompare) > 0 _
+                               Or InStr(1, token, "리", vbTextCompare) > 0 _
+                               Or Right$(token, 1) = "가")
 End Function
 
 Private Function Address_LooksLikeHeader(ByVal textValue As String) As Boolean
@@ -4550,6 +4842,10 @@ End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)
     Address_ConvertOldToRoad
+End Sub
+
+Public Sub Ribbon_AddressSplitDongAndRoad(control As IRibbonControl)
+    Address_SplitDongAndRoad
 End Sub
 
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
