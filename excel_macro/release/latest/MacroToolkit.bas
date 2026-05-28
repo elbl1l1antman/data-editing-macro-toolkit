@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.2"
+Public Const TOOLKIT_VERSION As String = "0.9.3"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -16,6 +16,11 @@ Private Const BIZ_API_BASE_URL As String = "https://api.odcloud.kr/api/nts-busin
 Private Const BIZ_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const BIZ_APP_SECTION As String = "BusinessApi"
 Private Const BIZ_APP_KEY As String = "ServiceKey"
+Private Const NAVER_API_BASE_URL As String = "https://openapi.naver.com/v1/search/local.json"
+Private Const NAVER_APP_NAME As String = "DataEditingMacroToolkit"
+Private Const NAVER_APP_SECTION As String = "NaverLocalSearch"
+Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
+Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -29,6 +34,7 @@ Public Sub Toolkit_About()
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
            "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
            "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
+           "- 네이버 지역검색 API 기반 업체 리스트 생성/주소 검증" & vbCrLf & _
            "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성", _
            vbInformation, "매크로 툴킷"
 End Sub
@@ -75,6 +81,9 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A25").Value = "Toolkit_ResetAllSheetsToTop"
     ws.Range("A26").Value = "SPSS_CreateIndexForActiveSheet"
     ws.Range("A27").Value = "Toolkit_SelectA1OnAllSheets"
+    ws.Range("A28").Value = "NaverLocal_SetApiCredentials"
+    ws.Range("A29").Value = "NaverLocal_BuildListByDong"
+    ws.Range("A30").Value = "NaverLocal_VerifyExistingData"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1455,6 +1464,537 @@ End Function
 Private Function Biz_JsonUnescape(ByVal valueIn As String) As String
     Biz_JsonUnescape = Replace(Replace(Replace(Replace(valueIn, "\""", """"), "\\", "\"), "\/", "/"), "\n", vbLf)
 End Function
+
+' ============================================================
+' 네이버 지역검색 API
+' ============================================================
+Public Sub NaverLocal_SetApiCredentials()
+    Dim clientId As String
+    Dim clientSecret As String
+
+    clientId = InputBox("네이버 Developers 애플리케이션의 Client ID를 입력하세요.", "네이버 지역검색 인증키", NaverLocal_GetClientId())
+    If Len(Trim$(clientId)) = 0 Then Exit Sub
+
+    clientSecret = InputBox("네이버 Developers 애플리케이션의 Client Secret을 입력하세요.", "네이버 지역검색 인증키", NaverLocal_GetClientSecret())
+    If Len(Trim$(clientSecret)) = 0 Then Exit Sub
+
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_CLIENT_ID_KEY, Trim$(clientId)
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_CLIENT_SECRET_KEY, Trim$(clientSecret)
+
+    MsgBox "네이버 지역검색 API 인증키를 저장했습니다.", vbInformation, "네이버 지역검색"
+End Sub
+
+Public Sub NaverLocal_BuildListByDong()
+    If Not NaverLocal_HasCredentials() Then
+        MsgBox "먼저 [네이버 인증키 설정] 버튼으로 Client ID와 Client Secret을 저장하세요.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    Dim dongRange As Range
+    If Not Toolkit_GetRangeFromUserForm("네이버 신규 리스트 - 행정동 선택", _
+        "업종 검색에 사용할 행정동 목록 범위를 선택하세요. 예: 서울특별시 종로구 청운효자동", dongRange) Then Exit Sub
+
+    Dim options As Object
+    Set options = NaverLocal_GetBuildOptions()
+    If options Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+
+    Dim wsOut As Worksheet
+    Set wsOut = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    wsOut.Name = SPSS_UniqueSheetName(wb, "네이버_신규리스트")
+
+    Dim headers As Variant
+    headers = Array("업종", "행정동", "검색어", "검색순위", "업체명", "업체유형", "지번주소", "도로명주소", "URL", "검색일시")
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        wsOut.Cells(1, i + 1).Value = headers(i)
+    Next i
+
+    Dim rowOut As Long: rowOut = 2
+    Dim requestCount As Long
+    Dim resultCount As Long
+    Dim failCount As Long
+    Dim cell As Range
+    Dim queryText As String
+    Dim items As Collection
+    Dim item As Object
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+
+    For Each cell In dongRange.Cells
+        If Len(Trim$(CStr(cell.Value))) > 0 Then
+            requestCount = requestCount + 1
+            queryText = Trim$(CStr(cell.Value)) & " " & CStr(options("industry"))
+
+            Set items = Nothing
+            On Error Resume Next
+            Set items = NaverLocal_Search(queryText, CLng(options("displayCount")), CStr(options("sortMode")))
+            If Err.Number <> 0 Then
+                failCount = failCount + 1
+                Err.Clear
+            End If
+            On Error GoTo ErrHandler
+
+            If Not items Is Nothing Then
+                For i = 1 To items.Count
+                    Set item = items(i)
+                    wsOut.Cells(rowOut, 1).Value = CStr(options("industry"))
+                    wsOut.Cells(rowOut, 2).Value = Trim$(CStr(cell.Value))
+                    wsOut.Cells(rowOut, 3).Value = queryText
+                    wsOut.Cells(rowOut, 4).Value = i
+                    wsOut.Cells(rowOut, 5).Value = item("title")
+                    wsOut.Cells(rowOut, 6).Value = item("category")
+                    wsOut.Cells(rowOut, 7).Value = item("address")
+                    wsOut.Cells(rowOut, 8).Value = item("roadAddress")
+                    wsOut.Cells(rowOut, 9).Value = item("link")
+                    wsOut.Cells(rowOut, 10).Value = Now
+                    rowOut = rowOut + 1
+                    resultCount = resultCount + 1
+                Next i
+            End If
+
+            NaverLocal_Delay CDbl(options("delaySeconds"))
+        End If
+    Next cell
+
+    wsOut.Range("A1:J1").Font.Bold = True
+    wsOut.Columns("A:J").AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "네이버 지역검색 신규 리스트 생성을 완료했습니다." & vbCrLf & _
+           "요청 행정동: " & requestCount & "건" & vbCrLf & _
+           "생성 결과: " & resultCount & "건" & vbCrLf & _
+           "조회 오류: " & failCount & "건", vbInformation, "네이버 지역검색"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "네이버 지역검색 신규 리스트 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
+End Sub
+
+Public Sub NaverLocal_VerifyExistingData()
+    If Not NaverLocal_HasCredentials() Then
+        MsgBox "먼저 [네이버 인증키 설정] 버튼으로 Client ID와 Client Secret을 저장하세요.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    Dim nameRange As Range
+    If Not Toolkit_GetRangeFromUserForm("네이버 검증 - 업체명 범위", _
+        "검증할 업체명이 들어 있는 범위를 선택하세요. 헤더가 포함되어 있으면 옵션에서 헤더 포함을 켜세요.", nameRange) Then Exit Sub
+
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("네이버 검증 - 주소 범위", _
+        "같은 행 순서의 주소 범위를 선택하세요. 업체명 범위와 행 수가 같아야 합니다.", addressRange) Then Exit Sub
+
+    If nameRange.Rows.Count <> addressRange.Rows.Count Then
+        MsgBox "업체명 범위와 주소 범위의 행 수가 다릅니다.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+    If nameRange.Areas.Count > 1 Or addressRange.Areas.Count > 1 Then
+        MsgBox "네이버 검증은 한 덩어리의 연속 범위만 지원합니다.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    Dim options As Object
+    Set options = NaverLocal_GetVerifyOptions()
+    If options Is Nothing Then Exit Sub
+
+    Dim ws As Worksheet
+    Set ws = nameRange.Worksheet
+    If Not addressRange.Worksheet Is ws Then
+        MsgBox "업체명과 주소 범위는 같은 시트에 있어야 합니다.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    Dim firstRow As Long
+    Dim startOffset As Long
+    startOffset = IIf(CBool(options("hasHeader")), 1, 0)
+    firstRow = nameRange.Row + startOffset
+    If firstRow > nameRange.Row + nameRange.Rows.Count - 1 Then
+        MsgBox "헤더를 제외하면 검증할 데이터가 없습니다.", vbInformation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    Dim outputCol As Long
+    outputCol = Application.Max(nameRange.Column + nameRange.Columns.Count, addressRange.Column + addressRange.Columns.Count)
+    ws.Columns(outputCol).Resize(, 8).Insert Shift:=xlToRight
+    NaverLocal_WriteVerifyHeaders ws, nameRange.Row, outputCol
+
+    Dim rowIndex As Long
+    Dim nameValue As String
+    Dim addressValue As String
+    Dim queryText As String
+    Dim items As Collection
+    Dim bestItem As Object
+    Dim nameScore As Double
+    Dim addressScore As Double
+    Dim riskLabel As String
+    Dim requestCount As Long
+    Dim noResultCount As Long
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+
+    For rowIndex = firstRow To nameRange.Row + nameRange.Rows.Count - 1
+        nameValue = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value))
+        addressValue = Trim$(CStr(ws.Cells(rowIndex, addressRange.Column).Value))
+
+        If Len(nameValue) > 0 Or Len(addressValue) > 0 Then
+            requestCount = requestCount + 1
+            queryText = NaverLocal_BuildVerifyQuery(nameValue, addressValue, CStr(options("queryMode")))
+            Set items = NaverLocal_Search(queryText, CLng(options("displayCount")), CStr(options("sortMode")))
+            Set bestItem = NaverLocal_BestMatch(items, nameValue, addressValue, nameScore, addressScore)
+
+            If bestItem Is Nothing Then
+                noResultCount = noResultCount + 1
+                riskLabel = "오류 위험성 높음 확인 필요"
+                ws.Cells(rowIndex, outputCol + 7).Value = riskLabel
+            Else
+                riskLabel = NaverLocal_RiskLabel(nameScore, addressScore)
+                ws.Cells(rowIndex, outputCol).Value = bestItem("title")
+                ws.Cells(rowIndex, outputCol + 1).Value = bestItem("category")
+                ws.Cells(rowIndex, outputCol + 2).Value = bestItem("address")
+                ws.Cells(rowIndex, outputCol + 3).Value = bestItem("roadAddress")
+                ws.Cells(rowIndex, outputCol + 4).Value = bestItem("link")
+                ws.Cells(rowIndex, outputCol + 5).Value = Round(nameScore, 1)
+                ws.Cells(rowIndex, outputCol + 6).Value = Round(addressScore, 1)
+                ws.Cells(rowIndex, outputCol + 7).Value = riskLabel
+            End If
+
+            NaverLocal_ColorRiskCell ws.Cells(rowIndex, outputCol + 7), riskLabel
+            NaverLocal_Delay CDbl(options("delaySeconds"))
+        End If
+    Next rowIndex
+
+    ws.Range(ws.Cells(nameRange.Row, outputCol), ws.Cells(nameRange.Row, outputCol + 7)).Font.Bold = True
+    ws.Columns(outputCol).Resize(, 8).AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "네이버 지역검색 기반 주소 검증을 완료했습니다." & vbCrLf & _
+           "조회: " & requestCount & "건" & vbCrLf & _
+           "검색결과 없음: " & noResultCount & "건", vbInformation, "네이버 지역검색"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "네이버 주소 검증 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
+End Sub
+
+Private Function NaverLocal_GetBuildOptions() As Object
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmNaverLocalBuildOptions")
+    form.Show
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Dim options As Object
+    Set options = CreateObject("Scripting.Dictionary")
+    options("industry") = CStr(form.IndustryText)
+    options("displayCount") = CLng(form.DisplayCount)
+    options("delaySeconds") = CDbl(form.DelaySeconds)
+    options("sortMode") = CStr(form.SortMode)
+    Unload form
+    Set NaverLocal_GetBuildOptions = options
+    Exit Function
+
+Fallback:
+    Dim industry As String
+    industry = InputBox("검색할 업종/키워드를 입력하세요. 예: 서점, 카페, 음식점", "네이버 신규 리스트")
+    If Len(Trim$(industry)) = 0 Then Exit Function
+    Set options = CreateObject("Scripting.Dictionary")
+    options("industry") = Trim$(industry)
+    options("displayCount") = 5
+    options("delaySeconds") = 0.4
+    options("sortMode") = "comment"
+    Set NaverLocal_GetBuildOptions = options
+End Function
+
+Private Function NaverLocal_GetVerifyOptions() As Object
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmNaverLocalVerifyOptions")
+    form.Show
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Dim options As Object
+    Set options = CreateObject("Scripting.Dictionary")
+    options("queryMode") = CStr(form.QueryMode)
+    options("displayCount") = CLng(form.DisplayCount)
+    options("delaySeconds") = CDbl(form.DelaySeconds)
+    options("sortMode") = CStr(form.SortMode)
+    options("hasHeader") = CBool(form.HasHeader)
+    Unload form
+    Set NaverLocal_GetVerifyOptions = options
+    Exit Function
+
+Fallback:
+    Set options = CreateObject("Scripting.Dictionary")
+    options("queryMode") = "name_address"
+    options("displayCount") = 5
+    options("delaySeconds") = 0.4
+    options("sortMode") = "comment"
+    options("hasHeader") = True
+    Set NaverLocal_GetVerifyOptions = options
+End Function
+
+Private Function NaverLocal_HasCredentials() As Boolean
+    NaverLocal_HasCredentials = (Len(NaverLocal_GetClientId()) > 0 And Len(NaverLocal_GetClientSecret()) > 0)
+End Function
+
+Private Function NaverLocal_GetClientId() As String
+    NaverLocal_GetClientId = GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_CLIENT_ID_KEY, "")
+End Function
+
+Private Function NaverLocal_GetClientSecret() As String
+    NaverLocal_GetClientSecret = GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_CLIENT_SECRET_KEY, "")
+End Function
+
+Private Function NaverLocal_Search(ByVal queryText As String, ByVal displayCount As Long, ByVal sortMode As String) As Collection
+    If displayCount < 1 Then displayCount = 1
+    If displayCount > 5 Then displayCount = 5
+    If sortMode <> "random" Then sortMode = "comment"
+
+    Dim url As String
+    url = NAVER_API_BASE_URL & "?query=" & NaverLocal_UrlEncode(queryText) & _
+          "&display=" & CStr(displayCount) & "&start=1&sort=" & sortMode
+
+    Dim http As Object
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.Open "GET", url, False
+    http.setRequestHeader "X-Naver-Client-Id", NaverLocal_GetClientId()
+    http.setRequestHeader "X-Naver-Client-Secret", NaverLocal_GetClientSecret()
+    http.setRequestHeader "Accept", "application/json"
+    http.send
+
+    If http.Status < 200 Or http.Status >= 300 Then
+        Err.Raise vbObjectError + 781, "NaverLocal_Search", "HTTP " & http.Status & ": " & http.responseText
+    End If
+
+    Set NaverLocal_Search = NaverLocal_ExtractItems(CStr(http.responseText))
+End Function
+
+Private Function NaverLocal_ExtractItems(ByVal jsonText As String) As Collection
+    Dim result As New Collection
+    Dim itemObjects As Collection
+    Set itemObjects = NaverLocal_ExtractArrayObjects(jsonText, "items")
+
+    Dim itemJson As Variant
+    Dim item As Object
+    For Each itemJson In itemObjects
+        Set item = CreateObject("Scripting.Dictionary")
+        item("title") = NaverLocal_StripHtml(Biz_JsonString(CStr(itemJson), "title"))
+        item("link") = Biz_JsonString(CStr(itemJson), "link")
+        item("category") = Biz_JsonString(CStr(itemJson), "category")
+        item("address") = Biz_JsonString(CStr(itemJson), "address")
+        item("roadAddress") = Biz_JsonString(CStr(itemJson), "roadAddress")
+        result.Add item
+    Next itemJson
+
+    Set NaverLocal_ExtractItems = result
+End Function
+
+Private Function NaverLocal_ExtractArrayObjects(ByVal jsonText As String, ByVal arrayKey As String) As Collection
+    Dim result As New Collection
+    Dim keyPos As Long
+    Dim arrStart As Long
+    Dim i As Long
+    Dim depth As Long
+    Dim objStart As Long
+    Dim inString As Boolean
+    Dim ch As String
+    Dim prevCh As String
+
+    keyPos = InStr(1, jsonText, """" & arrayKey & """", vbTextCompare)
+    If keyPos = 0 Then
+        Set NaverLocal_ExtractArrayObjects = result
+        Exit Function
+    End If
+
+    arrStart = InStr(keyPos, jsonText, "[")
+    If arrStart = 0 Then
+        Set NaverLocal_ExtractArrayObjects = result
+        Exit Function
+    End If
+
+    For i = arrStart + 1 To Len(jsonText)
+        ch = Mid$(jsonText, i, 1)
+        If ch = """" And prevCh <> "\" Then inString = Not inString
+        If Not inString Then
+            If ch = "{" Then
+                If depth = 0 Then objStart = i
+                depth = depth + 1
+            ElseIf ch = "}" Then
+                depth = depth - 1
+                If depth = 0 And objStart > 0 Then result.Add Mid$(jsonText, objStart, i - objStart + 1)
+            ElseIf ch = "]" And depth = 0 Then
+                Exit For
+            End If
+        End If
+        prevCh = ch
+    Next i
+
+    Set NaverLocal_ExtractArrayObjects = result
+End Function
+
+Private Function NaverLocal_UrlEncode(ByVal textValue As String) As String
+    On Error Resume Next
+    NaverLocal_UrlEncode = Application.WorksheetFunction.EncodeURL(textValue)
+    If Err.Number <> 0 Or Len(NaverLocal_UrlEncode) = 0 Then
+        Err.Clear
+        NaverLocal_UrlEncode = Replace(textValue, " ", "%20")
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_StripHtml(ByVal textValue As String) As String
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.Pattern = "<[^>]+>"
+    NaverLocal_StripHtml = Trim$(re.Replace(textValue, ""))
+End Function
+
+Private Function NaverLocal_BuildVerifyQuery(ByVal nameValue As String, ByVal addressValue As String, ByVal queryMode As String) As String
+    Select Case queryMode
+        Case "name_only"
+            NaverLocal_BuildVerifyQuery = nameValue
+        Case "address_only"
+            NaverLocal_BuildVerifyQuery = addressValue
+        Case Else
+            NaverLocal_BuildVerifyQuery = Trim$(nameValue & " " & addressValue)
+    End Select
+End Function
+
+Private Function NaverLocal_BestMatch(ByVal items As Collection, ByVal nameValue As String, ByVal addressValue As String, ByRef bestNameScore As Double, ByRef bestAddressScore As Double) As Object
+    Dim item As Object
+    Dim nameScore As Double
+    Dim addressScore As Double
+    Dim combinedScore As Double
+    Dim bestScore As Double
+
+    If items Is Nothing Then Exit Function
+    For Each item In items
+        nameScore = NaverLocal_Similarity(nameValue, CStr(item("title")))
+        addressScore = Application.Max( _
+            NaverLocal_Similarity(addressValue, CStr(item("roadAddress"))), _
+            NaverLocal_Similarity(addressValue, CStr(item("address"))))
+        combinedScore = (nameScore * 0.45) + (addressScore * 0.55)
+        If combinedScore > bestScore Then
+            bestScore = combinedScore
+            bestNameScore = nameScore
+            bestAddressScore = addressScore
+            Set NaverLocal_BestMatch = item
+        End If
+    Next item
+End Function
+
+Private Function NaverLocal_RiskLabel(ByVal nameScore As Double, ByVal addressScore As Double) As String
+    If nameScore >= 85 And addressScore >= 85 Then
+        NaverLocal_RiskLabel = "정상"
+    ElseIf nameScore >= 75 And addressScore >= 70 Then
+        NaverLocal_RiskLabel = "오류 위험성 낮음"
+    ElseIf nameScore >= 55 Or addressScore >= 55 Then
+        NaverLocal_RiskLabel = "오류 위험성 보통"
+    Else
+        NaverLocal_RiskLabel = "오류 위험성 높음 확인 필요"
+    End If
+End Function
+
+Private Sub NaverLocal_WriteVerifyHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
+    Dim headers As Variant
+    headers = Array("검색결과 업체명", "검색결과 업체유형", "검색결과 지번주소", "검색결과 도로명주소", "검색결과 URL", "업체명 유사도", "주소 유사도", "검증등급")
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    Next i
+End Sub
+
+Private Sub NaverLocal_ColorRiskCell(ByVal cell As Range, ByVal riskLabel As String)
+    Select Case riskLabel
+        Case "정상"
+            cell.Interior.Color = RGB(198, 239, 206)
+        Case "오류 위험성 낮음"
+            cell.Interior.Color = RGB(255, 235, 156)
+        Case "오류 위험성 보통"
+            cell.Interior.Color = RGB(244, 176, 132)
+        Case Else
+            cell.Interior.Color = RGB(255, 199, 206)
+    End Select
+End Sub
+
+Private Function NaverLocal_Similarity(ByVal leftText As String, ByVal rightText As String) As Double
+    Dim a As String
+    Dim b As String
+    a = NaverLocal_NormalizeForMatch(leftText)
+    b = NaverLocal_NormalizeForMatch(rightText)
+
+    If Len(a) = 0 And Len(b) = 0 Then
+        NaverLocal_Similarity = 100
+    ElseIf Len(a) = 0 Or Len(b) = 0 Then
+        NaverLocal_Similarity = 0
+    Else
+        NaverLocal_Similarity = 100# * (1# - (NaverLocal_Levenshtein(a, b) / Application.Max(Len(a), Len(b))))
+    End If
+End Function
+
+Private Function NaverLocal_NormalizeForMatch(ByVal textValue As String) As String
+    textValue = LCase$(NaverLocal_StripHtml(CStr(textValue)))
+    textValue = Replace(textValue, "주식회사", "")
+    textValue = Replace(textValue, "(주)", "")
+    textValue = Replace(textValue, "㈜", "")
+    textValue = Replace(textValue, " ", "")
+    textValue = Replace(textValue, vbTab, "")
+    textValue = Replace(textValue, "-", "")
+    textValue = Replace(textValue, "(", "")
+    textValue = Replace(textValue, ")", "")
+    textValue = Replace(textValue, ",", "")
+    textValue = Replace(textValue, ".", "")
+    NaverLocal_NormalizeForMatch = textValue
+End Function
+
+Private Function NaverLocal_Levenshtein(ByVal a As String, ByVal b As String) As Long
+    Dim i As Long, j As Long
+    Dim cost As Long
+    Dim d() As Long
+
+    ReDim d(0 To Len(a), 0 To Len(b))
+    For i = 0 To Len(a)
+        d(i, 0) = i
+    Next i
+    For j = 0 To Len(b)
+        d(0, j) = j
+    Next j
+
+    For i = 1 To Len(a)
+        For j = 1 To Len(b)
+            If Mid$(a, i, 1) = Mid$(b, j, 1) Then cost = 0 Else cost = 1
+            d(i, j) = Application.Min(Application.Min(d(i - 1, j) + 1, d(i, j - 1) + 1), d(i - 1, j - 1) + cost)
+        Next j
+    Next i
+
+    NaverLocal_Levenshtein = d(Len(a), Len(b))
+End Function
+
+Private Sub NaverLocal_Delay(ByVal seconds As Double)
+    If seconds <= 0 Then Exit Sub
+    Dim endTime As Double
+    endTime = Timer + seconds
+    Do While Timer < endTime
+        DoEvents
+    Loop
+End Sub
 
 ' ============================================================
 ' 함  수 : EnsureVersionSheet (내부 전용)
@@ -4026,6 +4566,18 @@ End Sub
 
 Public Sub Ribbon_BizNoQueryStatus(control As IRibbonControl)
     BizNo_QueryStatusForSelection
+End Sub
+
+Public Sub Ribbon_NaverLocalSetApiCredentials(control As IRibbonControl)
+    NaverLocal_SetApiCredentials
+End Sub
+
+Public Sub Ribbon_NaverLocalBuildListByDong(control As IRibbonControl)
+    NaverLocal_BuildListByDong
+End Sub
+
+Public Sub Ribbon_NaverLocalVerifyExistingData(control As IRibbonControl)
+    NaverLocal_VerifyExistingData
 End Sub
 
 Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)

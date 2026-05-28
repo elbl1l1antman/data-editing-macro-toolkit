@@ -481,6 +481,322 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-NaverLocalBuildOptionsUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmNaverLocalBuildOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "네이버 지역검색 신규 리스트"
+    $form.Properties.Item("Width").Value = 460
+    $form.Properties.Item("Height").Value = 300
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "선택한 행정동마다 업종을 검색해 신규 업체 리스트를 만듭니다."
+    $lblTitle.Left = 12
+    $lblTitle.Top = 12
+    $lblTitle.Width = 420
+    $lblTitle.Height = 20
+
+    $lblIndustry = $designer.Controls.Add("Forms.Label.1", "lblIndustry", $true)
+    $lblIndustry.Caption = "업종/검색어"
+    $lblIndustry.Left = 12
+    $lblIndustry.Top = 48
+    $lblIndustry.Width = 110
+    $lblIndustry.Height = 18
+
+    $txtIndustry = $designer.Controls.Add("Forms.TextBox.1", "txtIndustry", $true)
+    $txtIndustry.Left = 128
+    $txtIndustry.Top = 44
+    $txtIndustry.Width = 290
+    $txtIndustry.Height = 22
+    $txtIndustry.Text = "서점"
+
+    $lblDisplay = $designer.Controls.Add("Forms.Label.1", "lblDisplay", $true)
+    $lblDisplay.Caption = "행정동별 결과 수"
+    $lblDisplay.Left = 12
+    $lblDisplay.Top = 84
+    $lblDisplay.Width = 110
+    $lblDisplay.Height = 18
+
+    $txtDisplay = $designer.Controls.Add("Forms.TextBox.1", "txtDisplay", $true)
+    $txtDisplay.Left = 128
+    $txtDisplay.Top = 80
+    $txtDisplay.Width = 60
+    $txtDisplay.Height = 22
+    $txtDisplay.Text = "5"
+
+    $lblDelay = $designer.Controls.Add("Forms.Label.1", "lblDelay", $true)
+    $lblDelay.Caption = "요청 간격(초)"
+    $lblDelay.Left = 220
+    $lblDelay.Top = 84
+    $lblDelay.Width = 90
+    $lblDelay.Height = 18
+
+    $txtDelay = $designer.Controls.Add("Forms.TextBox.1", "txtDelay", $true)
+    $txtDelay.Left = 318
+    $txtDelay.Top = 80
+    $txtDelay.Width = 60
+    $txtDelay.Height = 22
+    $txtDelay.Text = "0.4"
+
+    $lblSort = $designer.Controls.Add("Forms.Label.1", "lblSort", $true)
+    $lblSort.Caption = "정렬"
+    $lblSort.Left = 12
+    $lblSort.Top = 120
+    $lblSort.Width = 110
+    $lblSort.Height = 18
+
+    $cmbSort = $designer.Controls.Add("Forms.ComboBox.1", "cmbSort", $true)
+    $cmbSort.Left = 128
+    $cmbSort.Top = 116
+    $cmbSort.Width = 140
+    $cmbSort.Height = 22
+
+    $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
+    $lblTip.Caption = "네이버 지역검색 API는 한 번에 최대 5개 결과만 반환합니다. 대량 행정동 검색 시 요청 간격을 너무 낮추지 마세요."
+    $lblTip.Left = 12
+    $lblTip.Top = 160
+    $lblTip.Width = 420
+    $lblTip.Height = 44
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 250
+    $cmdOk.Top = 220
+    $cmdOk.Width = 80
+    $cmdOk.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 342
+    $cmdCancel.Top = 220
+    $cmdCancel.Width = 80
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+    cmbSort.AddItem "comment"
+    cmbSort.AddItem "random"
+    cmbSort.Value = "comment"
+End Sub
+
+Public Property Get IndustryText() As String
+    IndustryText = Trim$(txtIndustry.Value)
+End Property
+
+Public Property Get DisplayCount() As Long
+    DisplayCount = CLng(Val(txtDisplay.Value))
+    If DisplayCount < 1 Then DisplayCount = 1
+    If DisplayCount > 5 Then DisplayCount = 5
+End Property
+
+Public Property Get DelaySeconds() As Double
+    DelaySeconds = CDbl(Val(txtDelay.Value))
+    If DelaySeconds < 0 Then DelaySeconds = 0
+End Property
+
+Public Property Get SortMode() As String
+    SortMode = CStr(cmbSort.Value)
+    If SortMode <> "random" Then SortMode = "comment"
+End Property
+
+Private Sub cmdOK_Click()
+    If Len(IndustryText) = 0 Then
+        MsgBox "업종/검색어를 입력하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Cancelled = True
+    Cancel = True
+    Me.Hide
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
+function Add-NaverLocalVerifyOptionsUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmNaverLocalVerifyOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "네이버 지역검색 주소 검증"
+    $form.Properties.Item("Width").Value = 500
+    $form.Properties.Item("Height").Value = 340
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "업체명과 주소로 네이버 지역검색 결과를 찾고 유사도 기반 검증등급을 생성합니다."
+    $lblTitle.Left = 12
+    $lblTitle.Top = 12
+    $lblTitle.Width = 460
+    $lblTitle.Height = 24
+
+    $lblMode = $designer.Controls.Add("Forms.Label.1", "lblMode", $true)
+    $lblMode.Caption = "검색 방식"
+    $lblMode.Left = 12
+    $lblMode.Top = 52
+    $lblMode.Width = 110
+    $lblMode.Height = 18
+
+    $cmbMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbMode", $true)
+    $cmbMode.Left = 128
+    $cmbMode.Top = 48
+    $cmbMode.Width = 220
+    $cmbMode.Height = 22
+
+    $chkHeader = $designer.Controls.Add("Forms.CheckBox.1", "chkHeader", $true)
+    $chkHeader.Caption = "첫 행은 헤더"
+    $chkHeader.Left = 370
+    $chkHeader.Top = 50
+    $chkHeader.Width = 100
+    $chkHeader.Height = 20
+    $chkHeader.Value = $true
+
+    $lblDisplay = $designer.Controls.Add("Forms.Label.1", "lblDisplay", $true)
+    $lblDisplay.Caption = "행별 후보 수"
+    $lblDisplay.Left = 12
+    $lblDisplay.Top = 88
+    $lblDisplay.Width = 110
+    $lblDisplay.Height = 18
+
+    $txtDisplay = $designer.Controls.Add("Forms.TextBox.1", "txtDisplay", $true)
+    $txtDisplay.Left = 128
+    $txtDisplay.Top = 84
+    $txtDisplay.Width = 60
+    $txtDisplay.Height = 22
+    $txtDisplay.Text = "5"
+
+    $lblDelay = $designer.Controls.Add("Forms.Label.1", "lblDelay", $true)
+    $lblDelay.Caption = "요청 간격(초)"
+    $lblDelay.Left = 220
+    $lblDelay.Top = 88
+    $lblDelay.Width = 90
+    $lblDelay.Height = 18
+
+    $txtDelay = $designer.Controls.Add("Forms.TextBox.1", "txtDelay", $true)
+    $txtDelay.Left = 318
+    $txtDelay.Top = 84
+    $txtDelay.Width = 60
+    $txtDelay.Height = 22
+    $txtDelay.Text = "0.4"
+
+    $lblSort = $designer.Controls.Add("Forms.Label.1", "lblSort", $true)
+    $lblSort.Caption = "정렬"
+    $lblSort.Left = 12
+    $lblSort.Top = 124
+    $lblSort.Width = 110
+    $lblSort.Height = 18
+
+    $cmbSort = $designer.Controls.Add("Forms.ComboBox.1", "cmbSort", $true)
+    $cmbSort.Left = 128
+    $cmbSort.Top = 120
+    $cmbSort.Width = 140
+    $cmbSort.Height = 22
+
+    $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
+    $lblTip.Caption = "결과 열: 검색결과 업체명/주소, 업체명 유사도, 주소 유사도, 검증등급. 등급은 정상, 오류 위험성 낮음/보통/높음 확인 필요로 표시됩니다."
+    $lblTip.Left = 12
+    $lblTip.Top = 166
+    $lblTip.Width = 460
+    $lblTip.Height = 54
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 290
+    $cmdOk.Top = 252
+    $cmdOk.Width = 80
+    $cmdOk.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 386
+    $cmdCancel.Top = 252
+    $cmdCancel.Width = 80
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+    cmbMode.AddItem "업체명+주소"
+    cmbMode.AddItem "업체명만"
+    cmbMode.AddItem "주소만"
+    cmbMode.Value = "업체명+주소"
+    cmbSort.AddItem "comment"
+    cmbSort.AddItem "random"
+    cmbSort.Value = "comment"
+End Sub
+
+Public Property Get QueryMode() As String
+    Select Case cmbMode.Value
+        Case "업체명만"
+            QueryMode = "name_only"
+        Case "주소만"
+            QueryMode = "address_only"
+        Case Else
+            QueryMode = "name_address"
+    End Select
+End Property
+
+Public Property Get HasHeader() As Boolean
+    HasHeader = CBool(chkHeader.Value)
+End Property
+
+Public Property Get DisplayCount() As Long
+    DisplayCount = CLng(Val(txtDisplay.Value))
+    If DisplayCount < 1 Then DisplayCount = 1
+    If DisplayCount > 5 Then DisplayCount = 5
+End Property
+
+Public Property Get DelaySeconds() As Double
+    DelaySeconds = CDbl(Val(txtDelay.Value))
+    If DelaySeconds < 0 Then DelaySeconds = 0
+End Property
+
+Public Property Get SortMode() As String
+    SortMode = CStr(cmbSort.Value)
+    If SortMode <> "random" Then SortMode = "comment"
+End Property
+
+Private Sub cmdOK_Click()
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Cancelled = True
+    Cancel = True
+    Me.Hide
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -503,6 +819,11 @@ function Add-RibbonCustomUi {
           <button id="btnBizDashless" label="번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemoveBizNoDashes" screentip="사업자등록번호 숫자만 남기기" supertip="선택한 사업자등록번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자 10자리 형태로 정리합니다." />
           <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 3열 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
+        </group>
+        <group id="grpNaverLocalTools" label="네이버 지역검색">
+          <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
+          <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동 기준 업체 리스트 생성" supertip="행정동 목록 범위와 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
+          <button id="btnNaverVerifyAddress" label="주소 검증" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_NaverLocalVerifyExistingData" screentip="업체명/주소 검증" supertip="업체명 범위와 주소 범위를 선택하면 네이버 지역검색 결과, 유사도, 검증등급 열을 추가합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
@@ -615,7 +936,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -624,6 +945,8 @@ try {
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-RangeSelectUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
+        Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
+        Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
