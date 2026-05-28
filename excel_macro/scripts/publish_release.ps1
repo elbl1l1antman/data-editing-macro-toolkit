@@ -671,33 +671,75 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $form.Name = "frmNaverLocalVerifyOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "네이버 지역검색 주소 검증"
-    $form.Properties.Item("Width").Value = 500
-    $form.Properties.Item("Height").Value = 340
+    $form.Properties.Item("Width").Value = 560
+    $form.Properties.Item("Height").Value = 430
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "업체명과 주소로 네이버 지역검색 결과를 찾고 유사도 기반 검증등급을 생성합니다."
+    $lblTitle.Caption = "분석에 사용할 데이터와 범위를 선택하세요."
     $lblTitle.Left = 12
     $lblTitle.Top = 12
-    $lblTitle.Width = 460
+    $lblTitle.Width = 520
     $lblTitle.Height = 24
+
+    $chkUseName = $designer.Controls.Add("Forms.CheckBox.1", "chkUseName", $true)
+    $chkUseName.Caption = "업체명 사용"
+    $chkUseName.Left = 12
+    $chkUseName.Top = 46
+    $chkUseName.Width = 100
+    $chkUseName.Height = 20
+    $chkUseName.Value = $true
+
+    $txtNameRange = $designer.Controls.Add("Forms.TextBox.1", "txtNameRange", $true)
+    $txtNameRange.Left = 120
+    $txtNameRange.Top = 44
+    $txtNameRange.Width = 300
+    $txtNameRange.Height = 22
+
+    $cmdPickName = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickName", $true)
+    $cmdPickName.Caption = "범위 선택"
+    $cmdPickName.Left = 432
+    $cmdPickName.Top = 42
+    $cmdPickName.Width = 90
+    $cmdPickName.Height = 26
+
+    $chkUseAddress = $designer.Controls.Add("Forms.CheckBox.1", "chkUseAddress", $true)
+    $chkUseAddress.Caption = "주소 사용"
+    $chkUseAddress.Left = 12
+    $chkUseAddress.Top = 82
+    $chkUseAddress.Width = 100
+    $chkUseAddress.Height = 20
+    $chkUseAddress.Value = $true
+
+    $txtAddressRange = $designer.Controls.Add("Forms.TextBox.1", "txtAddressRange", $true)
+    $txtAddressRange.Left = 120
+    $txtAddressRange.Top = 80
+    $txtAddressRange.Width = 300
+    $txtAddressRange.Height = 22
+
+    $cmdPickAddress = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickAddress", $true)
+    $cmdPickAddress.Caption = "범위 선택"
+    $cmdPickAddress.Left = 432
+    $cmdPickAddress.Top = 78
+    $cmdPickAddress.Width = 90
+    $cmdPickAddress.Height = 26
 
     $lblMode = $designer.Controls.Add("Forms.Label.1", "lblMode", $true)
     $lblMode.Caption = "검색 방식"
     $lblMode.Left = 12
-    $lblMode.Top = 52
+    $lblMode.Top = 126
     $lblMode.Width = 110
     $lblMode.Height = 18
 
     $cmbMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbMode", $true)
     $cmbMode.Left = 128
-    $cmbMode.Top = 48
+    $cmbMode.Top = 122
     $cmbMode.Width = 220
     $cmbMode.Height = 22
 
     $chkHeader = $designer.Controls.Add("Forms.CheckBox.1", "chkHeader", $true)
     $chkHeader.Caption = "첫 행은 헤더"
     $chkHeader.Left = 370
-    $chkHeader.Top = 50
+    $chkHeader.Top = 124
     $chkHeader.Width = 100
     $chkHeader.Height = 20
     $chkHeader.Value = $true
@@ -705,13 +747,13 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $lblDisplay = $designer.Controls.Add("Forms.Label.1", "lblDisplay", $true)
     $lblDisplay.Caption = "행별 후보 수"
     $lblDisplay.Left = 12
-    $lblDisplay.Top = 88
+    $lblDisplay.Top = 162
     $lblDisplay.Width = 110
     $lblDisplay.Height = 18
 
     $txtDisplay = $designer.Controls.Add("Forms.TextBox.1", "txtDisplay", $true)
     $txtDisplay.Left = 128
-    $txtDisplay.Top = 84
+    $txtDisplay.Top = 158
     $txtDisplay.Width = 60
     $txtDisplay.Height = 22
     $txtDisplay.Text = "5"
@@ -719,13 +761,13 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $lblDelay = $designer.Controls.Add("Forms.Label.1", "lblDelay", $true)
     $lblDelay.Caption = "요청 간격(초)"
     $lblDelay.Left = 220
-    $lblDelay.Top = 88
+    $lblDelay.Top = 162
     $lblDelay.Width = 90
     $lblDelay.Height = 18
 
     $txtDelay = $designer.Controls.Add("Forms.TextBox.1", "txtDelay", $true)
     $txtDelay.Left = 318
-    $txtDelay.Top = 84
+    $txtDelay.Top = 158
     $txtDelay.Width = 60
     $txtDelay.Height = 22
     $txtDelay.Text = "0.4"
@@ -733,34 +775,34 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $lblSort = $designer.Controls.Add("Forms.Label.1", "lblSort", $true)
     $lblSort.Caption = "정렬"
     $lblSort.Left = 12
-    $lblSort.Top = 124
+    $lblSort.Top = 198
     $lblSort.Width = 110
     $lblSort.Height = 18
 
     $cmbSort = $designer.Controls.Add("Forms.ComboBox.1", "cmbSort", $true)
     $cmbSort.Left = 128
-    $cmbSort.Top = 120
+    $cmbSort.Top = 194
     $cmbSort.Width = 140
     $cmbSort.Height = 22
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "결과 열: 검색결과 업체명/주소, 업체명 유사도, 주소 유사도, 검증등급. 등급은 정상, 오류 위험성 낮음/보통/높음 확인 필요로 표시됩니다."
+    $lblTip.Caption = "업체명만 또는 주소만 선택할 수 있습니다. 둘 다 선택하면 두 범위는 같은 시트와 같은 행 수여야 합니다."
     $lblTip.Left = 12
-    $lblTip.Top = 166
-    $lblTip.Width = 460
+    $lblTip.Top = 236
+    $lblTip.Width = 520
     $lblTip.Height = 54
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 290
-    $cmdOk.Top = 252
+    $cmdOk.Left = 350
+    $cmdOk.Top = 332
     $cmdOk.Width = 80
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 386
-    $cmdCancel.Top = 252
+    $cmdCancel.Left = 446
+    $cmdCancel.Top = 332
     $cmdCancel.Width = 80
     $cmdCancel.Height = 28
 
@@ -768,6 +810,8 @@ function Add-NaverLocalVerifyOptionsUserForm {
 Option Explicit
 
 Public Cancelled As Boolean
+Private mNameRange As Object
+Private mAddressRange As Object
 
 Private Sub UserForm_Initialize()
     Cancelled = True
@@ -780,15 +824,59 @@ Private Sub UserForm_Initialize()
     cmbSort.Value = "comment"
 End Sub
 
+Private Sub cmdPickName_Click()
+    On Error Resume Next
+    Set mNameRange = Application.InputBox("업체명 범위를 선택하세요.", Me.Caption, Type:=8)
+    If Err.Number = 0 And Not mNameRange Is Nothing Then
+        txtNameRange.Value = mNameRange.Address(External:=True)
+        chkUseName.Value = True
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
+Private Sub cmdPickAddress_Click()
+    On Error Resume Next
+    Set mAddressRange = Application.InputBox("주소 범위를 선택하세요.", Me.Caption, Type:=8)
+    If Err.Number = 0 And Not mAddressRange Is Nothing Then
+        txtAddressRange.Value = mAddressRange.Address(External:=True)
+        chkUseAddress.Value = True
+    End If
+    Err.Clear
+    On Error GoTo 0
+End Sub
+
 Public Property Get QueryMode() As String
-    Select Case cmbMode.Value
-        Case "업체명만"
-            QueryMode = "name_only"
-        Case "주소만"
-            QueryMode = "address_only"
-        Case Else
-            QueryMode = "name_address"
-    End Select
+    If UseName And Not UseAddress Then
+        QueryMode = "name_only"
+    ElseIf UseAddress And Not UseName Then
+        QueryMode = "address_only"
+    Else
+        Select Case cmbMode.Value
+            Case "업체명만"
+                QueryMode = "name_only"
+            Case "주소만"
+                QueryMode = "address_only"
+            Case Else
+                QueryMode = "name_address"
+        End Select
+    End If
+End Property
+
+Public Property Get UseName() As Boolean
+    UseName = CBool(chkUseName.Value)
+End Property
+
+Public Property Get UseAddress() As Boolean
+    UseAddress = CBool(chkUseAddress.Value)
+End Property
+
+Public Property Get NameRange() As Object
+    Set NameRange = mNameRange
+End Property
+
+Public Property Get AddressRange() As Object
+    Set AddressRange = mAddressRange
 End Property
 
 Public Property Get HasHeader() As Boolean
@@ -812,6 +900,35 @@ Public Property Get SortMode() As String
 End Property
 
 Private Sub cmdOK_Click()
+    If Not UseName And Not UseAddress Then
+        MsgBox "업체명 또는 주소 중 하나 이상을 선택하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+
+    If UseName And mNameRange Is Nothing Then
+        If Len(Trim$(txtNameRange.Value)) > 0 Then
+            On Error Resume Next
+            Set mNameRange = Application.Range(Trim$(txtNameRange.Value))
+            On Error GoTo 0
+        End If
+    End If
+    If UseAddress And mAddressRange Is Nothing Then
+        If Len(Trim$(txtAddressRange.Value)) > 0 Then
+            On Error Resume Next
+            Set mAddressRange = Application.Range(Trim$(txtAddressRange.Value))
+            On Error GoTo 0
+        End If
+    End If
+
+    If UseName And mNameRange Is Nothing Then
+        MsgBox "업체명 사용을 선택했습니다. 업체명 범위를 지정하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+    If UseAddress And mAddressRange Is Nothing Then
+        MsgBox "주소 사용을 선택했습니다. 주소 범위를 지정하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+
     Cancelled = False
     Me.Hide
 End Sub

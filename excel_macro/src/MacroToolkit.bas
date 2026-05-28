@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.6"
+Public Const TOOLKIT_VERSION As String = "0.9.7"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1975,47 +1975,76 @@ Public Sub NaverLocal_VerifyExistingData()
         Exit Sub
     End If
 
-    Dim nameRange As Range
-    If Not Toolkit_GetRangeFromUserForm("네이버 검증 - 업체명 범위", _
-        "검증할 업체명이 들어 있는 범위를 선택하세요. 헤더가 포함되어 있으면 옵션에서 헤더 포함을 켜세요.", nameRange) Then Exit Sub
-
-    Dim addressRange As Range
-    If Not Toolkit_GetRangeFromUserForm("네이버 검증 - 주소 범위", _
-        "같은 행 순서의 주소 범위를 선택하세요. 업체명 범위와 행 수가 같아야 합니다.", addressRange) Then Exit Sub
-
-    If nameRange.Rows.Count <> addressRange.Rows.Count Then
-        MsgBox "업체명 범위와 주소 범위의 행 수가 다릅니다.", vbExclamation, "네이버 지역검색"
-        Exit Sub
-    End If
-    If nameRange.Areas.Count > 1 Or addressRange.Areas.Count > 1 Then
-        MsgBox "네이버 검증은 한 덩어리의 연속 범위만 지원합니다.", vbExclamation, "네이버 지역검색"
-        Exit Sub
-    End If
-
     Dim options As Object
     Set options = NaverLocal_GetVerifyOptions()
     If options Is Nothing Then Exit Sub
 
-    Dim ws As Worksheet
-    Set ws = nameRange.Worksheet
-    If Not addressRange.Worksheet Is ws Then
-        MsgBox "업체명과 주소 범위는 같은 시트에 있어야 합니다.", vbExclamation, "네이버 지역검색"
+    Dim nameRange As Range
+    Dim addressRange As Range
+    If CBool(options("useName")) Then Set nameRange = options("nameRange")
+    If CBool(options("useAddress")) Then Set addressRange = options("addressRange")
+
+    If nameRange Is Nothing And addressRange Is Nothing Then
+        MsgBox "업체명 또는 주소 범위 중 하나 이상을 선택해야 합니다.", vbExclamation, "네이버 지역검색"
         Exit Sub
     End If
+
+    If Not nameRange Is Nothing Then
+        If nameRange.Areas.Count > 1 Then
+            MsgBox "업체명 범위는 한 덩어리의 연속 범위만 지원합니다.", vbExclamation, "네이버 지역검색"
+            Exit Sub
+        End If
+        If nameRange.Columns.Count > 1 Then Set nameRange = nameRange.Columns(1)
+    End If
+
+    If Not addressRange Is Nothing Then
+        If addressRange.Areas.Count > 1 Then
+            MsgBox "주소 범위는 한 덩어리의 연속 범위만 지원합니다.", vbExclamation, "네이버 지역검색"
+            Exit Sub
+        End If
+        If addressRange.Columns.Count > 1 Then Set addressRange = addressRange.Columns(1)
+    End If
+
+    Dim ws As Worksheet
+    If Not nameRange Is Nothing Then
+        Set ws = nameRange.Worksheet
+    Else
+        Set ws = addressRange.Worksheet
+    End If
+
+    If Not nameRange Is Nothing And Not addressRange Is Nothing Then
+        If Not addressRange.Worksheet Is ws Then
+            MsgBox "업체명과 주소 범위는 같은 시트에 있어야 합니다.", vbExclamation, "네이버 지역검색"
+            Exit Sub
+        End If
+        If nameRange.Rows.Count <> addressRange.Rows.Count Then
+            MsgBox "업체명 범위와 주소 범위의 행 수가 다릅니다.", vbExclamation, "네이버 지역검색"
+            Exit Sub
+        End If
+    End If
+
+    Dim baseRange As Range
+    If Not nameRange Is Nothing Then Set baseRange = nameRange Else Set baseRange = addressRange
 
     Dim firstRow As Long
     Dim startOffset As Long
     startOffset = IIf(CBool(options("hasHeader")), 1, 0)
-    firstRow = nameRange.Row + startOffset
-    If firstRow > nameRange.Row + nameRange.Rows.Count - 1 Then
+    firstRow = baseRange.Row + startOffset
+    If firstRow > baseRange.Row + baseRange.Rows.Count - 1 Then
         MsgBox "헤더를 제외하면 검증할 데이터가 없습니다.", vbInformation, "네이버 지역검색"
         Exit Sub
     End If
 
     Dim outputCol As Long
-    outputCol = Application.Max(nameRange.Column + nameRange.Columns.Count, addressRange.Column + addressRange.Columns.Count)
+    If Not nameRange Is Nothing And Not addressRange Is Nothing Then
+        outputCol = Application.Max(nameRange.Column + nameRange.Columns.Count, addressRange.Column + addressRange.Columns.Count)
+    ElseIf Not nameRange Is Nothing Then
+        outputCol = nameRange.Column + nameRange.Columns.Count
+    Else
+        outputCol = addressRange.Column + addressRange.Columns.Count
+    End If
     ws.Columns(outputCol).Resize(, 8).Insert Shift:=xlToRight
-    NaverLocal_WriteVerifyHeaders ws, nameRange.Row, outputCol
+    NaverLocal_WriteVerifyHeaders ws, baseRange.Row, outputCol
 
     Dim rowIndex As Long
     Dim nameValue As String
@@ -2029,16 +2058,16 @@ Public Sub NaverLocal_VerifyExistingData()
     Dim requestCount As Long
     Dim noResultCount As Long
     Dim totalRows As Long
-    totalRows = nameRange.Row + nameRange.Rows.Count - firstRow
+    totalRows = baseRange.Row + baseRange.Rows.Count - firstRow
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     Toolkit_ProgressShow "네이버 주소 검증", "검증 준비 중", totalRows
 
-    For rowIndex = firstRow To nameRange.Row + nameRange.Rows.Count - 1
+    For rowIndex = firstRow To baseRange.Row + baseRange.Rows.Count - 1
         Toolkit_ProgressUpdate rowIndex - firstRow + 1, totalRows, "검증 중: " & CStr(rowIndex) & "행"
-        nameValue = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value))
-        addressValue = Trim$(CStr(ws.Cells(rowIndex, addressRange.Column).Value))
+        If Not nameRange Is Nothing Then nameValue = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value)) Else nameValue = ""
+        If Not addressRange Is Nothing Then addressValue = Trim$(CStr(ws.Cells(rowIndex, addressRange.Column).Value)) Else addressValue = ""
 
         If Len(nameValue) > 0 Or Len(addressValue) > 0 Then
             requestCount = requestCount + 1
@@ -2051,7 +2080,7 @@ Public Sub NaverLocal_VerifyExistingData()
                 riskLabel = "오류 위험성 높음 확인 필요"
                 ws.Cells(rowIndex, outputCol + 7).Value = riskLabel
             Else
-                riskLabel = NaverLocal_RiskLabel(nameScore, addressScore)
+                riskLabel = NaverLocal_RiskLabelForMode(nameScore, addressScore, CStr(options("queryMode")))
                 ws.Cells(rowIndex, outputCol).Value = bestItem("title")
                 ws.Cells(rowIndex, outputCol + 1).Value = bestItem("category")
                 ws.Cells(rowIndex, outputCol + 2).Value = bestItem("address")
@@ -2067,7 +2096,7 @@ Public Sub NaverLocal_VerifyExistingData()
         End If
     Next rowIndex
 
-    ws.Range(ws.Cells(nameRange.Row, outputCol), ws.Cells(nameRange.Row, outputCol + 7)).Font.Bold = True
+    ws.Range(ws.Cells(baseRange.Row, outputCol), ws.Cells(baseRange.Row, outputCol + 7)).Font.Bold = True
     ws.Columns(outputCol).Resize(, 8).AutoFit
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
@@ -2238,18 +2267,16 @@ Private Function NaverLocal_GetVerifyOptions() As Object
     options("delaySeconds") = CDbl(form.DelaySeconds)
     options("sortMode") = CStr(form.SortMode)
     options("hasHeader") = CBool(form.HasHeader)
+    options("useName") = CBool(form.UseName)
+    options("useAddress") = CBool(form.UseAddress)
+    If CBool(form.UseName) Then Set options("nameRange") = form.NameRange
+    If CBool(form.UseAddress) Then Set options("addressRange") = form.AddressRange
     Unload form
     Set NaverLocal_GetVerifyOptions = options
     Exit Function
 
 Fallback:
-    Set options = CreateObject("Scripting.Dictionary")
-    options("queryMode") = "name_address"
-    options("displayCount") = 5
-    options("delaySeconds") = 0.4
-    options("sortMode") = "comment"
-    options("hasHeader") = True
-    Set NaverLocal_GetVerifyOptions = options
+    MsgBox "주소 검증 옵션창을 열 수 없습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Function
 
 Private Function NaverLocal_HasCredentials() As Boolean
@@ -2412,6 +2439,29 @@ Private Function NaverLocal_RiskLabel(ByVal nameScore As Double, ByVal addressSc
         NaverLocal_RiskLabel = "오류 위험성 보통"
     Else
         NaverLocal_RiskLabel = "오류 위험성 높음 확인 필요"
+    End If
+End Function
+
+Private Function NaverLocal_RiskLabelForMode(ByVal nameScore As Double, ByVal addressScore As Double, ByVal queryMode As String) As String
+    Select Case queryMode
+        Case "name_only"
+            NaverLocal_RiskLabelForMode = NaverLocal_RiskLabelSingle(nameScore)
+        Case "address_only"
+            NaverLocal_RiskLabelForMode = NaverLocal_RiskLabelSingle(addressScore)
+        Case Else
+            NaverLocal_RiskLabelForMode = NaverLocal_RiskLabel(nameScore, addressScore)
+    End Select
+End Function
+
+Private Function NaverLocal_RiskLabelSingle(ByVal score As Double) As String
+    If score >= 85 Then
+        NaverLocal_RiskLabelSingle = "정상"
+    ElseIf score >= 75 Then
+        NaverLocal_RiskLabelSingle = "오류 위험성 낮음"
+    ElseIf score >= 55 Then
+        NaverLocal_RiskLabelSingle = "오류 위험성 보통"
+    Else
+        NaverLocal_RiskLabelSingle = "오류 위험성 높음 확인 필요"
     End If
 End Function
 
