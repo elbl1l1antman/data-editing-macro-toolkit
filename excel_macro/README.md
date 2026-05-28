@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.9.4`
+`0.9.5`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -34,7 +34,8 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 구주소/도로명주소/우편번호 변환표를 이용한 도로명주소 변환
 - 주소 범위 선택 후 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열 생성
 - 네이버 지역검색 API 인증키 설정(Client ID/Client Secret)
-- 행정동 목록과 업종/검색어를 이용한 신규 업체 리스트 생성
+- 2024년 10월 기준 행정동 마스터를 내장한 네이버 신규 업체 리스트 생성
+- 현재 통합문서에 `행정동_마스터` 양식 시트를 생성해 행정동 기준표를 사용자가 교체/수정 가능
 - 기존 업체명/주소 범위 선택 후 네이버 지역검색 결과, 유사도, 검증등급 열 생성
 - 모든 워크시트의 화면 위치를 A1 기준 최상단으로 정렬
 - 모든 워크시트의 선택 셀을 A1로 변경
@@ -75,10 +76,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.9.4/DataEditingMacroToolkit_v0.9.4.xlam`
-- `release/v0.9.4/DataEditingMacroToolkit_v0.9.4.xlsm`
-- `release/v0.9.4/MacroToolkit.bas`
-- `release/v0.9.4/manifest.json`
+- `release/v0.9.5/DataEditingMacroToolkit_v0.9.5.xlam`
+- `release/v0.9.5/DataEditingMacroToolkit_v0.9.5.xlsm`
+- `release/v0.9.5/MacroToolkit.bas`
+- `release/v0.9.5/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -93,7 +94,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 - `값 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리, 전화번호 숫자만, 기업명 정리, 주소 변환, 주소 체계 분리
 - `사업자등록`: 인증키 설정, 번호 숫자만, 3열 병합, 상태조회
-- `네이버 지역검색`: 인증키 설정, 행정동 기준 신규 리스트, 업체명/주소 검증
+- `네이버 지역검색`: 인증키 설정, 행정동 기준 신규 리스트, 업체명/주소 검증, 행정동 마스터 양식 생성
 - `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
 - `정보`: 모든 시트 A1 선택, 버전 정보

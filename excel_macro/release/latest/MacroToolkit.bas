@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.4"
+Public Const TOOLKIT_VERSION As String = "0.9.5"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -21,6 +21,8 @@ Private Const NAVER_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const NAVER_APP_SECTION As String = "NaverLocalSearch"
 Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
+Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
+Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -85,6 +87,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A29").Value = "NaverLocal_BuildListByDong"
     ws.Range("A30").Value = "NaverLocal_VerifyExistingData"
     ws.Range("A31").Value = "Address_SplitDongAndRoad"
+    ws.Range("A32").Value = "NaverLocal_CreateDongMasterTemplate"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1782,13 +1785,23 @@ Public Sub NaverLocal_BuildListByDong()
         Exit Sub
     End If
 
-    Dim dongRange As Range
-    If Not Toolkit_GetRangeFromUserForm("네이버 신규 리스트 - 행정동 선택", _
-        "업종 검색에 사용할 행정동 목록 범위를 선택하세요. 예: 서울특별시 종로구 청운효자동", dongRange) Then Exit Sub
-
     Dim options As Object
     Set options = NaverLocal_GetBuildOptions()
     If options Is Nothing Then Exit Sub
+
+    Dim dongNames As Collection
+    Set dongNames = NaverLocal_GetDongNamesForSearch(ActiveWorkbook, options)
+    If dongNames.Count = 0 Then
+        MsgBox "사용할 행정동 마스터를 찾지 못했거나 필터 조건에 맞는 행정동이 없습니다." & vbCrLf & _
+               "[행정동 양식] 버튼으로 마스터 시트를 만든 뒤 다시 실행하세요.", vbExclamation, "네이버 지역검색"
+        Exit Sub
+    End If
+
+    If dongNames.Count > 300 Then
+        If MsgBox("검색 대상 행정동이 " & dongNames.Count & "개입니다." & vbCrLf & _
+                  "네이버 API 요청이 많이 발생할 수 있습니다. 계속할까요?", _
+                  vbQuestion + vbYesNo, "네이버 지역검색") <> vbYes Then Exit Sub
+    End If
 
     Dim wb As Workbook
     Set wb = ActiveWorkbook
@@ -1809,7 +1822,7 @@ Public Sub NaverLocal_BuildListByDong()
     Dim requestCount As Long
     Dim resultCount As Long
     Dim failCount As Long
-    Dim cell As Range
+    Dim dongName As Variant
     Dim queryText As String
     Dim items As Collection
     Dim item As Object
@@ -1817,10 +1830,10 @@ Public Sub NaverLocal_BuildListByDong()
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
 
-    For Each cell In dongRange.Cells
-        If Len(Trim$(CStr(cell.Value))) > 0 Then
+    For Each dongName In dongNames
+        If Len(Trim$(CStr(dongName))) > 0 Then
             requestCount = requestCount + 1
-            queryText = Trim$(CStr(cell.Value)) & " " & CStr(options("industry"))
+            queryText = Trim$(CStr(dongName)) & " " & CStr(options("industry"))
 
             Set items = Nothing
             On Error Resume Next
@@ -1835,7 +1848,7 @@ Public Sub NaverLocal_BuildListByDong()
                 For i = 1 To items.Count
                     Set item = items(i)
                     wsOut.Cells(rowOut, 1).Value = CStr(options("industry"))
-                    wsOut.Cells(rowOut, 2).Value = Trim$(CStr(cell.Value))
+                    wsOut.Cells(rowOut, 2).Value = Trim$(CStr(dongName))
                     wsOut.Cells(rowOut, 3).Value = queryText
                     wsOut.Cells(rowOut, 4).Value = i
                     wsOut.Cells(rowOut, 5).Value = item("title")
@@ -1866,6 +1879,48 @@ Public Sub NaverLocal_BuildListByDong()
 ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "네이버 지역검색 신규 리스트 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
+End Sub
+
+Public Sub NaverLocal_CreateDongMasterTemplate()
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    Dim existing As Worksheet
+    On Error Resume Next
+    Set existing = wb.Worksheets(NAVER_USER_DONG_MASTER_SHEET)
+    On Error GoTo 0
+
+    If Not existing Is Nothing Then
+        If MsgBox("현재 통합문서에 '" & NAVER_USER_DONG_MASTER_SHEET & "' 시트가 이미 있습니다." & vbCrLf & _
+                  "기존 시트를 지우고 내장 행정동 마스터 양식으로 다시 만들까요?", _
+                  vbQuestion + vbYesNo, "행정동 마스터 양식") <> vbYes Then Exit Sub
+        Application.DisplayAlerts = False
+        existing.Delete
+        Application.DisplayAlerts = True
+    End If
+
+    Dim sourceWs As Worksheet
+    Set sourceWs = NaverLocal_GetEmbeddedDongMasterSheet()
+    If sourceWs Is Nothing Then
+        MsgBox "추가기능 내부 행정동 마스터를 찾지 못했습니다.", vbExclamation, "행정동 마스터 양식"
+        Exit Sub
+    End If
+
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = NAVER_USER_DONG_MASTER_SHEET
+
+    sourceWs.UsedRange.Copy Destination:=outWs.Range("A1")
+    Application.CutCopyMode = False
+    outWs.Columns("A:E").AutoFit
+    outWs.Range("A1:E1").Font.Bold = True
+    outWs.Activate
+
+    MsgBox "'" & NAVER_USER_DONG_MASTER_SHEET & "' 시트를 만들었습니다." & vbCrLf & _
+           "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 신규 리스트 생성에 반영됩니다.", _
+           vbInformation, "행정동 마스터 양식"
 End Sub
 
 Public Sub NaverLocal_VerifyExistingData()
@@ -1993,6 +2048,8 @@ Private Function NaverLocal_GetBuildOptions() As Object
     options("displayCount") = CLng(form.DisplayCount)
     options("delaySeconds") = CDbl(form.DelaySeconds)
     options("sortMode") = CStr(form.SortMode)
+    options("sidoFilter") = CStr(form.SidoFilter)
+    options("sigunguFilter") = CStr(form.SigunguFilter)
     Unload form
     Set NaverLocal_GetBuildOptions = options
     Exit Function
@@ -2006,7 +2063,109 @@ Fallback:
     options("displayCount") = 5
     options("delaySeconds") = 0.4
     options("sortMode") = "comment"
+    options("sidoFilter") = ""
+    options("sigunguFilter") = ""
     Set NaverLocal_GetBuildOptions = options
+End Function
+
+Private Function NaverLocal_GetDongNamesForSearch(ByVal wb As Workbook, ByVal options As Object) As Collection
+    Dim result As New Collection
+    Dim ws As Worksheet
+    Set ws = NaverLocal_GetUserDongMasterSheet(wb)
+    If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedDongMasterSheet()
+    If ws Is Nothing Then
+        Set NaverLocal_GetDongNamesForSearch = result
+        Exit Function
+    End If
+
+    Dim headerRow As Long: headerRow = 1
+    Dim sidoCol As Long, sigunguCol As Long, searchCol As Long, useCol As Long
+    sidoCol = NaverLocal_FindHeaderColumn(ws, headerRow, "광역시도")
+    sigunguCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시군구")
+    searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "검색주소")
+    If searchCol = 0 Then searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "원본")
+    If searchCol = 0 Then searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "행정동전체명")
+    useCol = NaverLocal_FindHeaderColumn(ws, headerRow, "사용여부")
+
+    If searchCol = 0 Then
+        Set NaverLocal_GetDongNamesForSearch = result
+        Exit Function
+    End If
+
+    Dim sidoFilter As String, sigunguFilter As String
+    sidoFilter = Trim$(CStr(options("sidoFilter")))
+    sigunguFilter = Trim$(CStr(options("sigunguFilter")))
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, searchCol).End(xlUp).Row
+
+    Dim r As Long
+    For r = headerRow + 1 To lastRow
+        Dim searchText As String
+        searchText = Trim$(CStr(ws.Cells(r, searchCol).Value))
+        If Len(searchText) > 0 Then
+            Dim useValue As String
+            If useCol > 0 Then useValue = UCase$(Trim$(CStr(ws.Cells(r, useCol).Value))) Else useValue = "Y"
+            If useValue <> "N" And useValue <> "NO" And useValue <> "0" And useValue <> "FALSE" Then
+                If NaverLocal_MasterRowMatches(ws, r, sidoCol, sigunguCol, sidoFilter, sigunguFilter) Then
+                    result.Add searchText
+                End If
+            End If
+        End If
+    Next r
+
+    Set NaverLocal_GetDongNamesForSearch = result
+End Function
+
+Private Function NaverLocal_MasterRowMatches(ws As Worksheet, ByVal rowIndex As Long, ByVal sidoCol As Long, ByVal sigunguCol As Long, ByVal sidoFilter As String, ByVal sigunguFilter As String) As Boolean
+    NaverLocal_MasterRowMatches = True
+    If Len(sidoFilter) > 0 Then
+        If sidoCol = 0 Then
+            NaverLocal_MasterRowMatches = False
+            Exit Function
+        End If
+        If InStr(1, CStr(ws.Cells(rowIndex, sidoCol).Value), sidoFilter, vbTextCompare) = 0 Then
+            NaverLocal_MasterRowMatches = False
+            Exit Function
+        End If
+    End If
+
+    If Len(sigunguFilter) > 0 Then
+        If sigunguCol = 0 Then
+            NaverLocal_MasterRowMatches = False
+            Exit Function
+        End If
+        If InStr(1, CStr(ws.Cells(rowIndex, sigunguCol).Value), sigunguFilter, vbTextCompare) = 0 Then
+            NaverLocal_MasterRowMatches = False
+            Exit Function
+        End If
+    End If
+End Function
+
+Private Function NaverLocal_GetUserDongMasterSheet(ByVal wb As Workbook) As Worksheet
+    If wb Is Nothing Then Exit Function
+    On Error Resume Next
+    Set NaverLocal_GetUserDongMasterSheet = wb.Worksheets(NAVER_USER_DONG_MASTER_SHEET)
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_GetEmbeddedDongMasterSheet() As Worksheet
+    On Error Resume Next
+    Set NaverLocal_GetEmbeddedDongMasterSheet = ThisWorkbook.Worksheets(NAVER_DONG_MASTER_SHEET)
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_FindHeaderColumn(ws As Worksheet, ByVal headerRow As Long, ByVal headerText As String) As Long
+    Dim lastCol As Long
+    lastCol = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
+
+    Dim c As Long
+    For c = 1 To lastCol
+        If Replace(Trim$(CStr(ws.Cells(headerRow, c).Value)), " ", "") = Replace(headerText, " ", "") Then
+            NaverLocal_FindHeaderColumn = c
+            Exit Function
+        End If
+    Next c
 End Function
 
 Private Function NaverLocal_GetVerifyOptions() As Object
@@ -4874,6 +5033,10 @@ End Sub
 
 Public Sub Ribbon_NaverLocalVerifyExistingData(control As IRibbonControl)
     NaverLocal_VerifyExistingData
+End Sub
+
+Public Sub Ribbon_NaverLocalCreateDongMasterTemplate(control As IRibbonControl)
+    NaverLocal_CreateDongMasterTemplate
 End Sub
 
 Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)

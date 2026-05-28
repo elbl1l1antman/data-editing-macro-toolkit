@@ -553,24 +553,50 @@ function Add-NaverLocalBuildOptionsUserForm {
     $cmbSort.Width = 140
     $cmbSort.Height = 22
 
+    $lblSido = $designer.Controls.Add("Forms.Label.1", "lblSido", $true)
+    $lblSido.Caption = "광역시도 필터"
+    $lblSido.Left = 12
+    $lblSido.Top = 154
+    $lblSido.Width = 110
+    $lblSido.Height = 18
+
+    $txtSido = $designer.Controls.Add("Forms.TextBox.1", "txtSido", $true)
+    $txtSido.Left = 128
+    $txtSido.Top = 150
+    $txtSido.Width = 120
+    $txtSido.Height = 22
+
+    $lblSigungu = $designer.Controls.Add("Forms.Label.1", "lblSigungu", $true)
+    $lblSigungu.Caption = "시군구 필터"
+    $lblSigungu.Left = 260
+    $lblSigungu.Top = 154
+    $lblSigungu.Width = 82
+    $lblSigungu.Height = 18
+
+    $txtSigungu = $designer.Controls.Add("Forms.TextBox.1", "txtSigungu", $true)
+    $txtSigungu.Left = 344
+    $txtSigungu.Top = 150
+    $txtSigungu.Width = 74
+    $txtSigungu.Height = 22
+
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "네이버 지역검색 API는 한 번에 최대 5개 결과만 반환합니다. 대량 행정동 검색 시 요청 간격을 너무 낮추지 마세요."
+    $lblTip.Caption = "내장 행정동 마스터 또는 현재 통합문서의 행정동_마스터 시트를 사용합니다. 필터를 비우면 전체 행정동을 대상으로 합니다."
     $lblTip.Left = 12
-    $lblTip.Top = 160
+    $lblTip.Top = 188
     $lblTip.Width = 420
     $lblTip.Height = 44
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 250
-    $cmdOk.Top = 220
+    $cmdOk.Top = 232
     $cmdOk.Width = 80
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 342
-    $cmdCancel.Top = 220
+    $cmdCancel.Top = 232
     $cmdCancel.Width = 80
     $cmdCancel.Height = 28
 
@@ -604,6 +630,14 @@ End Property
 Public Property Get SortMode() As String
     SortMode = CStr(cmbSort.Value)
     If SortMode <> "random" Then SortMode = "comment"
+End Property
+
+Public Property Get SidoFilter() As String
+    SidoFilter = Trim$(txtSido.Value)
+End Property
+
+Public Property Get SigunguFilter() As String
+    SigunguFilter = Trim$(txtSigungu.Value)
 End Property
 
 Private Sub cmdOK_Click()
@@ -797,6 +831,47 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-AdminDongMasterWorksheet {
+    param(
+        $Workbook,
+        [string]$CsvPath
+    )
+
+    if (-not (Test-Path -LiteralPath $CsvPath)) {
+        throw "Admin dong master CSV not found: $CsvPath"
+    }
+
+    foreach ($sheet in @($Workbook.Worksheets)) {
+        if ($sheet.Name -eq "_NaverLocalDongMaster") {
+            $sheet.Delete()
+            break
+        }
+    }
+
+    $ws = $Workbook.Worksheets.Add()
+    $ws.Name = "_NaverLocalDongMaster"
+
+    $rows = Import-Csv -LiteralPath $CsvPath -Encoding UTF8
+    $headers = @("광역시도", "시군구", "읍면동", "검색주소", "사용여부")
+    for ($c = 0; $c -lt $headers.Count; $c++) {
+        $ws.Cells.Item(1, $c + 1).Value2 = $headers[$c]
+    }
+
+    $r = 2
+    foreach ($row in $rows) {
+        $ws.Cells.Item($r, 1).Value2 = $row."광역시도"
+        $ws.Cells.Item($r, 2).Value2 = $row."시군구"
+        $ws.Cells.Item($r, 3).Value2 = $row."읍면동"
+        $ws.Cells.Item($r, 4).Value2 = $row."검색주소"
+        $ws.Cells.Item($r, 5).Value2 = $row."사용여부"
+        $r++
+    }
+
+    $ws.Range("A1:E1").Font.Bold = $true
+    $ws.Columns("A:E").AutoFit() | Out-Null
+    $ws.Visible = 0
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -825,6 +900,7 @@ function Add-RibbonCustomUi {
           <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
           <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동 기준 업체 리스트 생성" supertip="행정동 목록 범위와 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
           <button id="btnNaverVerifyAddress" label="주소 검증" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_NaverLocalVerifyExistingData" screentip="업체명/주소 검증" supertip="업체명 범위와 주소 범위를 선택하면 네이버 지역검색 결과, 유사도, 검증등급 열을 추가합니다." />
+          <button id="btnNaverDongMaster" label="행정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateDongMasterTemplate" screentip="행정동 마스터 양식 생성" supertip="현재 통합문서에 내장 행정동 마스터와 같은 양식의 행정동_마스터 시트를 생성합니다. 이 시트를 수정하면 신규 리스트 생성에 우선 사용됩니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
@@ -877,6 +953,7 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $ProjectRoot) { $ProjectRoot = Split-Path -Parent $ScriptDir }
 
 $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
+$AdminDongMasterCsv = Join-Path $ProjectRoot "resources\admin_dong_master.csv"
 $DevWorkbook = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
 
@@ -948,6 +1025,7 @@ try {
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
         Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
+        Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
