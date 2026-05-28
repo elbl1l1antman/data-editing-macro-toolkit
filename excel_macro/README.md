@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.9.7`
+`0.9.8`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -35,6 +35,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 주소 범위 선택 후 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열 생성
 - 네이버 지역검색 API 인증키 설정(Client ID/Client Secret)
 - 2024년 10월 기준 행정동 마스터를 내장한 네이버 신규 업체 리스트 생성
+- 내장 행정동 마스터는 추가기능 내부 `VeryHidden` 시트로 보관되며, 신규 리스트 생성 또는 행정동 양식 생성 시에만 사용
 - 현재 통합문서에 `행정동_마스터` 양식 시트를 생성해 행정동 기준표를 사용자가 교체/수정 가능
 - 기존 업체명/주소 범위 선택 후 네이버 지역검색 결과, 유사도, 검증등급 열 생성
 - 네이버 주소 검증 옵션창에서 업체명만/주소만/업체명+주소 분석 여부와 범위를 한 번에 지정
@@ -78,10 +79,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.9.7/DataEditingMacroToolkit_v0.9.7.xlam`
-- `release/v0.9.7/DataEditingMacroToolkit_v0.9.7.xlsm`
-- `release/v0.9.7/MacroToolkit.bas`
-- `release/v0.9.7/manifest.json`
+- `release/v0.9.8/DataEditingMacroToolkit_v0.9.8.xlam`
+- `release/v0.9.8/DataEditingMacroToolkit_v0.9.8.xlsm`
+- `release/v0.9.8/MacroToolkit.bas`
+- `release/v0.9.8/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

@@ -986,7 +986,10 @@ function Add-AdminDongMasterWorksheet {
 
     $ws.Range("A1:E1").Font.Bold = $true
     $ws.Columns("A:E").AutoFit() | Out-Null
-    $ws.Visible = 0
+    # Keep the embedded master inert inside the add-in. It is read only when
+    # Naver local-list features run, and copied to user workbooks only by the
+    # explicit "행정동 양식" command.
+    $ws.Visible = 2
 }
 
 function Add-ProgressStatusUserForm {
