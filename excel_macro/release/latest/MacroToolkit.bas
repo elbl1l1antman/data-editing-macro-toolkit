@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.5"
+Public Const TOOLKIT_VERSION As String = "0.9.6"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -23,6 +23,8 @@ Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
+
+Private gProgressForm As Object
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -134,6 +136,42 @@ Public Sub Toolkit_ResetAllSheetsToTop()
 ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "모든 시트 최상단 정렬 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "모든 시트 최상단"
+End Sub
+
+Private Sub Toolkit_ProgressShow(ByVal title As String, ByVal message As String, ByVal totalCount As Long)
+    On Error Resume Next
+    Set gProgressForm = VBA.UserForms.Add("frmProgressStatus")
+    If Not gProgressForm Is Nothing Then
+        gProgressForm.Configure title, totalCount, message
+        gProgressForm.Show vbModeless
+    End If
+    Application.StatusBar = title & " - " & message
+    DoEvents
+    On Error GoTo 0
+End Sub
+
+Private Sub Toolkit_ProgressUpdate(ByVal currentCount As Long, ByVal totalCount As Long, ByVal message As String)
+    On Error Resume Next
+    If Not gProgressForm Is Nothing Then
+        gProgressForm.UpdateProgress currentCount, totalCount, message
+    End If
+
+    Dim percentValue As Double
+    If totalCount > 0 Then percentValue = currentCount / totalCount
+    Application.StatusBar = Format(percentValue, "0%") & " - " & message & " (" & currentCount & "/" & totalCount & ")"
+    DoEvents
+    On Error GoTo 0
+End Sub
+
+Private Sub Toolkit_ProgressClose()
+    On Error Resume Next
+    If Not gProgressForm Is Nothing Then
+        Unload gProgressForm
+        Set gProgressForm = Nothing
+    End If
+    Application.StatusBar = False
+    DoEvents
+    On Error GoTo 0
 End Sub
 
 Public Sub Toolkit_SelectA1OnAllSheets()
@@ -1533,9 +1571,11 @@ Public Sub BizNo_QueryStatusForSelection()
     If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol
 
     Application.ScreenUpdating = False
+    Toolkit_ProgressShow "사업자등록 상태조회", "조회 준비 중", lastRow - dataStartRow + 1
     On Error GoTo CleanFail
 
     For rowIndex = dataStartRow To lastRow
+        Toolkit_ProgressUpdate rowIndex - dataStartRow + 1, lastRow - dataStartRow + 1, "사업자등록번호 확인 중: " & CStr(rowIndex) & "행"
         Dim bizNo As String
         bizNo = DigitsOnly(CStr(ws.Cells(rowIndex, targetRange.Column).Value))
         If Len(bizNo) = 10 Then
@@ -1559,6 +1599,7 @@ Public Sub BizNo_QueryStatusForSelection()
     End If
 
     ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + Biz_OutputFieldCount() - 1)).EntireColumn.AutoFit
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
 
     MsgBox "사업자등록 상태조회를 완료했습니다." & vbCrLf & _
@@ -1568,6 +1609,7 @@ Public Sub BizNo_QueryStatusForSelection()
     Exit Sub
 
 CleanFail:
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
     MsgBox "조회 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "사업자등록 상태조회"
 End Sub
@@ -1829,10 +1871,12 @@ Public Sub NaverLocal_BuildListByDong()
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_ProgressShow "네이버 신규 리스트", "검색 준비 중", dongNames.Count
 
     For Each dongName In dongNames
         If Len(Trim$(CStr(dongName))) > 0 Then
             requestCount = requestCount + 1
+            Toolkit_ProgressUpdate requestCount, dongNames.Count, "검색 중: " & Trim$(CStr(dongName))
             queryText = Trim$(CStr(dongName)) & " " & CStr(options("industry"))
 
             Set items = Nothing
@@ -1864,10 +1908,11 @@ Public Sub NaverLocal_BuildListByDong()
 
             NaverLocal_Delay CDbl(options("delaySeconds"))
         End If
-    Next cell
+    Next dongName
 
     wsOut.Range("A1:J1").Font.Bold = True
     wsOut.Columns("A:J").AutoFit
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
 
     MsgBox "네이버 지역검색 신규 리스트 생성을 완료했습니다." & vbCrLf & _
@@ -1877,6 +1922,7 @@ Public Sub NaverLocal_BuildListByDong()
     Exit Sub
 
 ErrHandler:
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
     MsgBox "네이버 지역검색 신규 리스트 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Sub
@@ -1982,11 +2028,15 @@ Public Sub NaverLocal_VerifyExistingData()
     Dim riskLabel As String
     Dim requestCount As Long
     Dim noResultCount As Long
+    Dim totalRows As Long
+    totalRows = nameRange.Row + nameRange.Rows.Count - firstRow
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_ProgressShow "네이버 주소 검증", "검증 준비 중", totalRows
 
     For rowIndex = firstRow To nameRange.Row + nameRange.Rows.Count - 1
+        Toolkit_ProgressUpdate rowIndex - firstRow + 1, totalRows, "검증 중: " & CStr(rowIndex) & "행"
         nameValue = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value))
         addressValue = Trim$(CStr(ws.Cells(rowIndex, addressRange.Column).Value))
 
@@ -2019,6 +2069,7 @@ Public Sub NaverLocal_VerifyExistingData()
 
     ws.Range(ws.Cells(nameRange.Row, outputCol), ws.Cells(nameRange.Row, outputCol + 7)).Font.Bold = True
     ws.Columns(outputCol).Resize(, 8).AutoFit
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
 
     MsgBox "네이버 지역검색 기반 주소 검증을 완료했습니다." & vbCrLf & _
@@ -2027,6 +2078,7 @@ Public Sub NaverLocal_VerifyExistingData()
     Exit Sub
 
 ErrHandler:
+    Toolkit_ProgressClose
     Application.ScreenUpdating = True
     MsgBox "네이버 주소 검증 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Sub

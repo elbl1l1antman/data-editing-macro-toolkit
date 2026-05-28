@@ -872,6 +872,101 @@ function Add-AdminDongMasterWorksheet {
     $ws.Visible = 0
 }
 
+function Add-ProgressStatusUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmProgressStatus"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "작업 진행 현황"
+    $form.Properties.Item("Width").Value = 420
+    $form.Properties.Item("Height").Value = 180
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "작업을 준비 중입니다."
+    $lblTitle.Left = 14
+    $lblTitle.Top = 12
+    $lblTitle.Width = 380
+    $lblTitle.Height = 22
+
+    $lblMessage = $designer.Controls.Add("Forms.Label.1", "lblMessage", $true)
+    $lblMessage.Caption = ""
+    $lblMessage.Left = 14
+    $lblMessage.Top = 42
+    $lblMessage.Width = 380
+    $lblMessage.Height = 32
+
+    $barBack = $designer.Controls.Add("Forms.Label.1", "barBack", $true)
+    $barBack.Caption = ""
+    $barBack.Left = 14
+    $barBack.Top = 84
+    $barBack.Width = 360
+    $barBack.Height = 18
+    $barBack.BackStyle = 1
+    $barBack.BackColor = 12632256
+
+    $barFill = $designer.Controls.Add("Forms.Label.1", "barFill", $true)
+    $barFill.Caption = ""
+    $barFill.Left = 14
+    $barFill.Top = 84
+    $barFill.Width = 1
+    $barFill.Height = 18
+    $barFill.BackStyle = 1
+    $barFill.BackColor = 5287936
+
+    $lblPercent = $designer.Controls.Add("Forms.Label.1", "lblPercent", $true)
+    $lblPercent.Caption = "0% (0/0)"
+    $lblPercent.Left = 14
+    $lblPercent.Top = 112
+    $lblPercent.Width = 200
+    $lblPercent.Height = 18
+
+    $lblWait = $designer.Controls.Add("Forms.Label.1", "lblWait", $true)
+    $lblWait.Caption = "작업 중에는 Excel이 잠시 느려질 수 있습니다."
+    $lblWait.Left = 180
+    $lblWait.Top = 112
+    $lblWait.Width = 210
+    $lblWait.Height = 18
+
+    $formCode = @'
+Option Explicit
+
+Private mTotal As Long
+Private Const BAR_MAX_WIDTH As Single = 360
+
+Public Sub Configure(ByVal title As String, ByVal totalCount As Long, ByVal message As String)
+    Me.Caption = title
+    lblTitle.Caption = title
+    mTotal = totalCount
+    UpdateProgress 0, totalCount, message
+End Sub
+
+Public Sub UpdateProgress(ByVal currentCount As Long, ByVal totalCount As Long, ByVal message As String)
+    Dim pct As Double
+    If totalCount > 0 Then
+        pct = currentCount / totalCount
+    Else
+        pct = 0
+    End If
+    If pct < 0 Then pct = 0
+    If pct > 1 Then pct = 1
+
+    lblMessage.Caption = message
+    lblPercent.Caption = Format(pct, "0%") & " (" & CStr(currentCount) & "/" & CStr(totalCount) & ")"
+    barFill.Width = BAR_MAX_WIDTH * pct
+    Repaint
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        Cancel = True
+    End If
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-RibbonCustomUi {
     param([string]$PackagePath)
 
@@ -1014,7 +1109,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -1025,6 +1120,7 @@ try {
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
         Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
+        Add-ProgressStatusUserForm -Workbook $workbook
         Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
     }
     catch {
