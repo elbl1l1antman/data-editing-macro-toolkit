@@ -1929,7 +1929,7 @@ Private Function Biz_StatusFieldValue(ByVal fieldKey As String, ByVal statusCode
         Case Else
             Biz_StatusFieldValue = Biz_JsonString(dataObject, fieldKey)
     End Select
-End Sub
+End Function
 
 Private Function Biz_ExtractDataObjects(ByVal jsonText As String) As Collection
     Dim result As New Collection
