@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.10"
+Public Const TOOLKIT_VERSION As String = "1.0.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -90,6 +90,12 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A30").Value = "NaverLocal_VerifyExistingData"
     ws.Range("A31").Value = "Address_SplitDongAndRoad"
     ws.Range("A32").Value = "NaverLocal_CreateDongMasterTemplate"
+    ws.Range("A33").Value = "Roster_DetectDuplicates"
+    ws.Range("A34").Value = "Roster_QualityReport"
+    ws.Range("A35").Value = "Roster_MatchCompanyNames"
+    ws.Range("A36").Value = "Address_SplitAdministrativeParts"
+    ws.Range("A37").Value = "Phone_ValidateSelection"
+    ws.Range("A38").Value = "SPSS_ExtractTableMetadata"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -5238,6 +5244,407 @@ Private Function SPSS_WorksheetExists(ByVal wb As Workbook, ByVal sheetName As S
     On Error GoTo 0
     SPSS_WorksheetExists = Not ws Is Nothing
 End Function
+
+' ============================================================
+' 명부 품질/중복/표 메타 도구
+' ============================================================
+Public Sub Roster_DetectDuplicates()
+    Dim dataRange As Range
+    If Not Toolkit_GetRangeFromUserForm("중복 업체 탐지", _
+        "헤더가 포함된 명부 범위를 선택하세요. 업체명, 주소, 전화번호, 사업자등록번호 계열 헤더를 자동 탐지합니다.", _
+        dataRange) Then Exit Sub
+    Set dataRange = dataRange.Areas(1)
+
+    Dim nameCol As Long, addressCol As Long, phoneCol As Long, bizCol As Long
+    nameCol = Roster_FindHeaderColumn(dataRange, Array("업체명", "기업체명", "사업체명", "기업명", "상호"))
+    addressCol = Roster_FindHeaderColumn(dataRange, Array("주소", "도로명주소", "지번주소", "소재지"))
+    phoneCol = Roster_FindHeaderColumn(dataRange, Array("전화", "전화번호", "대표번호", "연락처"))
+    bizCol = Roster_FindHeaderColumn(dataRange, Array("사업자등록번호", "사업자번호", "등록번호"))
+
+    If nameCol = 0 And addressCol = 0 And phoneCol = 0 And bizCol = 0 Then
+        MsgBox "중복 판단에 사용할 헤더를 찾지 못했습니다.", vbExclamation, "중복 업체 탐지"
+        Exit Sub
+    End If
+
+    If dataRange.Rows.Count > 1500 Then
+        If MsgBox("선택한 명부가 " & (dataRange.Rows.Count - 1) & "행입니다." & vbCrLf & _
+                  "중복 탐지는 행 조합을 비교하므로 시간이 오래 걸릴 수 있습니다. 계속할까요?", _
+                  vbQuestion + vbYesNo, "중복 업체 탐지") <> vbYes Then Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = dataRange.Worksheet.Parent
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = SPSS_UniqueSheetName(wb, "중복탐지")
+    Roster_WriteArray outWs, 1, 1, Array("행1", "행2", "중복등급", "점수", "판단근거", "업체명1", "업체명2", "주소1", "주소2", "전화1", "전화2", "사업자번호1", "사업자번호2")
+
+    Dim lastRow As Long: lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    Dim r1 As Long, r2 As Long, outRow As Long: outRow = 2
+    Dim score As Double, reason As String, grade As String
+    Dim maxPairs As Long: maxPairs = 0
+
+    Application.ScreenUpdating = False
+    For r1 = dataRange.Row + 1 To lastRow - 1
+        For r2 = r1 + 1 To lastRow
+            score = Roster_DuplicateScore(dataRange.Worksheet, r1, r2, dataRange, nameCol, addressCol, phoneCol, bizCol, reason)
+            If score >= 55 Then
+                grade = Roster_DuplicateGrade(score)
+                Roster_WriteArray outWs, outRow, 1, Array(r1, r2, grade, Round(score, 1), reason, _
+                    Roster_CellText(dataRange.Worksheet, r1, dataRange, nameCol), Roster_CellText(dataRange.Worksheet, r2, dataRange, nameCol), _
+                    Roster_CellText(dataRange.Worksheet, r1, dataRange, addressCol), Roster_CellText(dataRange.Worksheet, r2, dataRange, addressCol), _
+                    Roster_CellText(dataRange.Worksheet, r1, dataRange, phoneCol), Roster_CellText(dataRange.Worksheet, r2, dataRange, phoneCol), _
+                    Roster_CellText(dataRange.Worksheet, r1, dataRange, bizCol), Roster_CellText(dataRange.Worksheet, r2, dataRange, bizCol))
+                outRow = outRow + 1
+                maxPairs = maxPairs + 1
+            End If
+        Next r2
+    Next r1
+    outWs.Columns.AutoFit
+    Application.ScreenUpdating = True
+    MsgBox "중복 업체 탐지를 완료했습니다." & vbCrLf & "의심 쌍: " & maxPairs & "건", vbInformation, "중복 업체 탐지"
+End Sub
+
+Public Sub Roster_QualityReport()
+    Dim dataRange As Range
+    If Not Toolkit_GetRangeFromUserForm("명부 품질 진단", _
+        "헤더가 포함된 명부 범위를 선택하세요. 빈값, 전화번호, 주소 유형, 사업자번호, 중복 의심을 요약합니다.", _
+        dataRange) Then Exit Sub
+    Set dataRange = dataRange.Areas(1)
+
+    Dim ws As Worksheet: Set ws = dataRange.Worksheet
+    Dim wb As Workbook: Set wb = ws.Parent
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = SPSS_UniqueSheetName(wb, "명부품질진단")
+
+    Dim nameCol As Long, addressCol As Long, phoneCol As Long, bizCol As Long
+    nameCol = Roster_FindHeaderColumn(dataRange, Array("업체명", "기업체명", "사업체명", "기업명", "상호"))
+    addressCol = Roster_FindHeaderColumn(dataRange, Array("주소", "도로명주소", "지번주소", "소재지"))
+    phoneCol = Roster_FindHeaderColumn(dataRange, Array("전화", "전화번호", "대표번호", "연락처"))
+    bizCol = Roster_FindHeaderColumn(dataRange, Array("사업자등록번호", "사업자번호", "등록번호"))
+
+    Roster_WriteArray outWs, 1, 1, Array("진단항목", "건수", "설명")
+    Dim outRow As Long: outRow = 2
+    Dim lastRow As Long: lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    Dim totalRows As Long: totalRows = Application.Max(0, dataRange.Rows.Count - 1)
+    Roster_WriteArray outWs, outRow, 1, Array("전체 데이터 행", totalRows, "헤더 제외 행 수"): outRow = outRow + 1
+
+    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, nameCol, "업체명 빈값")
+    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, addressCol, "주소 빈값")
+    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, phoneCol, "전화번호 빈값")
+    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, bizCol, "사업자번호 빈값")
+
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", Roster_CountInvalidPhones(ws, dataRange, phoneCol), "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", Roster_CountInvalidBizNo(ws, dataRange, bizCol), "숫자 10자리 여부 기준"): outRow = outRow + 1
+    If addressCol > 0 Then
+        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", Roster_CountAddressType(ws, dataRange, addressCol, "도로명주소"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", Roster_CountAddressType(ws, dataRange, addressCol, "법정/행정동 기준 주소"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", Roster_CountAddressType(ws, dataRange, addressCol, "확인 필요"), "주소 유형 판별 기준"): outRow = outRow + 1
+    End If
+
+    outWs.Columns.AutoFit
+    MsgBox "명부 품질 진단 리포트를 생성했습니다.", vbInformation, "명부 품질 진단"
+End Sub
+
+Public Sub Roster_MatchCompanyNames()
+    Dim nameRange As Range
+    If Not Toolkit_GetRangeFromUserForm("업체명 유사도 매칭", _
+        "업체명 범위를 선택하세요. 원본 오른쪽에 표준화명과 유사그룹 열을 생성합니다.", _
+        nameRange) Then Exit Sub
+    Set nameRange = nameRange.Areas(1)
+    If nameRange.Columns.Count > 1 Then Set nameRange = nameRange.Columns(1)
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(nameRange)
+    If workRange Is Nothing Then Exit Sub
+
+    Dim ws As Worksheet: Set ws = workRange.Worksheet
+    Dim firstRow As Long: firstRow = workRange.Row
+    Dim lastRow As Long: lastRow = workRange.Row + workRange.Rows.Count - 1
+    Dim dataStart As Long: dataStart = firstRow
+    If InStr(1, CStr(ws.Cells(firstRow, workRange.Column).Value), "명", vbTextCompare) > 0 Then dataStart = firstRow + 1
+
+    Dim outCol As Long: outCol = workRange.Column + workRange.Columns.Count
+    ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
+    ws.Cells(firstRow, outCol).Value = "업체명 표준화"
+    ws.Cells(firstRow, outCol + 1).Value = "유사그룹"
+
+    Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
+    Dim r As Long, key As String, groupNo As Long
+    For r = dataStart To lastRow
+        key = Roster_NormalizeCompanyName(CStr(ws.Cells(r, workRange.Column).Value))
+        ws.Cells(r, outCol).Value = key
+        If Len(key) > 0 Then
+            If Not dict.Exists(key) Then
+                groupNo = groupNo + 1
+                dict(key) = "G" & Format(groupNo, "0000")
+            End If
+            ws.Cells(r, outCol + 1).Value = dict(key)
+        End If
+    Next r
+    ws.Columns(outCol).Resize(, 2).AutoFit
+    MsgBox "업체명 표준화와 유사그룹 생성을 완료했습니다.", vbInformation, "업체명 유사도 매칭"
+End Sub
+
+Public Sub Address_SplitAdministrativeParts()
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("행정구역 분해", _
+        "주소 범위를 선택하세요. 오른쪽에 광역시도, 시군구, 읍면동, 상세주소를 생성합니다.", _
+        addressRange) Then Exit Sub
+    Set addressRange = addressRange.Areas(1)
+    If addressRange.Columns.Count > 1 Then Set addressRange = addressRange.Columns(1)
+
+    Dim ws As Worksheet: Set ws = addressRange.Worksheet
+    Dim firstRow As Long: firstRow = addressRange.Row
+    Dim lastRow As Long: lastRow = addressRange.Row + addressRange.Rows.Count - 1
+    Dim dataStart As Long: dataStart = firstRow
+    If Address_LooksLikeHeader(CStr(ws.Cells(firstRow, addressRange.Column).Value)) Then dataStart = firstRow + 1
+
+    Dim outCol As Long: outCol = addressRange.Column + addressRange.Columns.Count
+    ws.Columns(outCol).Resize(, 4).Insert Shift:=xlToRight
+    Roster_WriteArray ws, firstRow, outCol, Array("광역시도", "시군구", "읍면동", "상세주소")
+
+    Dim r As Long, parts As Variant
+    For r = dataStart To lastRow
+        parts = Address_ParseAdministrativeParts(CStr(ws.Cells(r, addressRange.Column).Value))
+        Roster_WriteArray ws, r, outCol, parts
+    Next r
+    ws.Columns(outCol).Resize(, 4).AutoFit
+    MsgBox "행정구역 분해를 완료했습니다.", vbInformation, "행정구역 분해"
+End Sub
+
+Public Sub Phone_ValidateSelection()
+    Dim phoneRange As Range
+    If Not Toolkit_GetRangeFromUserForm("전화번호 유효성 검사", _
+        "전화번호 범위를 선택하세요. 오른쪽에 전화번호 유형과 유효성 결과를 생성합니다.", _
+        phoneRange) Then Exit Sub
+    Set phoneRange = phoneRange.Areas(1)
+    If phoneRange.Columns.Count > 1 Then Set phoneRange = phoneRange.Columns(1)
+
+    Dim ws As Worksheet: Set ws = phoneRange.Worksheet
+    Dim firstRow As Long: firstRow = phoneRange.Row
+    Dim lastRow As Long: lastRow = phoneRange.Row + phoneRange.Rows.Count - 1
+    Dim dataStart As Long: dataStart = firstRow
+    If Len(DigitsOnly(CStr(ws.Cells(firstRow, phoneRange.Column).Value))) = 0 Then dataStart = firstRow + 1
+
+    Dim outCol As Long: outCol = phoneRange.Column + phoneRange.Columns.Count
+    ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
+    Roster_WriteArray ws, firstRow, outCol, Array("전화번호 유형", "전화번호 유효성")
+
+    Dim r As Long, result As Variant
+    For r = dataStart To lastRow
+        result = Phone_ClassifyOne(CStr(ws.Cells(r, phoneRange.Column).Value))
+        Roster_WriteArray ws, r, outCol, result
+    Next r
+    ws.Columns(outCol).Resize(, 2).AutoFit
+    MsgBox "전화번호 유효성 검사를 완료했습니다.", vbInformation, "전화번호 유효성 검사"
+End Sub
+
+Public Sub SPSS_ExtractTableMetadata()
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+    Dim indexWs As Worksheet, dataWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
+    If dataWs Is Nothing Then
+        MsgBox "표 메타를 추출할 집계표 시트를 찾지 못했습니다.", vbExclamation, "SPSS 표 메타"
+        Exit Sub
+    End If
+
+    Dim tables As Collection
+    If indexWs Is Nothing Then Set tables = SPSS_CollectTablesFromDataSheet(dataWs) Else Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = SPSS_UniqueSheetName(wb, "SPSS_표메타")
+    Roster_WriteArray outWs, 1, 1, Array("순번", "표제목", "시작행", "끝행", "배너목록", "링크")
+
+    Dim i As Long, tableInfo As Variant, banners As Collection
+    For i = 1 To tables.Count
+        tableInfo = tables(i)
+        Set banners = SPSS_CollectBannersForTable(dataWs, CLng(tableInfo(1)), CLng(tableInfo(2)))
+        Roster_WriteArray outWs, i + 1, 1, Array(i, CStr(tableInfo(0)), CLng(tableInfo(1)), CLng(tableInfo(2)), SPSS_JoinCollection(banners), "이동")
+        outWs.Hyperlinks.Add Anchor:=outWs.Cells(i + 1, 6), Address:="", SubAddress:="'" & dataWs.Name & "'!A" & CLng(tableInfo(1)), TextToDisplay:="이동"
+    Next i
+    outWs.Columns.AutoFit
+    MsgBox "SPSS 표 메타 시트를 생성했습니다.", vbInformation, "SPSS 표 메타"
+End Sub
+
+Private Function Roster_FindHeaderColumn(ByVal dataRange As Range, ByVal candidates As Variant) As Long
+    Dim c As Long, i As Long, headerText As String
+    For c = 1 To dataRange.Columns.Count
+        headerText = Replace(Trim$(CStr(dataRange.Cells(1, c).Value)), " ", "")
+        For i = LBound(candidates) To UBound(candidates)
+            If InStr(1, headerText, Replace(CStr(candidates(i)), " ", ""), vbTextCompare) > 0 Then
+                Roster_FindHeaderColumn = c
+                Exit Function
+            End If
+        Next i
+    Next c
+End Function
+
+Private Function Roster_CellText(ws As Worksheet, ByVal rowIndex As Long, ByVal dataRange As Range, ByVal relativeCol As Long) As String
+    If relativeCol <= 0 Then Exit Function
+    Roster_CellText = Trim$(CStr(ws.Cells(rowIndex, dataRange.Column + relativeCol - 1).Value))
+End Function
+
+Private Function Roster_DuplicateScore(ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, ByVal dataRange As Range, ByVal nameCol As Long, ByVal addressCol As Long, ByVal phoneCol As Long, ByVal bizCol As Long, ByRef reason As String) As Double
+    Dim score As Double
+    reason = ""
+    If bizCol > 0 Then
+        Dim b1 As String, b2 As String
+        b1 = DigitsOnly(Roster_CellText(ws, r1, dataRange, bizCol))
+        b2 = DigitsOnly(Roster_CellText(ws, r2, dataRange, bizCol))
+        If Len(b1) = 10 And b1 = b2 Then score = score + 100: reason = reason & "사업자번호 일치; "
+    End If
+    If phoneCol > 0 Then
+        Dim p1 As String, p2 As String
+        p1 = DigitsOnly(Roster_CellText(ws, r1, dataRange, phoneCol))
+        p2 = DigitsOnly(Roster_CellText(ws, r2, dataRange, phoneCol))
+        If Len(p1) >= 8 And p1 = p2 Then score = score + 35: reason = reason & "전화번호 일치; "
+    End If
+    If nameCol > 0 Then
+        Dim ns As Double
+        ns = NaverLocal_Similarity(Roster_CellText(ws, r1, dataRange, nameCol), Roster_CellText(ws, r2, dataRange, nameCol))
+        If ns >= 85 Then score = score + 35: reason = reason & "업체명 유사; "
+    End If
+    If addressCol > 0 Then
+        Dim ads As Double
+        ads = NaverLocal_Similarity(Roster_CellText(ws, r1, dataRange, addressCol), Roster_CellText(ws, r2, dataRange, addressCol))
+        If ads >= 85 Then score = score + 30: reason = reason & "주소 유사; "
+    End If
+    Roster_DuplicateScore = Application.Min(score, 100)
+End Function
+
+Private Function Roster_DuplicateGrade(ByVal score As Double) As String
+    If score >= 90 Then
+        Roster_DuplicateGrade = "정확 중복"
+    ElseIf score >= 75 Then
+        Roster_DuplicateGrade = "높음"
+    ElseIf score >= 60 Then
+        Roster_DuplicateGrade = "보통"
+    Else
+        Roster_DuplicateGrade = "낮음"
+    End If
+End Function
+
+Private Sub Roster_WriteArray(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long, ByVal values As Variant)
+    Dim i As Long
+    For i = LBound(values) To UBound(values)
+        ws.Cells(rowIndex, colIndex + i).Value = values(i)
+    Next i
+End Sub
+
+Private Function Roster_WriteMissingSummary(outWs As Worksheet, ByVal outRow As Long, ws As Worksheet, dataRange As Range, ByVal relCol As Long, ByVal label As String) As Long
+    If relCol > 0 Then
+        Roster_WriteArray outWs, outRow, 1, Array(label, Roster_CountBlank(ws, dataRange, relCol), "빈값 여부")
+        Roster_WriteMissingSummary = outRow + 1
+    Else
+        Roster_WriteMissingSummary = outRow
+    End If
+End Function
+
+Private Function Roster_CountBlank(ws As Worksheet, dataRange As Range, ByVal relCol As Long) As Long
+    Dim r As Long, lastRow As Long
+    lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    For r = dataRange.Row + 1 To lastRow
+        If Len(Trim$(CStr(ws.Cells(r, dataRange.Column + relCol - 1).Value))) = 0 Then Roster_CountBlank = Roster_CountBlank + 1
+    Next r
+End Function
+
+Private Function Roster_CountInvalidPhones(ws As Worksheet, dataRange As Range, ByVal relCol As Long) As Long
+    Dim r As Long, result As Variant, lastRow As Long
+    lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    For r = dataRange.Row + 1 To lastRow
+        result = Phone_ClassifyOne(CStr(ws.Cells(r, dataRange.Column + relCol - 1).Value))
+        If CStr(result(1)) <> "정상" And Len(Trim$(CStr(ws.Cells(r, dataRange.Column + relCol - 1).Value))) > 0 Then Roster_CountInvalidPhones = Roster_CountInvalidPhones + 1
+    Next r
+End Function
+
+Private Function Roster_CountInvalidBizNo(ws As Worksheet, dataRange As Range, ByVal relCol As Long) As Long
+    Dim r As Long, digits As String, lastRow As Long
+    lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    For r = dataRange.Row + 1 To lastRow
+        digits = DigitsOnly(CStr(ws.Cells(r, dataRange.Column + relCol - 1).Value))
+        If Len(digits) > 0 And Len(digits) <> 10 Then Roster_CountInvalidBizNo = Roster_CountInvalidBizNo + 1
+    Next r
+End Function
+
+Private Function Roster_CountAddressType(ws As Worksheet, dataRange As Range, ByVal relCol As Long, ByVal targetType As String) As Long
+    Dim r As Long, classified As Variant, lastRow As Long
+    lastRow = dataRange.Row + dataRange.Rows.Count - 1
+    For r = dataRange.Row + 1 To lastRow
+        classified = Address_ClassifyOneAddress(CStr(ws.Cells(r, dataRange.Column + relCol - 1).Value))
+        If CStr(classified(0)) = targetType Then Roster_CountAddressType = Roster_CountAddressType + 1
+    Next r
+End Function
+
+Private Function Roster_NormalizeCompanyName(ByVal textValue As String) As String
+    Dim options As Object
+    Set options = CompanyName_DefaultOptions()
+    Roster_NormalizeCompanyName = CompanyName_CleanOne(textValue, options)
+End Function
+
+Private Function Address_ParseAdministrativeParts(ByVal addressText As String) As Variant
+    Dim textValue As String: textValue = Trim$(Address_NormalizeRegionNames(CStr(addressText)))
+    Dim tokens() As String: tokens = Split(textValue, " ")
+    Dim sido As String, sigungu As String, dong As String, detail As String
+    Dim i As Long, startDetail As Long
+    If UBound(tokens) >= 0 Then sido = tokens(0)
+    If UBound(tokens) >= 1 Then sigungu = tokens(1)
+    For i = 2 To UBound(tokens)
+        If Address_LooksLikeDongToken(tokens(i)) Then
+            dong = tokens(i)
+            startDetail = i + 1
+            Exit For
+        End If
+    Next i
+    If startDetail = 0 Then startDetail = 2
+    For i = startDetail To UBound(tokens)
+        detail = Trim$(detail & " " & tokens(i))
+    Next i
+    Address_ParseAdministrativeParts = Array(sido, sigungu, dong, detail)
+End Function
+
+Private Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
+    Dim digits As String: digits = DigitsOnly(phoneText)
+    If Len(digits) = 0 Then
+        Phone_ClassifyOne = Array("빈값", "확인 필요")
+    ElseIf Left$(digits, 3) = "010" And Len(digits) = 11 Then
+        Phone_ClassifyOne = Array("휴대폰", "정상")
+    ElseIf Left$(digits, 2) = "02" And (Len(digits) = 9 Or Len(digits) = 10) Then
+        Phone_ClassifyOne = Array("서울 지역번호", "정상")
+    ElseIf Left$(digits, 2) = "15" Or Left$(digits, 2) = "16" Or Left$(digits, 2) = "18" Then
+        If Len(digits) = 8 Then Phone_ClassifyOne = Array("대표번호", "정상") Else Phone_ClassifyOne = Array("대표번호", "확인 필요")
+    ElseIf Len(digits) = 10 Or Len(digits) = 11 Then
+        Phone_ClassifyOne = Array("지역/일반번호", "정상")
+    Else
+        Phone_ClassifyOne = Array("알 수 없음", "확인 필요")
+    End If
+End Function
+
+Private Function SPSS_CollectBannersForTable(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Collection
+    Dim result As New Collection, seen As Object: Set seen = CreateObject("Scripting.Dictionary")
+    Dim lastCol As Long: lastCol = SPSS_TableLastCol(ws, startRow, endRow)
+    Dim r As Long, c As Long, textValue As String, name As String
+    For r = startRow To endRow
+        For c = 1 To lastCol
+            textValue = Trim$(CStr(ws.Cells(r, c).Value))
+            If Left$(textValue, 1) = "◐" Or Left$(textValue, 1) = "▣" Then
+                name = SPSS_NormalizeBannerName(textValue)
+                If Len(name) > 0 And Not seen.Exists(name) Then seen(name) = True: result.Add name
+            End If
+        Next c
+    Next r
+    Set SPSS_CollectBannersForTable = result
+End Function
+
+Private Function SPSS_JoinCollection(ByVal items As Collection) As String
+    Dim i As Long, result As String
+    For i = 1 To items.Count
+        If Len(result) > 0 Then result = result & ", "
+        result = result & CStr(items(i))
+    Next i
+    SPSS_JoinCollection = result
+End Function
 ' ============================================================
 ' Ribbon callbacks
 ' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
@@ -5344,6 +5751,30 @@ End Sub
 
 Public Sub Ribbon_SPSSDeleteVerticalBanners(control As IRibbonControl)
     SPSS_DeleteVerticalBannersFromIndex
+End Sub
+
+Public Sub Ribbon_RosterDetectDuplicates(control As IRibbonControl)
+    Roster_DetectDuplicates
+End Sub
+
+Public Sub Ribbon_RosterQualityReport(control As IRibbonControl)
+    Roster_QualityReport
+End Sub
+
+Public Sub Ribbon_RosterMatchCompanyNames(control As IRibbonControl)
+    Roster_MatchCompanyNames
+End Sub
+
+Public Sub Ribbon_AddressSplitAdministrativeParts(control As IRibbonControl)
+    Address_SplitAdministrativeParts
+End Sub
+
+Public Sub Ribbon_PhoneValidateSelection(control As IRibbonControl)
+    Phone_ValidateSelection
+End Sub
+
+Public Sub Ribbon_SPSSExtractTableMetadata(control As IRibbonControl)
+    SPSS_ExtractTableMetadata
 End Sub
 
 

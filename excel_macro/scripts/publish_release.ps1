@@ -1271,6 +1271,14 @@ function Add-RibbonCustomUi {
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
           <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표와 배너 목록을 선택해 원본 집계표 시트의 복사본에 삭제 내용을 반영하고 새 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
+          <button id="btnSpssMetadata" label="표 메타 추출" imageMso="TablePropertiesDialog" onAction="Ribbon_SPSSExtractTableMetadata" screentip="SPSS 표 메타 추출" supertip="집계표의 표 제목, 행 위치, 배너 목록, 이동 링크를 새 시트로 추출합니다." />
+        </group>
+        <group id="grpRosterQualityTools" label="명부 품질">
+          <button id="btnRosterQuality" label="품질 진단" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_RosterQualityReport" screentip="명부 품질 진단 리포트" supertip="선택한 명부에서 빈값, 전화번호, 주소 유형, 사업자번호 상태를 요약한 리포트 시트를 만듭니다." />
+          <button id="btnRosterDuplicate" label="중복 탐지" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_RosterDetectDuplicates" screentip="중복 업체 탐지" supertip="업체명, 주소, 전화번호, 사업자번호를 조합해 중복 의심 쌍과 점수를 새 시트에 생성합니다." />
+          <button id="btnRosterCompanyMatch" label="업체명 매칭" imageMso="TextBoxInsert" onAction="Ribbon_RosterMatchCompanyNames" screentip="업체명 유사그룹 생성" supertip="업체명을 표준화하고 같은 표준화명을 유사그룹으로 묶는 열을 생성합니다." />
+          <button id="btnAddressParts" label="행정구역 분해" imageMso="AddressBook" onAction="Ribbon_AddressSplitAdministrativeParts" screentip="주소 행정구역 분해" supertip="주소를 광역시도, 시군구, 읍면동, 상세주소 열로 분해합니다." />
+          <button id="btnPhoneValidate" label="전화번호 검사" imageMso="ContactPictureMenu" onAction="Ribbon_PhoneValidateSelection" screentip="전화번호 유효성 검사" supertip="전화번호 범위 오른쪽에 번호 유형과 정상/확인 필요 결과를 생성합니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />

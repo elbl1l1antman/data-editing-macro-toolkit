@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.9.10`
+`1.0.0`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -29,10 +29,15 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 현재 시트의 실제 데이터 영역만 대상으로 텍스트 숫자 일괄 변환
 - 혼재된 한국 전화번호 형식 정규화
 - 전화번호 정리 시 원본 오른쪽에 복사본 열을 생성한 뒤 복사본만 정규화
+- 전화번호 유형 분류 및 유효성 검사
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
 - 기업체명/사업체명 정리: 공백, 회사형태 표기, '의 ' 앞부분, 알파벳 한글 읽기 규칙을 선택 적용
+- 업체명 표준화 및 유사그룹 생성
+- 명부 품질 진단 리포트 생성
+- 업체명/주소/전화번호/사업자번호 조합 기반 중복 업체 탐지
 - 주소 범위 선택 후 도로명주소 또는 법정/행정동 기준 주소 여부 판별
+- 주소에서 광역시도, 시군구, 읍면동, 상세주소 분해
 - 주소 범위 선택 후 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열 생성
 - 네이버 지역검색 API 인증키 설정(Client ID/Client Secret)
 - 2024년 10월 기준 행정동 마스터를 내장한 네이버 신규 업체 리스트 생성
@@ -54,6 +59,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - SPSS 표/배너 재구성 목록에서 Shift+클릭 연속 선택 및 Ctrl+클릭 개별 선택 지원
 - SPSS 표/배너 삭제 결과에서 표와 표 사이 공백 행을 1개로 자동 정리
 - 목차가 없는 SPSS 집계표 시트에서 표 제목을 탐지해 목차 링크 시트 생성
+- SPSS 집계표 표 제목, 행 위치, 배너 목록, 이동 링크 메타 시트 생성
 - SPSS BOT/TOP/MID 계열 세로형 배너 삭제 기능 분리
 - 0.9.0 리본 UI 정리: 중복 버튼 축소, 작업 중심 라벨, 기능 연상 아이콘/설명 개선
 - 0.9.0 UserForm 개선: 버튼/목록 폭 확대, 긴 한글 버튼과 표/배너명이 잘리지 않도록 배치 조정
@@ -80,10 +86,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.9.10/DataEditingMacroToolkit_v0.9.10.xlam`
-- `release/v0.9.10/DataEditingMacroToolkit_v0.9.10.xlsm`
-- `release/v0.9.10/MacroToolkit.bas`
-- `release/v0.9.10/manifest.json`
+- `release/v1.0.0/DataEditingMacroToolkit_v1.0.0.xlam`
+- `release/v1.0.0/DataEditingMacroToolkit_v1.0.0.xlsm`
+- `release/v1.0.0/MacroToolkit.bas`
+- `release/v1.0.0/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -100,6 +106,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 - `사업자등록`: 인증키 설정, 번호 숫자만, 3열 병합, 상태조회
 - `네이버 지역검색`: 인증키 설정, 행정동 기준 신규 리스트, 업체명/주소 검증, 행정동 마스터 양식 생성
 - `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
+- `명부 품질`: 품질 진단, 중복 탐지, 업체명 매칭, 행정구역 분해, 전화번호 검사
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
 - `정보`: 모든 시트 A1 선택, 버전 정보
 설치 대상 파일:
