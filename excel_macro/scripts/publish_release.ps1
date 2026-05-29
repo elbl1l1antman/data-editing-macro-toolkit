@@ -1102,7 +1102,7 @@ function Add-RibbonCustomUi {
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
           <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
-          <button id="btnAddressConvert" label="주소 변환" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="구주소를 도로명주소로 변환" supertip="구주소 범위와 구주소/도로명주소/우편번호 변환표를 사용해 오른쪽에 우편번호, 도로명주소, 변환결과 열을 생성합니다." />
+          <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">

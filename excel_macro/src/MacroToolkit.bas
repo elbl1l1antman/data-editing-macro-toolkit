@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.8"
+Public Const TOOLKIT_VERSION As String = "0.9.9"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -72,7 +72,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A12").Value = "RemovePhoneDashesToCopiedColumns"
     ws.Range("A13").Value = "RemoveBizNoDashesToCopiedColumns"
     ws.Range("A14").Value = "CompanyName_CleanWithOptions"
-    ws.Range("A15").Value = "Address_ConvertOldToRoad"
+    ws.Range("A15").Value = "Address_ClassifyAddressType"
     ws.Range("A16").Value = "OutlierDetect_Setup"
     ws.Range("A17").Value = "OutlierDetect_Run"
     ws.Range("A18").Value = "SPSS_DeleteSelectedBanner"
@@ -774,6 +774,84 @@ Public Sub Address_ConvertOldToRoad()
     Address_ConvertRangeWithMapping addressRange, mapRange
 End Sub
 
+Public Sub Address_ClassifyAddressType()
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("주소 유형 판별", _
+        "주소가 들어 있는 범위를 선택하세요. 결과는 원본 오른쪽에 도로명주소/법정·행정동 기준 주소 여부로 표시됩니다.", _
+        addressRange) Then Exit Sub
+
+    Address_ClassifyRangeType addressRange
+End Sub
+
+Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
+    If addressRange.Areas.Count > 1 Then
+        MsgBox "주소 유형 판별은 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "주소 유형 판별"
+        Exit Sub
+    End If
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(addressRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 판별할 주소를 찾지 못했습니다.", vbInformation, "주소 유형 판별"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = workRange.Worksheet
+
+    Dim firstRow As Long, lastRow As Long, dataStartRow As Long, headerRow As Long
+    firstRow = workRange.Row
+    lastRow = workRange.Row + workRange.Rows.Count - 1
+    If Address_LooksLikeHeader(CStr(workRange.Cells(1, 1).Value)) Then
+        headerRow = firstRow
+        dataStartRow = firstRow + 1
+    Else
+        dataStartRow = firstRow
+        If firstRow > 1 Then headerRow = firstRow - 1
+    End If
+
+    Dim outputCol As Long
+    outputCol = workRange.Column + workRange.Columns.Count
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, outputCol).Value = "주소 유형"
+        ws.Cells(headerRow, outputCol + 1).Value = "판별 기준"
+        ws.Range(ws.Cells(headerRow, outputCol), ws.Cells(headerRow, outputCol + 1)).Font.Bold = True
+    End If
+
+    Dim r As Long
+    Dim roadCount As Long
+    Dim dongCount As Long
+    Dim unknownCount As Long
+    Dim sourceAddress As String
+    Dim classified As Variant
+
+    For r = dataStartRow To lastRow
+        sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
+        If Len(sourceAddress) > 0 Then
+            classified = Address_ClassifyOneAddress(sourceAddress)
+            ws.Cells(r, outputCol).Value = CStr(classified(0))
+            ws.Cells(r, outputCol + 1).Value = CStr(classified(1))
+
+            Select Case CStr(classified(0))
+                Case "도로명주소": roadCount = roadCount + 1
+                Case "법정/행정동 기준 주소": dongCount = dongCount + 1
+                Case Else: unknownCount = unknownCount + 1
+            End Select
+        End If
+    Next r
+
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 1)).EntireColumn.AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "주소 유형 판별을 완료했습니다." & vbCrLf & _
+           "도로명주소: " & roadCount & "건" & vbCrLf & _
+           "법정/행정동 기준 주소: " & dongCount & "건" & vbCrLf & _
+           "확인 필요: " & unknownCount & "건", vbInformation, "주소 유형 판별"
+End Sub
+
 Public Sub Address_SplitDongAndRoad()
     Dim addressRange As Range
     If Not Toolkit_GetRangeFromUserForm("주소 체계 분리", _
@@ -1186,6 +1264,45 @@ Private Function Address_IsRoadAddress(ByVal addressText As String) As Boolean
                           Or InStr(1, textValue, "길 ", vbTextCompare) > 0 _
                           Or InStr(1, textValue, "대로 ", vbTextCompare) > 0 _
                           Or InStr(1, textValue, "번길 ", vbTextCompare) > 0)
+End Function
+
+Private Function Address_ClassifyOneAddress(ByVal addressText As String) As Variant
+    Dim textValue As String
+    textValue = Trim$(CStr(addressText))
+
+    If Len(textValue) = 0 Then
+        Address_ClassifyOneAddress = Array("확인 필요", "빈 주소")
+    ElseIf Address_IsRoadAddress(textValue) Then
+        Address_ClassifyOneAddress = Array("도로명주소", "도로명 키워드(로/길/대로/번길) 감지")
+    ElseIf Address_IsDongBasisAddress(textValue) Then
+        Address_ClassifyOneAddress = Array("법정/행정동 기준 주소", "읍/면/동/리/가 또는 지번 패턴 감지")
+    Else
+        Address_ClassifyOneAddress = Array("확인 필요", "도로명/동 기준 주소 패턴이 명확하지 않음")
+    End If
+End Function
+
+Private Function Address_IsDongBasisAddress(ByVal addressText As String) As Boolean
+    Dim textValue As String
+    textValue = " " & Trim$(CStr(addressText)) & " "
+
+    If InStr(1, textValue, "번지", vbTextCompare) > 0 Then
+        Address_IsDongBasisAddress = True
+        Exit Function
+    End If
+    If InStr(1, textValue, " 산 ", vbTextCompare) > 0 Then
+        Address_IsDongBasisAddress = True
+        Exit Function
+    End If
+
+    Dim parts() As String
+    parts = Split(Trim$(textValue), " ")
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        If Address_LooksLikeDongToken(parts(i)) Then
+            Address_IsDongBasisAddress = True
+            Exit Function
+        End If
+    Next i
 End Function
 
 Private Function Address_ExtractDongBasisAddress(ByVal roadAddress As String) As String
@@ -5102,7 +5219,7 @@ Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)
 End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)
-    Address_ConvertOldToRoad
+    Address_ClassifyAddressType
 End Sub
 
 Public Sub Ribbon_AddressSplitDongAndRoad(control As IRibbonControl)
