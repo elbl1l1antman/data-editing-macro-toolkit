@@ -481,6 +481,156 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-BizStatusFieldsOptionsUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmBizStatusFieldsOptions"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "사업자등록 상태조회 반환값 선택"
+    $form.Properties.Item("Width").Value = 560
+    $form.Properties.Item("Height").Value = 430
+
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "조회 결과로 추가할 열을 선택하세요."
+    $lblTitle.Left = 12
+    $lblTitle.Top = 12
+    $lblTitle.Width = 500
+    $lblTitle.Height = 22
+
+    $chkAll = $designer.Controls.Add("Forms.CheckBox.1", "chkAll", $true)
+    $chkAll.Caption = "모두 포함"
+    $chkAll.Left = 12
+    $chkAll.Top = 42
+    $chkAll.Width = 120
+    $chkAll.Height = 20
+    $chkAll.Value = $true
+
+    $items = @(
+        @("chkStatusCode", "응답상태코드", 12, 78),
+        @("chkRequestedNo", "요청 사업자등록번호", 12, 104),
+        @("chkBNo", "사업자등록번호", 12, 130),
+        @("chkBStt", "납세자상태", 12, 156),
+        @("chkBSttCd", "납세자상태코드", 12, 182),
+        @("chkTaxType", "과세유형", 12, 208),
+        @("chkTaxTypeCd", "과세유형코드", 12, 234),
+        @("chkEndDt", "폐업일자", 280, 78),
+        @("chkUtccYn", "단위과세전환폐업여부", 280, 104),
+        @("chkTaxTypeChangeDt", "과세유형전환일자", 280, 130),
+        @("chkInvoiceApplyDt", "세금계산서적용일자", 280, 156),
+        @("chkRbfTaxType", "직전과세유형", 280, 182),
+        @("chkRbfTaxTypeCd", "직전과세유형코드", 280, 208)
+    )
+
+    foreach ($item in $items) {
+        $chk = $designer.Controls.Add("Forms.CheckBox.1", $item[0], $true)
+        $chk.Caption = $item[1]
+        $chk.Left = [int]$item[2]
+        $chk.Top = [int]$item[3]
+        $chk.Width = 240
+        $chk.Height = 20
+        $chk.Value = $true
+    }
+
+    $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
+    $lblTip.Caption = "선택한 항목 수만큼 원본 오른쪽에 열이 추가됩니다. 오류가 난 행은 선택된 항목 중 응답상태코드, 요청번호, 납세자상태/과세유형 칸에 확인 메시지를 표시합니다."
+    $lblTip.Left = 12
+    $lblTip.Top = 282
+    $lblTip.Width = 510
+    $lblTip.Height = 48
+
+    $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOk.Caption = "실행"
+    $cmdOk.Left = 350
+    $cmdOk.Top = 348
+    $cmdOk.Width = 80
+    $cmdOk.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 442
+    $cmdCancel.Top = 348
+    $cmdCancel.Width = 80
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+End Sub
+
+Private Sub chkAll_Click()
+    SetAllFields CBool(chkAll.Value)
+End Sub
+
+Private Sub SetAllFields(ByVal valueIn As Boolean)
+    chkStatusCode.Value = valueIn
+    chkRequestedNo.Value = valueIn
+    chkBNo.Value = valueIn
+    chkBStt.Value = valueIn
+    chkBSttCd.Value = valueIn
+    chkTaxType.Value = valueIn
+    chkTaxTypeCd.Value = valueIn
+    chkEndDt.Value = valueIn
+    chkUtccYn.Value = valueIn
+    chkTaxTypeChangeDt.Value = valueIn
+    chkInvoiceApplyDt.Value = valueIn
+    chkRbfTaxType.Value = valueIn
+    chkRbfTaxTypeCd.Value = valueIn
+End Sub
+
+Public Property Get SelectedKeys() As String
+    Dim result As String
+    AddKey result, chkStatusCode.Value, "status_code"
+    AddKey result, chkRequestedNo.Value, "requested_b_no"
+    AddKey result, chkBNo.Value, "b_no"
+    AddKey result, chkBStt.Value, "b_stt"
+    AddKey result, chkBSttCd.Value, "b_stt_cd"
+    AddKey result, chkTaxType.Value, "tax_type"
+    AddKey result, chkTaxTypeCd.Value, "tax_type_cd"
+    AddKey result, chkEndDt.Value, "end_dt"
+    AddKey result, chkUtccYn.Value, "utcc_yn"
+    AddKey result, chkTaxTypeChangeDt.Value, "tax_type_change_dt"
+    AddKey result, chkInvoiceApplyDt.Value, "invoice_apply_dt"
+    AddKey result, chkRbfTaxType.Value, "rbf_tax_type"
+    AddKey result, chkRbfTaxTypeCd.Value, "rbf_tax_type_cd"
+    SelectedKeys = result
+End Property
+
+Private Sub AddKey(ByRef result As String, ByVal includeField As Boolean, ByVal key As String)
+    If includeField Then
+        If Len(result) > 0 Then result = result & ","
+        result = result & key
+    End If
+End Sub
+
+Private Sub cmdOK_Click()
+    If Len(SelectedKeys) = 0 Then
+        MsgBox "반환받을 값을 하나 이상 선택하세요.", vbExclamation, Me.Caption
+        Exit Sub
+    End If
+    Cancelled = False
+    Me.Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Me.Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Cancelled = True
+    Cancel = True
+    Me.Hide
+End Sub
+'@
+
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-NaverLocalBuildOptionsUserForm {
     param($Workbook)
 
@@ -1229,7 +1379,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -1238,6 +1388,7 @@ try {
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-RangeSelectUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
+        Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
         Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
         Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
         Add-ProgressStatusUserForm -Workbook $workbook

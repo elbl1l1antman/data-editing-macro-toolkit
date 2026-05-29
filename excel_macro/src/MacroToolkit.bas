@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "0.9.9"
+Public Const TOOLKIT_VERSION As String = "0.9.10"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1647,6 +1647,7 @@ Public Sub BizNo_QueryStatusForSelection()
     Dim batchNos(1 To 100) As String
     Dim batchRows(1 To 100) As Long
     Dim batchCount As Long
+    Dim selectedFields As Collection
 
     If Not Toolkit_GetRangeFromUserForm("사업자등록 상태조회", _
         "조회할 사업자등록번호 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
@@ -1660,6 +1661,13 @@ Public Sub BizNo_QueryStatusForSelection()
     apiKey = Biz_GetApiKey()
     If Len(apiKey) = 0 Then
         MsgBox "저장된 인증키가 없습니다. 먼저 [인증키 설정]을 실행하세요.", vbExclamation, "사업자등록 상태조회"
+        Exit Sub
+    End If
+
+    Set selectedFields = Biz_GetStatusFieldOptions()
+    If selectedFields Is Nothing Then Exit Sub
+    If selectedFields.Count = 0 Then
+        MsgBox "반환받을 값을 하나 이상 선택하세요.", vbExclamation, "사업자등록 상태조회"
         Exit Sub
     End If
 
@@ -1684,8 +1692,8 @@ Public Sub BizNo_QueryStatusForSelection()
     End If
 
     outputCol = targetRange.Column + targetRange.Columns.Count
-    ws.Columns(outputCol).Resize(, Biz_OutputFieldCount()).Insert Shift:=xlToRight
-    If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol
+    ws.Columns(outputCol).Resize(, selectedFields.Count).Insert Shift:=xlToRight
+    If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol, selectedFields
 
     Application.ScreenUpdating = False
     Toolkit_ProgressShow "사업자등록 상태조회", "조회 준비 중", lastRow - dataStartRow + 1
@@ -1702,20 +1710,20 @@ Public Sub BizNo_QueryStatusForSelection()
             requestCount = requestCount + 1
 
             If batchCount = 100 Then
-                Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+                Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, successCount, failCount
                 batchCount = 0
             End If
         ElseIf Len(Trim$(CStr(ws.Cells(rowIndex, targetRange.Column).Value))) > 0 Then
             failCount = failCount + 1
-            Biz_WriteStatusError ws, rowIndex, outputCol, CStr(ws.Cells(rowIndex, targetRange.Column).Value), "사업자등록번호는 숫자 10자리여야 합니다."
+            Biz_WriteStatusError ws, rowIndex, outputCol, CStr(ws.Cells(rowIndex, targetRange.Column).Value), "사업자등록번호는 숫자 10자리여야 합니다.", selectedFields
         End If
     Next rowIndex
 
     If batchCount > 0 Then
-        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, successCount, failCount
+        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, successCount, failCount
     End If
 
-    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + Biz_OutputFieldCount() - 1)).EntireColumn.AutoFit
+    ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + selectedFields.Count - 1)).EntireColumn.AutoFit
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
 
@@ -1753,34 +1761,74 @@ Private Function Biz_FormatNo(ByVal valueIn As String) As String
     End If
 End Function
 
-Private Function Biz_OutputFieldCount() As Long
-    Biz_OutputFieldCount = 13
+Private Function Biz_GetStatusFieldOptions() As Collection
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmBizStatusFieldsOptions")
+    form.Show
+    If form.Cancelled Then
+        Unload form
+        Exit Function
+    End If
+
+    Set Biz_GetStatusFieldOptions = Biz_FieldsFromCsv(CStr(form.SelectedKeys))
+    Unload form
+    Exit Function
+
+Fallback:
+    Set Biz_GetStatusFieldOptions = Biz_DefaultStatusFields()
 End Function
 
-Private Sub Biz_WriteStatusHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
-    Dim headers As Variant
-    headers = Array( _
-        "status_code(응답상태코드)", _
-        "requested_b_no(요청 사업자등록번호)", _
-        "b_no(사업자등록번호)", _
-        "b_stt(납세자상태)", _
-        "b_stt_cd(납세자상태코드)", _
-        "tax_type(과세유형)", _
-        "tax_type_cd(과세유형코드)", _
-        "end_dt(폐업일자)", _
-        "utcc_yn(단위과세전환폐업여부)", _
-        "tax_type_change_dt(과세유형전환일자)", _
-        "invoice_apply_dt(세금계산서적용일자)", _
-        "rbf_tax_type(직전과세유형)", _
-        "rbf_tax_type_cd(직전과세유형코드)")
-
+Private Function Biz_DefaultStatusFields() As Collection
+    Dim fields As New Collection
+    Dim keys As Variant
     Dim i As Long
-    For i = LBound(headers) To UBound(headers)
-        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    keys = Array("status_code", "requested_b_no", "b_no", "b_stt", "b_stt_cd", "tax_type", "tax_type_cd", "end_dt", "utcc_yn", "tax_type_change_dt", "invoice_apply_dt", "rbf_tax_type", "rbf_tax_type_cd")
+    For i = LBound(keys) To UBound(keys)
+        fields.Add CStr(keys(i))
+    Next i
+    Set Biz_DefaultStatusFields = fields
+End Function
+
+Private Function Biz_FieldsFromCsv(ByVal csvText As String) As Collection
+    Dim fields As New Collection
+    Dim parts As Variant
+    Dim i As Long
+    parts = Split(csvText, ",")
+    For i = LBound(parts) To UBound(parts)
+        If Len(Trim$(CStr(parts(i)))) > 0 Then fields.Add Trim$(CStr(parts(i)))
+    Next i
+    Set Biz_FieldsFromCsv = fields
+End Function
+
+Private Sub Biz_WriteStatusHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long, ByVal selectedFields As Collection)
+    Dim i As Long
+    For i = 1 To selectedFields.Count
+        ws.Cells(rowIndex, colIndex + i - 1).Value = Biz_StatusFieldHeader(CStr(selectedFields(i)))
     Next i
 End Sub
 
-Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByRef successCount As Long, ByRef failCount As Long)
+Private Function Biz_StatusFieldHeader(ByVal fieldKey As String) As String
+    Select Case fieldKey
+        Case "status_code": Biz_StatusFieldHeader = "status_code(응답상태코드)"
+        Case "requested_b_no": Biz_StatusFieldHeader = "requested_b_no(요청 사업자등록번호)"
+        Case "b_no": Biz_StatusFieldHeader = "b_no(사업자등록번호)"
+        Case "b_stt": Biz_StatusFieldHeader = "b_stt(납세자상태)"
+        Case "b_stt_cd": Biz_StatusFieldHeader = "b_stt_cd(납세자상태코드)"
+        Case "tax_type": Biz_StatusFieldHeader = "tax_type(과세유형)"
+        Case "tax_type_cd": Biz_StatusFieldHeader = "tax_type_cd(과세유형코드)"
+        Case "end_dt": Biz_StatusFieldHeader = "end_dt(폐업일자)"
+        Case "utcc_yn": Biz_StatusFieldHeader = "utcc_yn(단위과세전환폐업여부)"
+        Case "tax_type_change_dt": Biz_StatusFieldHeader = "tax_type_change_dt(과세유형전환일자)"
+        Case "invoice_apply_dt": Biz_StatusFieldHeader = "invoice_apply_dt(세금계산서적용일자)"
+        Case "rbf_tax_type": Biz_StatusFieldHeader = "rbf_tax_type(직전과세유형)"
+        Case "rbf_tax_type_cd": Biz_StatusFieldHeader = "rbf_tax_type_cd(직전과세유형코드)"
+        Case Else: Biz_StatusFieldHeader = fieldKey
+    End Select
+End Function
+
+Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByVal selectedFields As Collection, ByRef successCount As Long, ByRef failCount As Long)
     Dim responseText As String
     Dim statusCode As String
     Dim dataObjects As Collection
@@ -1793,11 +1841,11 @@ Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef
     Set dataObjects = Biz_ExtractDataObjects(responseText)
     For i = 1 To batchCount
         If i <= dataObjects.Count Then
-            Biz_WriteStatusRow ws, batchRows(i), outputCol, statusCode, batchNos(i), CStr(dataObjects(i))
+            Biz_WriteStatusRow ws, batchRows(i), outputCol, statusCode, batchNos(i), CStr(dataObjects(i)), selectedFields
             successCount = successCount + 1
         Else
             failCount = failCount + 1
-            Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "응답 데이터가 없습니다. status_code=" & statusCode
+            Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "응답 데이터가 없습니다. status_code=" & statusCode, selectedFields
         End If
     Next i
 End Sub
@@ -1836,29 +1884,45 @@ Private Function Biz_ServiceKeyForUrl(ByVal apiKey As String) As String
     End If
 End Function
 
-Private Sub Biz_WriteStatusRow(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal statusCode As String, ByVal requestedNo As String, ByVal dataObject As String)
-    ws.Cells(rowIndex, outputCol).Value = statusCode
-    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
-    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
-    ws.Cells(rowIndex, outputCol + 2).NumberFormat = "@"
-    ws.Cells(rowIndex, outputCol + 2).Value = Biz_FormatNo(Biz_JsonString(dataObject, "b_no"))
-    ws.Cells(rowIndex, outputCol + 3).Value = Biz_JsonString(dataObject, "b_stt")
-    ws.Cells(rowIndex, outputCol + 4).Value = Biz_JsonString(dataObject, "b_stt_cd")
-    ws.Cells(rowIndex, outputCol + 5).Value = Biz_JsonString(dataObject, "tax_type")
-    ws.Cells(rowIndex, outputCol + 6).Value = Biz_JsonString(dataObject, "tax_type_cd")
-    ws.Cells(rowIndex, outputCol + 7).Value = Biz_JsonString(dataObject, "end_dt")
-    ws.Cells(rowIndex, outputCol + 8).Value = Biz_JsonString(dataObject, "utcc_yn")
-    ws.Cells(rowIndex, outputCol + 9).Value = Biz_JsonString(dataObject, "tax_type_change_dt")
-    ws.Cells(rowIndex, outputCol + 10).Value = Biz_JsonString(dataObject, "invoice_apply_dt")
-    ws.Cells(rowIndex, outputCol + 11).Value = Biz_JsonString(dataObject, "rbf_tax_type")
-    ws.Cells(rowIndex, outputCol + 12).Value = Biz_JsonString(dataObject, "rbf_tax_type_cd")
+Private Sub Biz_WriteStatusRow(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal statusCode As String, ByVal requestedNo As String, ByVal dataObject As String, ByVal selectedFields As Collection)
+    Dim i As Long
+    Dim fieldKey As String
+    For i = 1 To selectedFields.Count
+        fieldKey = CStr(selectedFields(i))
+        If fieldKey = "requested_b_no" Or fieldKey = "b_no" Then ws.Cells(rowIndex, outputCol + i - 1).NumberFormat = "@"
+        ws.Cells(rowIndex, outputCol + i - 1).Value = Biz_StatusFieldValue(fieldKey, statusCode, requestedNo, dataObject)
+    Next i
 End Sub
 
-Private Sub Biz_WriteStatusError(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal requestedNo As String, ByVal message As String)
-    ws.Cells(rowIndex, outputCol).Value = "ERROR"
-    ws.Cells(rowIndex, outputCol + 1).NumberFormat = "@"
-    ws.Cells(rowIndex, outputCol + 1).Value = Biz_FormatNo(requestedNo)
-    ws.Cells(rowIndex, outputCol + 3).Value = message
+Private Sub Biz_WriteStatusError(ws As Worksheet, ByVal rowIndex As Long, ByVal outputCol As Long, ByVal requestedNo As String, ByVal message As String, ByVal selectedFields As Collection)
+    Dim i As Long
+    Dim fieldKey As String
+    For i = 1 To selectedFields.Count
+        fieldKey = CStr(selectedFields(i))
+        If fieldKey = "requested_b_no" Or fieldKey = "b_no" Then ws.Cells(rowIndex, outputCol + i - 1).NumberFormat = "@"
+
+        Select Case fieldKey
+            Case "status_code"
+                ws.Cells(rowIndex, outputCol + i - 1).Value = "ERROR"
+            Case "requested_b_no"
+                ws.Cells(rowIndex, outputCol + i - 1).Value = Biz_FormatNo(requestedNo)
+            Case "b_stt", "tax_type"
+                ws.Cells(rowIndex, outputCol + i - 1).Value = message
+        End Select
+    Next i
+End Sub
+
+Private Function Biz_StatusFieldValue(ByVal fieldKey As String, ByVal statusCode As String, ByVal requestedNo As String, ByVal dataObject As String) As String
+    Select Case fieldKey
+        Case "status_code"
+            Biz_StatusFieldValue = statusCode
+        Case "requested_b_no"
+            Biz_StatusFieldValue = Biz_FormatNo(requestedNo)
+        Case "b_no"
+            Biz_StatusFieldValue = Biz_FormatNo(Biz_JsonString(dataObject, "b_no"))
+        Case Else
+            Biz_StatusFieldValue = Biz_JsonString(dataObject, fieldKey)
+    End Select
 End Sub
 
 Private Function Biz_ExtractDataObjects(ByVal jsonText As String) As Collection

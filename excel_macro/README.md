@@ -11,7 +11,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`0.9.9`
+`0.9.10`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -30,6 +30,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 혼재된 한국 전화번호 형식 정규화
 - 전화번호 정리 시 원본 오른쪽에 복사본 열을 생성한 뒤 복사본만 정규화
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
+- 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
 - 기업체명/사업체명 정리: 공백, 회사형태 표기, '의 ' 앞부분, 알파벳 한글 읽기 규칙을 선택 적용
 - 주소 범위 선택 후 도로명주소 또는 법정/행정동 기준 주소 여부 판별
 - 주소 범위 선택 후 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열 생성
@@ -79,10 +80,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v0.9.9/DataEditingMacroToolkit_v0.9.9.xlam`
-- `release/v0.9.9/DataEditingMacroToolkit_v0.9.9.xlsm`
-- `release/v0.9.9/MacroToolkit.bas`
-- `release/v0.9.9/manifest.json`
+- `release/v0.9.10/DataEditingMacroToolkit_v0.9.10.xlam`
+- `release/v0.9.10/DataEditingMacroToolkit_v0.9.10.xlsm`
+- `release/v0.9.10/MacroToolkit.bas`
+- `release/v0.9.10/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
