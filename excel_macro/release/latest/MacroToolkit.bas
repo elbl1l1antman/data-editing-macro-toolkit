@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.0"
+Public Const TOOLKIT_VERSION As String = "1.0.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -311,37 +311,25 @@ End Sub
 Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
                                               ByVal guideText As String, _
                                               ByRef targetRange As Range) As Boolean
-    On Error GoTo Fallback
-
     Dim defaultAddress As String
     If TypeName(Selection) = "Range" Then defaultAddress = Selection.Areas(1).Address(External:=True)
 
-    Dim form As Object
-    Set form = VBA.UserForms.Add("frmRangeSelectOptions")
-    form.InitializeOptions formTitle, guideText, defaultAddress
-    form.Show vbModeless
+    Dim promptText As String
+    promptText = guideText & vbCrLf & vbCrLf & _
+                 "범위 입력칸을 클릭한 뒤 시트에서 마우스 드래그, Shift+방향키, Ctrl+Shift+방향키로 범위를 지정할 수 있습니다." & vbCrLf & _
+                 "취소하면 작업을 실행하지 않습니다."
 
-    Do While Not CBool(form.Done)
-        DoEvents
-    Loop
-
-    If form.Cancelled Then
-        Unload form
-        Exit Function
-    End If
-
-    Set targetRange = form.SelectedRange
-    Unload form
-    If targetRange Is Nothing Then Exit Function
-
-    Toolkit_GetRangeFromUserForm = True
-    Exit Function
-
-Fallback:
-    Err.Clear
     On Error Resume Next
-    Set targetRange = Application.InputBox(guideText, formTitle, Type:=8)
+    Set targetRange = Application.InputBox(Prompt:=promptText, _
+                                           Title:=formTitle, _
+                                           Default:=defaultAddress, _
+                                           Type:=8)
+    If Err.Number <> 0 Then
+        Err.Clear
+        Set targetRange = Nothing
+    End If
     On Error GoTo 0
+
     Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
 End Function
 
@@ -2790,54 +2778,9 @@ Private Const OD_C_MEMO As String = "B8"
 '             분석 변수 드롭다운이 최신 컬럼 목록으로 갱신된다.
 ' ============================================================
 Public Sub OutlierDetect_Setup()
-    Dim cfg As Worksheet
-    Set cfg = OD_EnsureConfigSheet()
-
-    ' ── 소스 시트 목록 ──────────────────────────────────
-    Dim ws As Worksheet
-    Dim sheetList As String
-    For Each ws In ThisWorkbook.Worksheets
-        If Not OD_IsInternal(ws.Name) Then
-            If Len(sheetList) > 0 Then sheetList = sheetList & ","
-            sheetList = sheetList & ws.Name
-        End If
-    Next ws
-
-    If Len(sheetList) = 0 Then
-        MsgBox "분석 대상 시트가 없습니다.", vbExclamation, "이상치 탐지"
-        Exit Sub
-    End If
-
-    OD_SetListVal cfg.Range(OD_C_SRC), sheetList
-
-    ' 소스 시트 기본값 (비어있거나 이미 삭제된 경우)
-    Dim curSrc As String: curSrc = Trim$(cfg.Range(OD_C_SRC).Value)
-    If Len(curSrc) = 0 Or Not OD_SheetExists(curSrc) Then
-        If Not OD_IsInternal(ActiveSheet.Name) Then
-            cfg.Range(OD_C_SRC).Value = ActiveSheet.Name
-        Else
-            cfg.Range(OD_C_SRC).Value = Split(sheetList, ",")(0)
-        End If
-    End If
-
-    ' ── 고정 드롭다운 ────────────────────────────────────
-    OD_SetListVal cfg.Range(OD_C_CRIT), OD_IQR15 & "," & OD_IQR20 & "," & OD_P95 & "," & OD_P99
-    OD_SetListVal cfg.Range(OD_C_METH), OD_CAP & "," & OD_MEDIAN & "," & OD_MEAN
-
-    If Len(cfg.Range(OD_C_CRIT).Value) = 0 Then cfg.Range(OD_C_CRIT).Value = OD_IQR15
-    If Len(cfg.Range(OD_C_METH).Value) = 0 Then cfg.Range(OD_C_METH).Value = OD_CAP
-
-    ' ── 분석 변수 드롭다운 갱신 ──────────────────────────
-    OD_RefreshVarDropdown cfg
-
-    cfg.Activate
-    cfg.Range(OD_C_SRC).Select
-
-    MsgBox "설정 시트가 준비되었습니다." & vbCrLf & vbCrLf & _
-           "① B3~B6 항목을 설정하세요." & vbCrLf & _
-           "② 소스 시트를 변경한 경우 이 매크로를 다시 실행하세요." & vbCrLf & _
-           "③ 설정 완료 후 OutlierDetect_Run 을 실행하세요.", _
-           vbInformation, "이상치 탐지 설정"
+    MsgBox "이상치 탐지는 이제 설정 시트를 만들지 않고 바로 범위를 선택하는 방식으로 통합되었습니다." & vbCrLf & vbCrLf & _
+           "[데이터 툴킷] 탭의 [분석 열 선택] 버튼 또는 OutlierDetect_Run을 실행하세요.", _
+           vbInformation, "이상치 탐지"
 End Sub
 
 ' ============================================================
@@ -2847,6 +2790,10 @@ End Sub
 '             원본 시트는 수정하지 않는다.
 ' ============================================================
 Public Sub OutlierDetect_Run()
+    OutlierDetect_ApplyToSelection
+End Sub
+
+Private Sub OutlierDetect_RunLegacy()
     ' ── 실행 입력값 수집 ─────────────────────────────────
     Dim srcWs As Worksheet
     Dim dataArea As Range
