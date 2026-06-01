@@ -1394,7 +1394,6 @@ try {
         $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
         Add-SpssRebuildUserForm -Workbook $workbook
-        Add-RangeSelectUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
         Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
