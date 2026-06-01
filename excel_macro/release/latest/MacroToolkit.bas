@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.1"
+Public Const TOOLKIT_VERSION As String = "1.0.2"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -4272,13 +4272,14 @@ Public Sub SPSS_RebuildTablesFromIndex()
     Dim deleteTables As Object
     Dim deleteTableInput As String
     Dim deleteBannerInput As String
+    Dim tableOrderInput As String
     Dim orderInput As String
 
     Dim banners As Collection
     Set deleteTables = CreateObject("Scripting.Dictionary")
     Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
 
-    If SPSS_ShowRebuildOptionsForm(tables, banners, deleteTableInput, deleteBannerInput, orderInput) Then
+    If SPSS_ShowRebuildOptionsForm(tables, banners, deleteTableInput, deleteBannerInput, tableOrderInput, orderInput) Then
         Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
     Else
         Dim tableList As String
@@ -4311,17 +4312,30 @@ Public Sub SPSS_RebuildTablesFromIndex()
 
     Dim deleteBanners As Object
     Set deleteBanners = SPSS_ParseBannerDeleteSelection(deleteBannerInput, banners)
+    Dim bannerOrder As Collection
+    Set bannerOrder = SPSS_ParseBannerOrder(orderInput, banners, deleteBanners)
+    Dim tableOrder As Collection
+    Set tableOrder = SPSS_ParseTableOrder(tableOrderInput, tables, deleteTables)
+
+    If tableOrder.Count = 0 Then
+        MsgBox "남길 표가 없습니다. 삭제할 표 선택을 다시 확인하세요.", vbExclamation, "SPSS 표 재구성"
+        Exit Sub
+    End If
 
     Application.ScreenUpdating = False
     Dim outData As Worksheet
-    dataWs.Copy After:=dataWs
-    Set outData = ActiveSheet
+    Set outData = wb.Worksheets.Add(After:=dataWs)
     outData.Name = SPSS_UniqueSheetName(wb, "SPSS_표정리")
 
-    SPSS_ApplyTableDeletes outData, tables, deleteTables
-    SPSS_ApplyVerticalBannerDeletes outData, deleteBanners
-    SPSS_ApplyVerticalLikeMarkerDeletes outData, deleteBanners
-    SPSS_ApplyHorizontalBannerDeletes outData, deleteBanners
+    Dim dstStartRow As Long: dstStartRow = 1
+    Dim orderIdx As Long
+    For orderIdx = 1 To tableOrder.Count
+        Dim tableNo As Long
+        tableNo = CLng(tableOrder(orderIdx))
+        SPSS_CopyRebuiltTable dataWs, outData, tables(tableNo), dstStartRow, deleteBanners, bannerOrder
+        dstStartRow = dstStartRow + 1
+    Next orderIdx
+
     SPSS_EnsureOneBlankRowBetweenTables outData
 
     Dim outIndex As Worksheet
@@ -4612,6 +4626,7 @@ Private Function SPSS_ShowRebuildOptionsForm(ByVal tables As Collection, _
                                              ByVal banners As Collection, _
                                              ByRef deleteTableInput As String, _
                                              ByRef deleteBannerInput As String, _
+                                             ByRef tableOrderInput As String, _
                                              ByRef orderInput As String) As Boolean
     On Error GoTo Fallback
 
@@ -4627,6 +4642,7 @@ Private Function SPSS_ShowRebuildOptionsForm(ByVal tables As Collection, _
 
     deleteTableInput = CStr(form.DeleteTablesText)
     deleteBannerInput = CStr(form.DeleteBannersText)
+    tableOrderInput = CStr(form.TableOrderText)
     orderInput = CStr(form.BannerOrderText)
 
     Unload form
@@ -4773,6 +4789,42 @@ Private Function SPSS_ParseBannerDeleteSelection(ByVal inputText As String, ByVa
     Next key
 
     Set SPSS_ParseBannerDeleteSelection = result
+End Function
+
+Private Function SPSS_ParseTableOrder(ByVal inputText As String, ByVal tables As Collection, ByVal deleteTables As Object) As Collection
+    Dim result As Collection
+    Set result = New Collection
+    Dim added As Object
+    Set added = CreateObject("Scripting.Dictionary")
+
+    inputText = Replace(Trim$(inputText), " ", "")
+    If Len(inputText) > 0 Then
+        Dim parts As Variant
+        parts = Split(inputText, ",")
+        Dim i As Long
+        For i = LBound(parts) To UBound(parts)
+            If IsNumeric(parts(i)) Then
+                Dim idx As Long
+                idx = CLng(parts(i))
+                If idx >= 1 And idx <= tables.Count Then
+                    If Not deleteTables.Exists(CStr(idx)) And Not added.Exists(CStr(idx)) Then
+                        result.Add idx
+                        added(CStr(idx)) = True
+                    End If
+                End If
+            End If
+        Next i
+    End If
+
+    Dim tableNo As Long
+    For tableNo = 1 To tables.Count
+        If Not deleteTables.Exists(CStr(tableNo)) And Not added.Exists(CStr(tableNo)) Then
+            result.Add tableNo
+            added(CStr(tableNo)) = True
+        End If
+    Next tableNo
+
+    Set SPSS_ParseTableOrder = result
 End Function
 
 Private Function SPSS_ParseBannerOrder(ByVal inputText As String, ByVal banners As Collection, ByVal deleteBanners As Object) As Collection
