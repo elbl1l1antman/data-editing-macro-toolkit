@@ -41,82 +41,115 @@ function Add-SpssRebuildUserForm {
     $form.Name = "frmSpssRebuildOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "SPSS 표/배너 재구성"
-    $form.Properties.Item("Width").Value = 700
-    $form.Properties.Item("Height").Value = 470
+    $form.Properties.Item("Width").Value = 760
+    $form.Properties.Item("Height").Value = 500
 
     $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
-    $lblHelp.Caption = "삭제할 표와 배너를 선택하세요. Shift+클릭은 연속 선택, Ctrl+클릭은 개별 추가 선택입니다."
+    $lblHelp.Caption = "표는 선택 후 버튼이나 드래그로 순서를 바꾸고, [삭제/복원]으로 삭제 여부를 표시하세요. Shift+클릭/Ctrl+클릭 다중 선택을 지원합니다."
     $lblHelp.Left = 12
     $lblHelp.Top = 10
-    $lblHelp.Width = 660
+    $lblHelp.Width = 720
     $lblHelp.Height = 28
 
     $lblTables = $designer.Controls.Add("Forms.Label.1", "lblTables", $true)
-    $lblTables.Caption = "삭제할 표"
+    $lblTables.Caption = "집계표 순서/삭제"
     $lblTables.Left = 12
     $lblTables.Top = 44
-    $lblTables.Width = 310
+    $lblTables.Width = 390
     $lblTables.Height = 16
 
     $lstTables = $designer.Controls.Add("Forms.ListBox.1", "lstTables", $true)
     $lstTables.Left = 12
     $lstTables.Top = 64
-    $lstTables.Width = 320
-    $lstTables.Height = 306
-    $lstTables.ColumnCount = 2
-    $lstTables.ColumnWidths = "290 pt;0 pt"
+    $lstTables.Width = 390
+    $lstTables.Height = 286
+    $lstTables.ColumnCount = 3
+    $lstTables.ColumnWidths = "305 pt;0 pt;60 pt"
     $lstTables.MultiSelect = 2
+
+    $cmdTableTop = $designer.Controls.Add("Forms.CommandButton.1", "cmdTableTop", $true)
+    $cmdTableTop.Caption = "맨 위"
+    $cmdTableTop.Left = 12
+    $cmdTableTop.Top = 356
+    $cmdTableTop.Width = 58
+    $cmdTableTop.Height = 24
+
+    $cmdTableUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdTableUp", $true)
+    $cmdTableUp.Caption = "위로"
+    $cmdTableUp.Left = 76
+    $cmdTableUp.Top = 356
+    $cmdTableUp.Width = 58
+    $cmdTableUp.Height = 24
+
+    $cmdTableDown = $designer.Controls.Add("Forms.CommandButton.1", "cmdTableDown", $true)
+    $cmdTableDown.Caption = "아래로"
+    $cmdTableDown.Left = 140
+    $cmdTableDown.Top = 356
+    $cmdTableDown.Width = 58
+    $cmdTableDown.Height = 24
+
+    $cmdTableBottom = $designer.Controls.Add("Forms.CommandButton.1", "cmdTableBottom", $true)
+    $cmdTableBottom.Caption = "맨 아래"
+    $cmdTableBottom.Left = 204
+    $cmdTableBottom.Top = 356
+    $cmdTableBottom.Width = 66
+    $cmdTableBottom.Height = 24
+
+    $cmdToggleTableDelete = $designer.Controls.Add("Forms.CommandButton.1", "cmdToggleTableDelete", $true)
+    $cmdToggleTableDelete.Caption = "삭제/복원"
+    $cmdToggleTableDelete.Left = 278
+    $cmdToggleTableDelete.Top = 356
+    $cmdToggleTableDelete.Width = 82
+    $cmdToggleTableDelete.Height = 24
 
     $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
     $lblBanners.Caption = "삭제할 배너"
-    $lblBanners.Left = 352
+    $lblBanners.Left = 422
     $lblBanners.Top = 44
     $lblBanners.Width = 310
     $lblBanners.Height = 16
 
     $lstBanners = $designer.Controls.Add("Forms.ListBox.1", "lstBanners", $true)
-    $lstBanners.Left = 352
+    $lstBanners.Left = 422
     $lstBanners.Top = 64
-    $lstBanners.Width = 320
-    $lstBanners.Height = 306
+    $lstBanners.Width = 310
+    $lstBanners.Height = 286
     $lstBanners.ColumnCount = 2
-    $lstBanners.ColumnWidths = "290 pt;0 pt"
+    $lstBanners.ColumnWidths = "280 pt;0 pt"
     $lstBanners.MultiSelect = 2
 
     $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
     $cmdUp.Caption = "위로"
-    $cmdUp.Visible = $false
-    $cmdUp.Left = 542
-    $cmdUp.Top = 84
-    $cmdUp.Width = 54
+    $cmdUp.Left = 422
+    $cmdUp.Top = 356
+    $cmdUp.Width = 58
     $cmdUp.Height = 24
 
     $cmdDown = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerDown", $true)
     $cmdDown.Caption = "아래로"
-    $cmdDown.Visible = $false
-    $cmdDown.Left = 542
-    $cmdDown.Top = 114
-    $cmdDown.Width = 54
+    $cmdDown.Left = 486
+    $cmdDown.Top = 356
+    $cmdDown.Width = 58
     $cmdDown.Height = 24
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "선택된 항목은 삭제됩니다. 원본 시트를 복사한 뒤 결과를 만들며, BOT/TOP/MID 계열은 세로 배너 삭제 버튼에서 별도로 처리하세요."
+    $lblTip.Caption = "삭제 상태가 표시된 표와 선택된 배너만 제거됩니다. 결과 시트는 원본을 유지한 채 새로 만들고, 표 사이에는 공백 행 1개를 둡니다."
     $lblTip.Left = 12
-    $lblTip.Top = 382
-    $lblTip.Width = 660
+    $lblTip.Top = 392
+    $lblTip.Width = 720
     $lblTip.Height = 34
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 486
-    $cmdOk.Top = 424
+    $cmdOk.Left = 546
+    $cmdOk.Top = 452
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 586
-    $cmdCancel.Top = 424
+    $cmdCancel.Left = 646
+    $cmdCancel.Top = 452
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -127,9 +160,15 @@ Public Cancelled As Boolean
 Public DeleteTablesText As String
 Public DeleteBannersText As String
 Public BannerOrderText As String
+Public TableOrderText As String
+
+Private DraggingTables As Boolean
+Private DragTableStartIndex As Long
 
 Private Sub UserForm_Initialize()
     Cancelled = True
+    DraggingTables = False
+    DragTableStartIndex = -1
 End Sub
 
 Public Sub InitializeOptions(ByVal tables As Object, ByVal banners As Object)
@@ -141,12 +180,137 @@ Public Sub InitializeOptions(ByVal tables As Object, ByVal banners As Object)
         item = tables(i)
         lstTables.AddItem CStr(i) & ". " & CStr(item(0))
         lstTables.List(lstTables.ListCount - 1, 1) = CStr(i)
+        lstTables.List(lstTables.ListCount - 1, 2) = ""
     Next i
 
     lstBanners.Clear
     For i = 1 To banners.Count
         lstBanners.AddItem CStr(i) & ". " & CStr(banners(i))
         lstBanners.List(lstBanners.ListCount - 1, 1) = CStr(i)
+    Next i
+End Sub
+
+Private Sub cmdTableTop_Click()
+    MoveSelectedTableRowsToEdge -1
+End Sub
+
+Private Sub cmdTableUp_Click()
+    MoveSelectedTableRows -1
+End Sub
+
+Private Sub cmdTableDown_Click()
+    MoveSelectedTableRows 1
+End Sub
+
+Private Sub cmdTableBottom_Click()
+    MoveSelectedTableRowsToEdge 1
+End Sub
+
+Private Sub cmdToggleTableDelete_Click()
+    ToggleSelectedTableDelete
+End Sub
+
+Private Sub lstTables_MouseDown(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Button = 1 Then
+        DraggingTables = True
+        DragTableStartIndex = ListIndexFromY(lstTables, Y)
+    End If
+End Sub
+
+Private Sub lstTables_MouseUp(ByVal Button As Integer, ByVal Shift As Integer, ByVal X As Single, ByVal Y As Single)
+    If Not DraggingTables Then Exit Sub
+    DraggingTables = False
+    If Button <> 1 Then Exit Sub
+
+    Dim targetIndex As Long
+    targetIndex = ListIndexFromY(lstTables, Y)
+    If targetIndex >= 0 And targetIndex <> DragTableStartIndex Then MoveSelectedTablesToIndex targetIndex
+End Sub
+
+Private Function ListIndexFromY(ByVal listBox As MSForms.ListBox, ByVal yPos As Single) As Long
+    Dim idx As Long
+    idx = listBox.TopIndex + CLng(Fix(yPos / 12))
+    If idx < 0 Then idx = 0
+    If idx >= listBox.ListCount Then idx = listBox.ListCount - 1
+    ListIndexFromY = idx
+End Function
+
+Private Sub MoveSelectedTableRowsToEdge(ByVal direction As Long)
+    Dim guard As Long
+    If direction < 0 Then
+        Do While FirstSelectedIndex(lstTables) > 0 And guard < lstTables.ListCount
+            MoveSelectedTableRows -1
+            guard = guard + 1
+        Loop
+    Else
+        Do While LastSelectedIndex(lstTables) < lstTables.ListCount - 1 And guard < lstTables.ListCount
+            MoveSelectedTableRows 1
+            guard = guard + 1
+        Loop
+    End If
+End Sub
+
+Private Sub MoveSelectedTablesToIndex(ByVal targetIndex As Long)
+    Dim guard As Long
+    If targetIndex < FirstSelectedIndex(lstTables) Then
+        Do While FirstSelectedIndex(lstTables) > targetIndex And guard < lstTables.ListCount
+            MoveSelectedTableRows -1
+            guard = guard + 1
+        Loop
+    ElseIf targetIndex > LastSelectedIndex(lstTables) Then
+        Do While LastSelectedIndex(lstTables) < targetIndex And guard < lstTables.ListCount
+            MoveSelectedTableRows 1
+            guard = guard + 1
+        Loop
+    End If
+End Sub
+
+Private Sub MoveSelectedTableRows(ByVal direction As Long)
+    Dim i As Long
+    If lstTables.ListCount = 0 Then Exit Sub
+
+    If direction < 0 Then
+        For i = 1 To lstTables.ListCount - 1
+            If lstTables.Selected(i) And Not lstTables.Selected(i - 1) Then SwapTableRows i, i - 1
+        Next i
+    Else
+        For i = lstTables.ListCount - 2 To 0 Step -1
+            If lstTables.Selected(i) And Not lstTables.Selected(i + 1) Then SwapTableRows i, i + 1
+        Next i
+    End If
+End Sub
+
+Private Sub SwapTableRows(ByVal a As Long, ByVal b As Long)
+    Dim text0 As String, id0 As String, status0 As String
+    Dim selectedA As Boolean, selectedB As Boolean
+
+    text0 = lstTables.List(a, 0)
+    id0 = lstTables.List(a, 1)
+    status0 = lstTables.List(a, 2)
+    selectedA = lstTables.Selected(a)
+    selectedB = lstTables.Selected(b)
+
+    lstTables.List(a, 0) = lstTables.List(b, 0)
+    lstTables.List(a, 1) = lstTables.List(b, 1)
+    lstTables.List(a, 2) = lstTables.List(b, 2)
+    lstTables.List(b, 0) = text0
+    lstTables.List(b, 1) = id0
+    lstTables.List(b, 2) = status0
+
+    lstTables.Selected(a) = selectedB
+    lstTables.Selected(b) = selectedA
+End Sub
+
+Private Sub ToggleSelectedTableDelete()
+    Dim i As Long
+    For i = 0 To lstTables.ListCount - 1
+        If lstTables.Selected(i) Then
+            If Len(CStr(lstTables.List(i, 2))) > 0 Then
+                lstTables.List(i, 2) = ""
+            Else
+                lstTables.List(i, 2) = "삭제"
+            End If
+        End If
     Next i
 End Sub
 
@@ -190,8 +354,9 @@ Private Sub SwapBannerRows(ByVal a As Long, ByVal b As Long)
 End Sub
 
 Private Sub cmdOK_Click()
-    DeleteTablesText = SelectedIds(lstTables)
+    DeleteTablesText = DeletedTableIds()
     DeleteBannersText = SelectedIds(lstBanners)
+    TableOrderText = AllIds(lstTables)
     BannerOrderText = AllIds(lstBanners)
     Cancelled = False
     Me.Hide
@@ -222,6 +387,40 @@ Private Function AllIds(ByVal listBox As MSForms.ListBox) As String
         result = result & CStr(listBox.List(i, 1))
     Next i
     AllIds = result
+End Function
+
+Private Function DeletedTableIds() As String
+    Dim result As String
+    Dim i As Long
+    For i = 0 To lstTables.ListCount - 1
+        If CStr(lstTables.List(i, 2)) = "삭제" Then
+            If Len(result) > 0 Then result = result & ","
+            result = result & CStr(lstTables.List(i, 1))
+        End If
+    Next i
+    DeletedTableIds = result
+End Function
+
+Private Function FirstSelectedIndex(ByVal listBox As MSForms.ListBox) As Long
+    Dim i As Long
+    FirstSelectedIndex = -1
+    For i = 0 To listBox.ListCount - 1
+        If listBox.Selected(i) Then
+            FirstSelectedIndex = i
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function LastSelectedIndex(ByVal listBox As MSForms.ListBox) As Long
+    Dim i As Long
+    LastSelectedIndex = -1
+    For i = listBox.ListCount - 1 To 0 Step -1
+        If listBox.Selected(i) Then
+            LastSelectedIndex = i
+            Exit Function
+        End If
+    Next i
 End Function
 '@
 
@@ -1151,7 +1350,7 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
-          <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표와 배너 목록을 선택해 원본 집계표 시트의 복사본에 삭제 내용을 반영하고 새 목차 링크를 생성합니다." />
+          <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표 목록을 드래그하거나 버튼으로 이동하고, 삭제할 표/배너를 선택해 새 집계표와 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
           <button id="btnSpssMetadata" label="표 메타 추출" imageMso="TablePropertiesDialog" onAction="Ribbon_SPSSExtractTableMetadata" screentip="SPSS 표 메타 추출" supertip="집계표의 표 제목, 행 위치, 배너 목록, 이동 링크를 새 시트로 추출합니다." />
         </group>
