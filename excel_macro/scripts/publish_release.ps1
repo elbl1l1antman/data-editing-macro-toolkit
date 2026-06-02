@@ -1327,6 +1327,12 @@ function Add-RibbonCustomUi {
   <ribbon>
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
+        <group id="grpToolkitLaunchers" label="통합 실행">
+          <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업명 정리를 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
+        </group>
         <group id="grpNumberTools" label="값 정리">
           <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="선택 범위 숫자 변환" supertip="선택한 범위에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
