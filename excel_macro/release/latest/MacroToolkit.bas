@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.2"
+Public Const TOOLKIT_VERSION As String = "1.0.3"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -5248,6 +5248,14 @@ End Function
 ' 명부 품질/중복/표 메타 도구
 ' ============================================================
 Public Sub Roster_DetectDuplicates()
+    Dim modeChoice As VbMsgBoxResult
+    modeChoice = Roster_SelectDetectionMode("중복 업체 탐지")
+    If modeChoice = vbCancel Then Exit Sub
+    If modeChoice = vbNo Then
+        Roster_DetectDuplicatesManual
+        Exit Sub
+    End If
+
     Dim dataRange As Range
     If Not Toolkit_GetRangeFromUserForm("중복 업체 탐지", _
         "헤더가 포함된 명부 범위를 선택하세요. 업체명, 주소, 전화번호, 사업자등록번호 계열 헤더를 자동 탐지합니다.", _
@@ -5304,6 +5312,14 @@ Public Sub Roster_DetectDuplicates()
 End Sub
 
 Public Sub Roster_QualityReport()
+    Dim modeChoice As VbMsgBoxResult
+    modeChoice = Roster_SelectDetectionMode("명부 품질 진단")
+    If modeChoice = vbCancel Then Exit Sub
+    If modeChoice = vbNo Then
+        Roster_QualityReportManual
+        Exit Sub
+    End If
+
     Dim dataRange As Range
     If Not Toolkit_GetRangeFromUserForm("명부 품질 진단", _
         "헤더가 포함된 명부 범위를 선택하세요. 빈값, 전화번호, 주소 유형, 사업자번호, 중복 의심을 요약합니다.", _
@@ -5343,6 +5359,190 @@ Public Sub Roster_QualityReport()
 
     outWs.Columns.AutoFit
     MsgBox "명부 품질 진단 리포트를 생성했습니다.", vbInformation, "명부 품질 진단"
+End Sub
+
+Private Function Roster_SelectDetectionMode(ByVal title As String) As VbMsgBoxResult
+    Roster_SelectDetectionMode = MsgBox( _
+        "진행 방식을 선택하세요." & vbCrLf & vbCrLf & _
+        "[예] 자동 탐지: 헤더가 포함된 명부 범위에서 업체명, 주소, 전화번호, 사업자번호 열을 자동으로 찾습니다." & vbCrLf & _
+        "[아니오] 수동 선택: 검증 항목과 각 항목의 범위를 직접 선택합니다." & vbCrLf & _
+        "[취소] 작업을 중단합니다.", _
+        vbQuestion + vbYesNoCancel, title)
+End Function
+
+Private Function Roster_SelectManualItems(ByVal title As String, ByVal promptText As String, ByVal maxIndex As Long, ByVal defaultText As String) As Object
+    Dim inputText As String
+    inputText = InputBox(promptText, title, defaultText)
+    Set Roster_SelectManualItems = SPSS_ParseIndexSelection(inputText, maxIndex)
+End Function
+
+Private Function Roster_AskHeaderMode(ByVal title As String, ByRef hasHeader As Boolean) As Boolean
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox("선택할 범위의 첫 행을 헤더로 사용할까요?" & vbCrLf & _
+                    "예: 첫 행은 항목명이고 실제 데이터는 다음 행부터입니다." & vbCrLf & _
+                    "아니오: 선택한 첫 행부터 데이터로 계산합니다.", _
+                    vbQuestion + vbYesNoCancel, title)
+    If answer = vbCancel Then Exit Function
+    hasHeader = (answer = vbYes)
+    Roster_AskHeaderMode = True
+End Function
+
+Private Function Roster_FirstDataRow(ByVal rng As Range, ByVal hasHeader As Boolean) As Long
+    If hasHeader Then
+        Roster_FirstDataRow = rng.Row + 1
+    Else
+        Roster_FirstDataRow = rng.Row
+    End If
+End Function
+
+Private Function Roster_RequestManualRange(ByVal title As String, ByVal label As String, ByRef targetRange As Range) As Boolean
+    If Not Toolkit_GetRangeFromUserForm(title & " - " & label, _
+        label & " 범위를 선택하세요. 여러 열을 선택하면 첫 번째 열만 사용합니다.", _
+        targetRange) Then Exit Function
+    Set targetRange = targetRange.Areas(1).Columns(1)
+    Roster_RequestManualRange = True
+End Function
+
+Private Sub Roster_QualityReportManual()
+    Dim selectedItems As Object
+    Set selectedItems = Roster_SelectManualItems( _
+        "명부 품질 진단 - 검증 항목 선택", _
+        "검증할 항목 번호를 입력하세요." & vbCrLf & vbCrLf & _
+        "1. 업체명 빈값" & vbCrLf & _
+        "2. 주소 빈값" & vbCrLf & _
+        "3. 전화번호 유효성" & vbCrLf & _
+        "4. 사업자번호 유효성" & vbCrLf & _
+        "5. 주소 유형 판별" & vbCrLf & vbCrLf & _
+        "예: 1,2,3,5 / 비워두면 취소", 5, "1,2,3,4,5")
+    If selectedItems.Count = 0 Then Exit Sub
+
+    Dim hasHeader As Boolean
+    If Not Roster_AskHeaderMode("명부 품질 진단 - 헤더 설정", hasHeader) Then Exit Sub
+
+    Dim nameRange As Range, addressRange As Range, phoneRange As Range, bizRange As Range
+    If selectedItems.Exists("1") Then
+        If Not Roster_RequestManualRange("명부 품질 진단", "업체명", nameRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("2") Or selectedItems.Exists("5") Then
+        If Not Roster_RequestManualRange("명부 품질 진단", "주소", addressRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("3") Then
+        If Not Roster_RequestManualRange("명부 품질 진단", "전화번호", phoneRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("4") Then
+        If Not Roster_RequestManualRange("명부 품질 진단", "사업자번호", bizRange) Then Exit Sub
+    End If
+
+    Dim baseWs As Worksheet
+    Set baseWs = Roster_FirstRangeWorksheet(nameRange, addressRange, phoneRange, bizRange)
+    If baseWs Is Nothing Then Exit Sub
+    If Not Roster_RangesOnSameWorksheet(baseWs, nameRange, addressRange, phoneRange, bizRange) Then
+        MsgBox "수동 선택한 범위는 모두 같은 시트에 있어야 합니다.", vbExclamation, "명부 품질 진단"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = baseWs.Parent
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = SPSS_UniqueSheetName(wb, "명부품질진단")
+
+    Roster_WriteArray outWs, 1, 1, Array("진단항목", "건수", "설명")
+    Dim outRow As Long: outRow = 2
+    Roster_WriteArray outWs, outRow, 1, Array("검증 방식", "수동 선택", IIf(hasHeader, "첫 행 헤더 제외", "첫 행부터 데이터")): outRow = outRow + 1
+
+    If selectedItems.Exists("1") Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", Roster_CountBlankRange(nameRange, hasHeader), "수동 선택 범위 빈값 여부"): outRow = outRow + 1
+    If selectedItems.Exists("2") Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", Roster_CountBlankRange(addressRange, hasHeader), "수동 선택 범위 빈값 여부"): outRow = outRow + 1
+    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", Roster_CountInvalidPhonesRange(phoneRange, hasHeader), "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If selectedItems.Exists("4") Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", Roster_CountInvalidBizNoRange(bizRange, hasHeader), "숫자 10자리 여부 기준"): outRow = outRow + 1
+    If selectedItems.Exists("5") Then
+        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", Roster_CountAddressTypeRange(addressRange, hasHeader, "도로명주소"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", Roster_CountAddressTypeRange(addressRange, hasHeader, "법정/행정동 기준 주소"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", Roster_CountAddressTypeRange(addressRange, hasHeader, "확인 필요"), "주소 유형 판별 기준"): outRow = outRow + 1
+    End If
+
+    outWs.Columns.AutoFit
+    MsgBox "수동 선택 기반 명부 품질 진단 리포트를 생성했습니다." & vbCrLf & outWs.Name, vbInformation, "명부 품질 진단"
+End Sub
+
+Private Sub Roster_DetectDuplicatesManual()
+    Dim selectedItems As Object
+    Set selectedItems = Roster_SelectManualItems( _
+        "중복 업체 탐지 - 비교 항목 선택", _
+        "중복 판단에 사용할 항목 번호를 입력하세요." & vbCrLf & vbCrLf & _
+        "1. 업체명" & vbCrLf & _
+        "2. 주소" & vbCrLf & _
+        "3. 전화번호" & vbCrLf & _
+        "4. 사업자번호" & vbCrLf & vbCrLf & _
+        "예: 1,2,3,4 / 비워두면 취소", 4, "1,2,3,4")
+    If selectedItems.Count = 0 Then Exit Sub
+
+    Dim hasHeader As Boolean
+    If Not Roster_AskHeaderMode("중복 업체 탐지 - 헤더 설정", hasHeader) Then Exit Sub
+
+    Dim nameRange As Range, addressRange As Range, phoneRange As Range, bizRange As Range
+    If selectedItems.Exists("1") Then
+        If Not Roster_RequestManualRange("중복 업체 탐지", "업체명", nameRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("2") Then
+        If Not Roster_RequestManualRange("중복 업체 탐지", "주소", addressRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("3") Then
+        If Not Roster_RequestManualRange("중복 업체 탐지", "전화번호", phoneRange) Then Exit Sub
+    End If
+    If selectedItems.Exists("4") Then
+        If Not Roster_RequestManualRange("중복 업체 탐지", "사업자번호", bizRange) Then Exit Sub
+    End If
+
+    Dim baseRange As Range
+    Set baseRange = Roster_FirstAvailableRange(nameRange, addressRange, phoneRange, bizRange)
+    If baseRange Is Nothing Then Exit Sub
+    Dim ws As Worksheet: Set ws = baseRange.Worksheet
+    If Not Roster_RangesOnSameWorksheet(ws, nameRange, addressRange, phoneRange, bizRange) Then
+        MsgBox "수동 선택한 범위는 모두 같은 시트에 있어야 합니다.", vbExclamation, "중복 업체 탐지"
+        Exit Sub
+    End If
+
+    Dim firstDataRow As Long: firstDataRow = Roster_FirstDataRow(baseRange, hasHeader)
+    Dim lastRow As Long: lastRow = baseRange.Row + baseRange.Rows.Count - 1
+    If firstDataRow >= lastRow Then
+        MsgBox "중복 비교에는 데이터 행이 2개 이상 필요합니다.", vbExclamation, "중복 업체 탐지"
+        Exit Sub
+    End If
+
+    If (lastRow - firstDataRow + 1) > 1500 Then
+        If MsgBox("선택한 범위가 " & (lastRow - firstDataRow + 1) & "행입니다." & vbCrLf & _
+                  "중복 탐지는 행 조합을 비교하므로 시간이 오래 걸릴 수 있습니다. 계속할까요?", _
+                  vbQuestion + vbYesNo, "중복 업체 탐지") <> vbYes Then Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ws.Parent
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = SPSS_UniqueSheetName(wb, "중복탐지")
+    Roster_WriteArray outWs, 1, 1, Array("행1", "행2", "중복등급", "점수", "판단근거", "업체명1", "업체명2", "주소1", "주소2", "전화1", "전화2", "사업자번호1", "사업자번호2")
+
+    Dim r1 As Long, r2 As Long, outRow As Long: outRow = 2
+    Dim score As Double, reason As String, grade As String, maxPairs As Long
+
+    Application.ScreenUpdating = False
+    For r1 = firstDataRow To lastRow - 1
+        For r2 = r1 + 1 To lastRow
+            score = Roster_DuplicateScoreManual(ws, r1, r2, nameRange, addressRange, phoneRange, bizRange, reason)
+            If score >= 55 Then
+                grade = Roster_DuplicateGrade(score)
+                Roster_WriteArray outWs, outRow, 1, Array(r1, r2, grade, Round(score, 1), reason, _
+                    Roster_RangeTextAtRow(nameRange, r1), Roster_RangeTextAtRow(nameRange, r2), _
+                    Roster_RangeTextAtRow(addressRange, r1), Roster_RangeTextAtRow(addressRange, r2), _
+                    Roster_RangeTextAtRow(phoneRange, r1), Roster_RangeTextAtRow(phoneRange, r2), _
+                    Roster_RangeTextAtRow(bizRange, r1), Roster_RangeTextAtRow(bizRange, r2))
+                outRow = outRow + 1
+                maxPairs = maxPairs + 1
+            End If
+        Next r2
+    Next r1
+    outWs.Columns.AutoFit
+    Application.ScreenUpdating = True
+    MsgBox "수동 선택 기반 중복 업체 탐지를 완료했습니다." & vbCrLf & "의심 쌍: " & maxPairs & "건", vbInformation, "중복 업체 탐지"
 End Sub
 
 Public Sub Roster_MatchCompanyNames()
@@ -5531,6 +5731,113 @@ Private Sub Roster_WriteArray(ws As Worksheet, ByVal rowIndex As Long, ByVal col
         ws.Cells(rowIndex, colIndex + i).Value = values(i)
     Next i
 End Sub
+
+Private Function Roster_FirstAvailableRange(ByVal nameRange As Range, ByVal addressRange As Range, ByVal phoneRange As Range, ByVal bizRange As Range) As Range
+    If Not nameRange Is Nothing Then
+        Set Roster_FirstAvailableRange = nameRange
+        Exit Function
+    End If
+    If Not addressRange Is Nothing Then
+        Set Roster_FirstAvailableRange = addressRange
+        Exit Function
+    End If
+    If Not phoneRange Is Nothing Then
+        Set Roster_FirstAvailableRange = phoneRange
+        Exit Function
+    End If
+    If Not bizRange Is Nothing Then
+        Set Roster_FirstAvailableRange = bizRange
+        Exit Function
+    End If
+End Function
+
+Private Function Roster_FirstRangeWorksheet(ByVal nameRange As Range, ByVal addressRange As Range, ByVal phoneRange As Range, ByVal bizRange As Range) As Worksheet
+    Dim firstRange As Range
+    Set firstRange = Roster_FirstAvailableRange(nameRange, addressRange, phoneRange, bizRange)
+    If Not firstRange Is Nothing Then Set Roster_FirstRangeWorksheet = firstRange.Worksheet
+End Function
+
+Private Function Roster_RangesOnSameWorksheet(ByVal ws As Worksheet, ByVal nameRange As Range, ByVal addressRange As Range, ByVal phoneRange As Range, ByVal bizRange As Range) As Boolean
+    Roster_RangesOnSameWorksheet = False
+    If Not nameRange Is Nothing Then If Not nameRange.Worksheet Is ws Then Exit Function
+    If Not addressRange Is Nothing Then If Not addressRange.Worksheet Is ws Then Exit Function
+    If Not phoneRange Is Nothing Then If Not phoneRange.Worksheet Is ws Then Exit Function
+    If Not bizRange Is Nothing Then If Not bizRange.Worksheet Is ws Then Exit Function
+    Roster_RangesOnSameWorksheet = True
+End Function
+
+Private Function Roster_CountBlankRange(ByVal targetRange As Range, ByVal hasHeader As Boolean) As Long
+    Dim r As Long
+    For r = Roster_FirstDataRow(targetRange, hasHeader) To targetRange.Row + targetRange.Rows.Count - 1
+        If Len(Trim$(CStr(targetRange.Worksheet.Cells(r, targetRange.Column).Value))) = 0 Then Roster_CountBlankRange = Roster_CountBlankRange + 1
+    Next r
+End Function
+
+Private Function Roster_CountInvalidPhonesRange(ByVal targetRange As Range, ByVal hasHeader As Boolean) As Long
+    Dim r As Long
+    For r = Roster_FirstDataRow(targetRange, hasHeader) To targetRange.Row + targetRange.Rows.Count - 1
+        Dim result As Variant
+        result = Phone_ClassifyOne(CStr(targetRange.Worksheet.Cells(r, targetRange.Column).Value))
+        If CStr(result(1)) <> "정상" And Len(Trim$(CStr(targetRange.Worksheet.Cells(r, targetRange.Column).Value))) > 0 Then Roster_CountInvalidPhonesRange = Roster_CountInvalidPhonesRange + 1
+    Next r
+End Function
+
+Private Function Roster_CountInvalidBizNoRange(ByVal targetRange As Range, ByVal hasHeader As Boolean) As Long
+    Dim r As Long, digits As String
+    For r = Roster_FirstDataRow(targetRange, hasHeader) To targetRange.Row + targetRange.Rows.Count - 1
+        digits = DigitsOnly(CStr(targetRange.Worksheet.Cells(r, targetRange.Column).Value))
+        If Len(digits) > 0 And Len(digits) <> 10 Then Roster_CountInvalidBizNoRange = Roster_CountInvalidBizNoRange + 1
+    Next r
+End Function
+
+Private Function Roster_CountAddressTypeRange(ByVal targetRange As Range, ByVal hasHeader As Boolean, ByVal targetType As String) As Long
+    Dim r As Long, classified As Variant
+    For r = Roster_FirstDataRow(targetRange, hasHeader) To targetRange.Row + targetRange.Rows.Count - 1
+        classified = Address_ClassifyOneAddress(CStr(targetRange.Worksheet.Cells(r, targetRange.Column).Value))
+        If CStr(classified(0)) = targetType Then Roster_CountAddressTypeRange = Roster_CountAddressTypeRange + 1
+    Next r
+End Function
+
+Private Function Roster_RangeTextAtRow(ByVal targetRange As Range, ByVal rowIndex As Long) As String
+    If targetRange Is Nothing Then Exit Function
+    If rowIndex < targetRange.Row Or rowIndex > targetRange.Row + targetRange.Rows.Count - 1 Then Exit Function
+    Roster_RangeTextAtRow = Trim$(CStr(targetRange.Worksheet.Cells(rowIndex, targetRange.Column).Value))
+End Function
+
+Private Function Roster_DuplicateScoreManual(ws As Worksheet, ByVal r1 As Long, ByVal r2 As Long, _
+                                             ByVal nameRange As Range, ByVal addressRange As Range, _
+                                             ByVal phoneRange As Range, ByVal bizRange As Range, _
+                                             ByRef reason As String) As Double
+    Dim score As Double, b1 As String, b2 As String, p1 As String, p2 As String
+    Dim ns As Double, ads As Double
+    reason = ""
+
+    If Not bizRange Is Nothing Then
+        b1 = DigitsOnly(Roster_RangeTextAtRow(bizRange, r1))
+        b2 = DigitsOnly(Roster_RangeTextAtRow(bizRange, r2))
+        If Len(b1) = 10 And b1 = b2 Then score = score + 70: reason = reason & "사업자번호 일치; "
+    End If
+
+    If Not phoneRange Is Nothing Then
+        p1 = DigitsOnly(Roster_RangeTextAtRow(phoneRange, r1))
+        p2 = DigitsOnly(Roster_RangeTextAtRow(phoneRange, r2))
+        If Len(p1) >= 7 And p1 = p2 Then score = score + 45: reason = reason & "전화번호 일치; "
+    End If
+
+    If Not nameRange Is Nothing Then
+        ns = NaverLocal_Similarity(Roster_RangeTextAtRow(nameRange, r1), Roster_RangeTextAtRow(nameRange, r2))
+        score = score + ns * 0.35
+        If ns >= 85 Then reason = reason & "업체명 유사; "
+    End If
+
+    If Not addressRange Is Nothing Then
+        ads = NaverLocal_Similarity(Roster_RangeTextAtRow(addressRange, r1), Roster_RangeTextAtRow(addressRange, r2))
+        score = score + ads * 0.25
+        If ads >= 80 Then reason = reason & "주소 유사; "
+    End If
+
+    Roster_DuplicateScoreManual = Application.Min(score, 100)
+End Function
 
 Private Function Roster_WriteMissingSummary(outWs As Worksheet, ByVal outRow As Long, ws As Worksheet, dataRange As Range, ByVal relCol As Long, ByVal label As String) As Long
     If relCol > 0 Then
