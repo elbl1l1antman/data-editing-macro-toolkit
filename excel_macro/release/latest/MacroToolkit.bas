@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.3"
+Public Const TOOLKIT_VERSION As String = "1.0.4"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -5952,9 +5952,142 @@ Private Function SPSS_JoinCollection(ByVal items As Collection) As String
     SPSS_JoinCollection = result
 End Function
 ' ============================================================
+' 통합 실행 런처
+' 설  명  : 리본 버튼 수가 많아지는 문제를 줄이기 위해 유사 기능을
+'           하나의 팝업 선택 창에서 실행한다.
+' ============================================================
+Public Sub Toolkit_LaunchDataCleanup()
+    Dim choice As String
+    choice = Toolkit_LauncherPrompt( _
+        "값 정리", _
+        "실행할 값 정리 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. 텍스트 숫자 변환 - 범위 선택" & vbCrLf & _
+        "2. 텍스트 숫자 변환 - 현재 시트 전체 데이터 영역" & vbCrLf & _
+        "3. 전화번호 하이픈 정리" & vbCrLf & _
+        "4. 전화번호 숫자만 남기기" & vbCrLf & _
+        "5. 사업자등록번호 숫자만 남기기" & vbCrLf & _
+        "6. 사업자등록번호 3열 병합" & vbCrLf & _
+        "7. 기업체명/사업체명 정리", _
+        "1")
+
+    Select Case choice
+        Case "1": ConvertTextNumbersWithForm
+        Case "2": ConvertTextNumbersInCurrentSheetDataRange
+        Case "3": NormalizePhonesWithForm
+        Case "4": RemovePhoneDashesToCopiedColumns
+        Case "5": RemoveBizNoDashesToCopiedColumns
+        Case "6": BizNo_MergeThreeColumns
+        Case "7": CompanyName_CleanWithOptions
+        Case Else
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~7 중 하나를 입력하세요."
+    End Select
+End Sub
+
+Public Sub Toolkit_LaunchAddressSearch()
+    Dim choice As String
+    choice = Toolkit_LauncherPrompt( _
+        "주소/검색", _
+        "실행할 주소/검색 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. 주소 유형 판별" & vbCrLf & _
+        "2. 주소 체계 분리" & vbCrLf & _
+        "3. 행정구역 분해" & vbCrLf & _
+        "4. 네이버 주소 검증" & vbCrLf & _
+        "5. 네이버 신규 리스트 생성" & vbCrLf & _
+        "6. 네이버 인증키 설정" & vbCrLf & _
+        "7. 행정동 마스터 양식 생성", _
+        "1")
+
+    Select Case choice
+        Case "1": Address_ClassifyAddressType
+        Case "2": Address_SplitDongAndRoad
+        Case "3": Address_SplitAdministrativeParts
+        Case "4": NaverLocal_VerifyExistingData
+        Case "5": NaverLocal_BuildListByDong
+        Case "6": NaverLocal_SetApiCredentials
+        Case "7": NaverLocal_CreateDongMasterTemplate
+        Case Else
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~7 중 하나를 입력하세요."
+    End Select
+End Sub
+
+Public Sub Toolkit_LaunchRosterQuality()
+    Dim choice As String
+    choice = Toolkit_LauncherPrompt( _
+        "명부 품질", _
+        "실행할 명부 품질 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. 품질 진단" & vbCrLf & _
+        "2. 중복 탐지" & vbCrLf & _
+        "3. 업체명 매칭" & vbCrLf & _
+        "4. 전화번호 검사" & vbCrLf & _
+        "5. 사업자등록 상태조회", _
+        "1")
+
+    Select Case choice
+        Case "1": Roster_QualityReport
+        Case "2": Roster_DetectDuplicates
+        Case "3": Roster_MatchCompanyNames
+        Case "4": Phone_ValidateSelection
+        Case "5": BizNo_QueryStatusForSelection
+        Case Else
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "명부 품질", "1~5 중 하나를 입력하세요."
+    End Select
+End Sub
+
+Public Sub Toolkit_LaunchSpssTools()
+    Dim choice As String
+    choice = Toolkit_LauncherPrompt( _
+        "SPSS 표 도구", _
+        "실행할 SPSS 표 정리 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. 목차 생성" & vbCrLf & _
+        "2. 표/배너 재구성" & vbCrLf & _
+        "3. 세로 배너 삭제" & vbCrLf & _
+        "4. 표 메타 추출", _
+        "2")
+
+    Select Case choice
+        Case "1": SPSS_CreateIndexForActiveSheet
+        Case "2": SPSS_RebuildTablesFromIndex
+        Case "3": SPSS_DeleteVerticalBannersFromIndex
+        Case "4": SPSS_ExtractTableMetadata
+        Case Else
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "SPSS 표 도구", "1~4 중 하나를 입력하세요."
+    End Select
+End Sub
+
+Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
+    Dim result As Variant
+    result = Application.InputBox(promptText, title, defaultChoice, Type:=2)
+    If VarType(result) = vbBoolean And result = False Then
+        Toolkit_LauncherPrompt = ""
+    Else
+        Toolkit_LauncherPrompt = Trim$(CStr(result))
+    End If
+End Function
+
+Private Sub Toolkit_ShowLauncherError(ByVal title As String, ByVal message As String)
+    MsgBox message, vbExclamation, title
+End Sub
+
+' ============================================================
 ' Ribbon callbacks
 ' 설  명  : .xlam 리본 탭 버튼에서 기존 매크로를 호출하기 위한 콜백
 ' ============================================================
+Public Sub Ribbon_LaunchDataCleanup(control As IRibbonControl)
+    Toolkit_LaunchDataCleanup
+End Sub
+
+Public Sub Ribbon_LaunchAddressSearch(control As IRibbonControl)
+    Toolkit_LaunchAddressSearch
+End Sub
+
+Public Sub Ribbon_LaunchRosterQuality(control As IRibbonControl)
+    Toolkit_LaunchRosterQuality
+End Sub
+
+Public Sub Ribbon_LaunchSpssTools(control As IRibbonControl)
+    Toolkit_LaunchSpssTools
+End Sub
+
 Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
     Toolkit_About
 End Sub
