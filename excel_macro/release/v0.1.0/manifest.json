@@ -1,9 +1,0 @@
-{
-    "name":  "Data Editing Macro Toolkit",
-    "version":  "0.1.0",
-    "versionTag":  "v0.1.0",
-    "publishedAt":  "2026-05-15 13:35:42 +09:00",
-    "gitCommit":  "eeb582f",
-    "workbook":  "DataEditingMacroToolkit_v0.1.0.xlsm",
-    "sourceModule":  "MacroToolkit.bas"
-}
