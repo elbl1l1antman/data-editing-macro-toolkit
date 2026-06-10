@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.9"
+Public Const TOOLKIT_VERSION As String = "1.0.10"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -459,6 +459,67 @@ Private Function Toolkit_CanInsertColumns(ByVal ws As Worksheet, ByVal startCol 
     End If
 
     Toolkit_CanInsertColumns = True
+End Function
+
+Private Function Toolkit_CanDeleteColumns(ByVal ws As Worksheet, ByVal startCol As Long, _
+                                          ByVal colCount As Long, ByVal purpose As String) As Boolean
+    If Not Toolkit_ValidateWorksheet(ws, purpose, True) Then Exit Function
+
+    If startCol < 1 Or colCount < 1 Then
+        MsgBox "삭제할 열 위치를 계산하지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If startCol > ws.Columns.Count Or startCol + colCount - 1 > ws.Columns.Count Then
+        MsgBox "삭제할 열 범위가 시트 범위를 벗어났습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If colCount >= ws.Columns.Count Then
+        MsgBox "시트의 모든 열을 삭제할 수는 없습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    Toolkit_CanDeleteColumns = True
+End Function
+
+Private Function Toolkit_CanInsertRows(ByVal ws As Worksheet, ByVal startRow As Long, _
+                                       ByVal rowCount As Long, ByVal purpose As String) As Boolean
+    If Not Toolkit_ValidateWorksheet(ws, purpose, True) Then Exit Function
+
+    If startRow < 1 Or rowCount < 1 Then
+        MsgBox "추가할 행 위치를 계산하지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If startRow > ws.Rows.Count Or startRow + rowCount - 1 > ws.Rows.Count Then
+        MsgBox "아래쪽에 결과 행을 추가할 공간이 부족합니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    Toolkit_CanInsertRows = True
+End Function
+
+Private Function Toolkit_CanDeleteRows(ByVal ws As Worksheet, ByVal startRow As Long, _
+                                       ByVal rowCount As Long, ByVal purpose As String) As Boolean
+    If Not Toolkit_ValidateWorksheet(ws, purpose, True) Then Exit Function
+
+    If startRow < 1 Or rowCount < 1 Then
+        MsgBox "삭제할 행 위치를 계산하지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If startRow > ws.Rows.Count Or startRow + rowCount - 1 > ws.Rows.Count Then
+        MsgBox "삭제할 행 범위가 시트 범위를 벗어났습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If rowCount >= ws.Rows.Count Then
+        MsgBox "시트의 모든 행을 삭제할 수는 없습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    Toolkit_CanDeleteRows = True
 End Function
 
 Private Sub Toolkit_LogApiEvent(ByVal wb As Workbook, ByVal sourceName As String, ByVal actionName As String, _
@@ -4512,6 +4573,10 @@ Private Sub SPSS_DeleteVerticalBannerBlocks(ByVal ws As Worksheet, ByVal targetN
     items = ranges.Items
     SPSS_SortRowRangesDescending items
 
+    For r = LBound(items) To UBound(items)
+        If Not Toolkit_CanDeleteRows(ws, CLng(items(r)(0)), CLng(items(r)(1)) - CLng(items(r)(0)) + 1, "SPSS 세로 배너 삭제") Then Exit Sub
+    Next r
+
     Application.ScreenUpdating = False
     For r = LBound(items) To UBound(items)
         ws.Rows(CLng(items(r)(0)) & ":" & CLng(items(r)(1))).Delete Shift:=xlUp
@@ -5302,6 +5367,10 @@ Private Sub SPSS_ApplyHorizontalBannerDeletes(ByVal ws As Worksheet, ByVal delet
     SPSS_SortColumnRangesDescending items
 
     For r = LBound(items) To UBound(items)
+        If Not Toolkit_CanDeleteColumns(ws, CLng(items(r)(0)), CLng(items(r)(1)) - CLng(items(r)(0)) + 1, "SPSS 가로 배너 삭제") Then Exit Sub
+    Next r
+
+    For r = LBound(items) To UBound(items)
         ws.Range(ws.Columns(CLng(items(r)(0))), ws.Columns(CLng(items(r)(1)))).Delete Shift:=xlToLeft
     Next r
 End Sub
@@ -5316,6 +5385,10 @@ Private Sub SPSS_DeleteRowRanges(ByVal ws As Worksheet, ByVal ranges As Collecti
         items(i - 1) = ranges(i)
     Next i
     SPSS_SortRowRangesDescending items
+
+    For i = LBound(items) To UBound(items)
+        If Not Toolkit_CanDeleteRows(ws, CLng(items(i)(0)), CLng(items(i)(1)) - CLng(items(i)(0)) + 1, "SPSS 표 재구성") Then Exit Sub
+    Next i
 
     For i = LBound(items) To UBound(items)
         ws.Rows(CLng(items(i)(0)) & ":" & CLng(items(i)(1))).Delete Shift:=xlUp
@@ -5352,8 +5425,10 @@ Private Sub SPSS_EnsureOneBlankRowBetweenTables(ByVal ws As Worksheet)
         Loop
 
         If blankCount = 0 Then
+            If Not Toolkit_CanInsertRows(ws, titleRow, 1, "SPSS 표 간격 정리") Then Exit Sub
             ws.Rows(titleRow).Insert Shift:=xlDown
         ElseIf blankCount > 1 Then
+            If Not Toolkit_CanDeleteRows(ws, titleRow - blankCount, blankCount - 1, "SPSS 표 간격 정리") Then Exit Sub
             ws.Rows((titleRow - blankCount) & ":" & (titleRow - 2)).Delete Shift:=xlUp
         End If
     Next i
