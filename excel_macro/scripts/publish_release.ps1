@@ -286,6 +286,171 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-PopulationListifyPreviewUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmPopulationListifyPreview"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "모집단 구성표 리스트화 미리보기"
+    $form.Properties.Item("Width").Value = 760
+    $form.Properties.Item("Height").Value = 560
+
+    $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
+    $lblHelp.Caption = "탐지된 집계표 구조와 변환 예시를 확인한 뒤 실행하세요. 합계 행/열은 결과에서 제외됩니다."
+    $lblHelp.Left = 12
+    $lblHelp.Top = 10
+    $lblHelp.Width = 720
+    $lblHelp.Height = 24
+
+    $lblSummary = $designer.Controls.Add("Forms.Label.1", "lblSummary", $true)
+    $lblSummary.Caption = "탐지 결과"
+    $lblSummary.Left = 12
+    $lblSummary.Top = 42
+    $lblSummary.Width = 180
+    $lblSummary.Height = 16
+
+    $txtSummary = $designer.Controls.Add("Forms.TextBox.1", "txtSummary", $true)
+    $txtSummary.Left = 12
+    $txtSummary.Top = 62
+    $txtSummary.Width = 720
+    $txtSummary.Height = 142
+    $txtSummary.MultiLine = $true
+    $txtSummary.ScrollBars = 2
+    $txtSummary.Locked = $true
+
+    $lblColumnAxis = $designer.Controls.Add("Forms.Label.1", "lblColumnAxis", $true)
+    $lblColumnAxis.Caption = "가로축 열 이름"
+    $lblColumnAxis.Left = 12
+    $lblColumnAxis.Top = 220
+    $lblColumnAxis.Width = 100
+    $lblColumnAxis.Height = 18
+
+    $txtColumnAxisName = $designer.Controls.Add("Forms.TextBox.1", "txtColumnAxisName", $true)
+    $txtColumnAxisName.Left = 116
+    $txtColumnAxisName.Top = 216
+    $txtColumnAxisName.Width = 150
+    $txtColumnAxisName.Height = 22
+
+    $lblValueName = $designer.Controls.Add("Forms.Label.1", "lblValueName", $true)
+    $lblValueName.Caption = "값 열 이름"
+    $lblValueName.Left = 286
+    $lblValueName.Top = 220
+    $lblValueName.Width = 80
+    $lblValueName.Height = 18
+
+    $txtValueName = $designer.Controls.Add("Forms.TextBox.1", "txtValueName", $true)
+    $txtValueName.Left = 366
+    $txtValueName.Top = 216
+    $txtValueName.Width = 120
+    $txtValueName.Height = 22
+
+    $lblSheetName = $designer.Controls.Add("Forms.Label.1", "lblSheetName", $true)
+    $lblSheetName.Caption = "결과 시트"
+    $lblSheetName.Left = 506
+    $lblSheetName.Top = 220
+    $lblSheetName.Width = 70
+    $lblSheetName.Height = 18
+
+    $txtOutputSheetName = $designer.Controls.Add("Forms.TextBox.1", "txtOutputSheetName", $true)
+    $txtOutputSheetName.Left = 576
+    $txtOutputSheetName.Top = 216
+    $txtOutputSheetName.Width = 156
+    $txtOutputSheetName.Height = 22
+
+    $lblPreview = $designer.Controls.Add("Forms.Label.1", "lblPreview", $true)
+    $lblPreview.Caption = "변환 예시"
+    $lblPreview.Left = 12
+    $lblPreview.Top = 252
+    $lblPreview.Width = 180
+    $lblPreview.Height = 16
+
+    $txtPreview = $designer.Controls.Add("Forms.TextBox.1", "txtPreview", $true)
+    $txtPreview.Left = 12
+    $txtPreview.Top = 272
+    $txtPreview.Width = 720
+    $txtPreview.Height = 196
+    $txtPreview.MultiLine = $true
+    $txtPreview.ScrollBars = 3
+    $txtPreview.Locked = $true
+    $txtPreview.Font.Name = "Consolas"
+    $txtPreview.Font.Size = 9
+
+    $cmdRun = $designer.Controls.Add("Forms.CommandButton.1", "cmdRun", $true)
+    $cmdRun.Caption = "실행"
+    $cmdRun.Left = 548
+    $cmdRun.Top = 486
+    $cmdRun.Width = 86
+    $cmdRun.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 646
+    $cmdCancel.Top = 486
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Confirmed As Boolean
+
+Public Sub Configure(ByVal summaryText As String, ByVal previewText As String, _
+                     ByVal defaultColumnAxisName As String, ByVal defaultValueName As String, _
+                     ByVal defaultOutputSheetName As String)
+    Confirmed = False
+    txtSummary.Text = summaryText
+    txtPreview.Text = previewText
+    txtColumnAxisName.Text = defaultColumnAxisName
+    txtValueName.Text = defaultValueName
+    txtOutputSheetName.Text = defaultOutputSheetName
+End Sub
+
+Public Property Get ColumnAxisName() As String
+    ColumnAxisName = Trim$(txtColumnAxisName.Text)
+End Property
+
+Public Property Get ValueName() As String
+    ValueName = Trim$(txtValueName.Text)
+End Property
+
+Public Property Get OutputSheetName() As String
+    OutputSheetName = Trim$(txtOutputSheetName.Text)
+End Property
+
+Private Sub cmdRun_Click()
+    If Len(Trim$(txtColumnAxisName.Text)) = 0 Then
+        MsgBox "가로축 열 이름을 입력하세요.", vbExclamation, "모집단 구성표 리스트화"
+        txtColumnAxisName.SetFocus
+        Exit Sub
+    End If
+    If Len(Trim$(txtValueName.Text)) = 0 Then
+        MsgBox "값 열 이름을 입력하세요.", vbExclamation, "모집단 구성표 리스트화"
+        txtValueName.SetFocus
+        Exit Sub
+    End If
+    If Len(Trim$(txtOutputSheetName.Text)) = 0 Then
+        MsgBox "결과 시트 이름을 입력하세요.", vbExclamation, "모집단 구성표 리스트화"
+        txtOutputSheetName.SetFocus
+        Exit Sub
+    End If
+
+    Confirmed = True
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Confirmed = False
+    Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then Confirmed = False
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-SpssRebuildUserForm {
     param($Workbook)
 
@@ -1624,7 +1789,7 @@ function Add-RibbonCustomUi {
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
         </group>
         <group id="grpSampleDesignTools" label="표본설계">
-          <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="행 구분, 열 헤더, 값 범위를 직접 지정하거나 자동 추정해 업종 x 규모, 지역 x 인구수 같은 구성표를 리스트형 데이터로 변환합니다." />
+          <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="선택 범위 안의 여러 집계표 블록을 자동 탐지하고 미리보기 창에서 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="모집단 정보, 쿼터, 목표 표본 수, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
@@ -1733,7 +1898,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmPopulationListifyPreview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -1741,6 +1906,7 @@ try {
         $imported.Name = "MacroToolkit"
         Add-ToolkitButtonMenuUserForm -Workbook $workbook
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
+        Add-PopulationListifyPreviewUserForm -Workbook $workbook
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
