@@ -373,8 +373,6 @@ function Add-PopulationListifyPreviewUserForm {
     $txtPreview.MultiLine = $true
     $txtPreview.ScrollBars = 3
     $txtPreview.Locked = $true
-    $txtPreview.Font.Name = "Consolas"
-    $txtPreview.Font.Size = 9
 
     $cmdRun = $designer.Controls.Add("Forms.CommandButton.1", "cmdRun", $true)
     $cmdRun.Caption = "실행"

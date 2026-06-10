@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.5"
+Public Const TOOLKIT_VERSION As String = "1.1.6"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -6588,348 +6588,499 @@ Public Sub SampleDesign_ReviewQuota()
 End Sub
 
 Public Sub SampleDesign_ListifyPopulationTable()
-    Dim modeAnswer As VbMsgBoxResult
-    modeAnswer = MsgBox("리스트화 방식을 선택하세요." & vbCrLf & vbCrLf & _
-                        "[예] 직접 지정: 행 구분, 열 헤더, 숫자 값 범위를 차례로 선택합니다." & vbCrLf & _
-                        "[아니오] 자동 추정: 구성표 전체 범위를 선택하면 헤더와 값 열을 자동으로 추정합니다." & vbCrLf & _
-                        "[취소] 작업을 중단합니다.", _
-                        vbQuestion + vbYesNoCancel, "모집단 구성표 리스트화")
-
-    Select Case modeAnswer
-        Case vbYes
-            SampleDesign_ListifyPopulationTableManual
-        Case vbNo
-            SampleDesign_ListifyPopulationTableAuto
-    End Select
-End Sub
-
-Private Sub SampleDesign_ListifyPopulationTableManual()
-    Dim rowHeaderRange As Range
+    Dim sourceRange As Range
     If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
-        "행에서 반복될 구분 범위를 선택하세요." & vbCrLf & _
-        "예: 중분류/KSIC명 데이터 행. 병합셀 때문에 비어 있는 값은 위 값을 이어받습니다." & vbCrLf & _
-        "헤더 행과 합계 행은 제외하고 실제 데이터 행만 선택하는 것을 권장합니다.", _
-        rowHeaderRange) Then Exit Sub
-    If rowHeaderRange Is Nothing Then Exit Sub
+        "리스트화할 집계표들이 포함된 전체 범위를 선택하세요." & vbCrLf & _
+        "표 제목, 가로 헤더, 세로 헤더, 값 영역, 합계 행/열이 함께 포함되어도 됩니다.", _
+        sourceRange) Then Exit Sub
+    If sourceRange Is Nothing Then Exit Sub
+    Set sourceRange = sourceRange.Areas(1)
 
-    Dim columnHeaderRange As Range
-    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
-        "리스트화할 항목의 열 헤더 범위를 선택하세요." & vbCrLf & _
-        "예: 1-4명, 5-9명 같은 종사자규모 또는 인구수/사업체규모 구간 헤더입니다." & vbCrLf & _
-        "값 범위와 같은 열 개수여야 합니다.", _
-        columnHeaderRange) Then Exit Sub
-    If columnHeaderRange Is Nothing Then Exit Sub
-
-    Dim valueRange As Range
-    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
-        "리스트로 펼칠 숫자 값 범위를 선택하세요." & vbCrLf & _
-        "앞에서 선택한 행 구분 범위와 행 개수가 같고, 열 헤더 범위와 열 개수가 같아야 합니다.", _
-        valueRange) Then Exit Sub
-    If valueRange Is Nothing Then Exit Sub
-
-    If Not SampleDesign_ValidateManualListifyRanges(rowHeaderRange, columnHeaderRange, valueRange) Then Exit Sub
-
-    Dim dimensionAnswer As Variant
-    dimensionAnswer = Application.InputBox( _
-        Prompt:="열 방향으로 펼칠 항목의 이름을 입력하세요." & vbCrLf & _
-                "예: 종사자규모, 인구수, 사업체규모", _
-        Title:="리스트 항목 이름", _
-        Default:="구분", _
-        Type:=2)
-    Dim dimensionName As String
-    If VarType(dimensionAnswer) = vbBoolean Then
-        dimensionName = "구분"
-    Else
-        dimensionName = Trim$(CStr(dimensionAnswer))
-        If Len(dimensionName) = 0 Then dimensionName = "구분"
+    If sourceRange.Rows.Count < 3 Or sourceRange.Columns.Count < 3 Then
+        MsgBox "집계표 리스트화에는 3행 x 3열 이상의 범위가 필요합니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Sub
     End If
 
-    Dim valueAnswer As Variant
-    valueAnswer = Application.InputBox( _
-        Prompt:="숫자 값 열의 이름을 입력하세요." & vbCrLf & _
-                "예: 모집단수, 사업체수, 인구수", _
-        Title:="값 열 이름", _
-        Default:="모집단수", _
-        Type:=2)
+    Dim blocks As Collection
+    Set blocks = PopList_DetectBlocks(sourceRange)
+    If blocks.Count = 0 Then
+        MsgBox "선택 범위에서 리스트화할 집계표 구조를 찾지 못했습니다." & vbCrLf & _
+               "표 제목, 헤더 행, 숫자 값 영역이 함께 포함되도록 범위를 다시 선택하세요.", _
+               vbExclamation, "모집단 구성표 리스트화"
+        Exit Sub
+    End If
+
+    Dim columnAxisName As String
     Dim valueName As String
-    If VarType(valueAnswer) = vbBoolean Then
-        valueName = "모집단수"
-    Else
-        valueName = Trim$(CStr(valueAnswer))
-        If Len(valueName) = 0 Then valueName = "모집단수"
-    End If
+    Dim outputSheetName As String
+    columnAxisName = "가로구분"
+    valueName = "값"
+    outputSheetName = "모집단_리스트"
 
-    Dim wb As Workbook
-    Set wb = valueRange.Worksheet.Parent
+    If Not PopList_ShowPreviewForm(blocks, sourceRange, columnAxisName, valueName, outputSheetName) Then Exit Sub
 
+    outputSheetName = PopList_CleanSheetName(outputSheetName, "모집단_리스트")
     Dim outWs As Worksheet
-    Set outWs = SampleDesign_PrepareOutputSheet(wb, "모집단_리스트")
-    SampleDesign_WritePopulationListManual rowHeaderRange, columnHeaderRange, valueRange, outWs, dimensionName, valueName
+    Set outWs = SampleDesign_PrepareOutputSheet(sourceRange.Worksheet.Parent, outputSheetName)
 
+    Dim writtenRows As Long
+    writtenRows = PopList_WriteOutput(blocks, sourceRange, outWs, columnAxisName, valueName)
     outWs.Activate
-    MsgBox "선택한 범위를 기준으로 모집단 구성표를 리스트화했습니다." & vbCrLf & _
+
+    MsgBox blocks.Count & "개 집계표에서 " & writtenRows & "개 리스트 행을 생성했습니다." & vbCrLf & _
            "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
 End Sub
 
-Private Sub SampleDesign_ListifyPopulationTableAuto()
-    Dim targetRange As Range
-    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
-        "모집단 구성표 전체 범위를 선택하세요." & vbCrLf & _
-        "제목행, 헤더행, 행 구분, 값 열, 합계 열이 함께 포함되어도 됩니다.", _
-        targetRange) Then Exit Sub
-    If targetRange Is Nothing Then Exit Sub
+Private Function PopList_DetectBlocks(ByVal sourceRange As Range) As Collection
+    Dim blocks As Collection
+    Set blocks = New Collection
 
-    If targetRange.Rows.Count < 3 Or targetRange.Columns.Count < 3 Then
-        MsgBox "집계표 리스트화에는 헤더와 데이터가 포함된 3행 x 3열 이상의 범위가 필요합니다.", vbExclamation, "모집단 구성표 리스트화"
-        Exit Sub
-    End If
+    Dim relRow As Long
+    relRow = 1
+    Do While relRow < sourceRange.Rows.Count
+        Dim block As Object
+        Set block = PopList_TryDetectBlock(sourceRange, relRow)
+        If Not block Is Nothing Then
+            blocks.Add block
+            relRow = CLng(block("dataEndRelRow")) + 1
+        Else
+            relRow = relRow + 1
+        End If
+    Loop
 
-    Dim headerRelRow As Long
-    headerRelRow = SampleDesign_DetectCrosstabHeaderRow(targetRange)
-    If headerRelRow = 0 Then
-        MsgBox "집계표 헤더 행을 찾지 못했습니다." & vbCrLf & _
-               "첫 행 또는 둘째 행에 행 구분명과 열 구분명이 들어가도록 범위를 다시 선택하세요.", _
-               vbExclamation, "모집단 구성표 리스트화"
-        Exit Sub
-    End If
-
-    Dim rowFieldCount As Long
-    Dim firstValueCol As Long
-    Dim lastValueCol As Long
-    rowFieldCount = SampleDesign_DetectRowFieldCount(targetRange, headerRelRow)
-    firstValueCol = rowFieldCount + 1
-    lastValueCol = SampleDesign_DetectLastValueColumn(targetRange, headerRelRow, firstValueCol)
-
-    If rowFieldCount < 1 Or firstValueCol > targetRange.Columns.Count Or lastValueCol < firstValueCol Then
-        MsgBox "행 구분 열과 값 열을 판별하지 못했습니다." & vbCrLf & _
-               "왼쪽에는 업종/지역 같은 행 구분, 오른쪽에는 종사자규모별 숫자 열이 오도록 선택하세요.", _
-               vbExclamation, "모집단 구성표 리스트화"
-        Exit Sub
-    End If
-
-    Dim wb As Workbook
-    Set wb = targetRange.Worksheet.Parent
-
-    Dim outWs As Worksheet
-    Set outWs = SampleDesign_PrepareOutputSheet(wb, "모집단_리스트")
-    SampleDesign_WritePopulationList targetRange, outWs, headerRelRow, rowFieldCount, firstValueCol, lastValueCol
-
-    outWs.Activate
-    MsgBox "모집단 구성표를 리스트화했습니다." & vbCrLf & _
-           "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
-End Sub
-
-Private Function SampleDesign_ValidateManualListifyRanges(ByVal rowHeaderRange As Range, _
-                                                          ByVal columnHeaderRange As Range, _
-                                                          ByVal valueRange As Range) As Boolean
-    If Not (rowHeaderRange.Worksheet Is valueRange.Worksheet) _
-       Or Not (columnHeaderRange.Worksheet Is valueRange.Worksheet) Then
-        MsgBox "행 구분, 열 헤더, 값 범위는 모두 같은 시트에서 선택해야 합니다.", vbExclamation, "모집단 구성표 리스트화"
-        Exit Function
-    End If
-
-    If rowHeaderRange.Areas.Count > 1 Or columnHeaderRange.Areas.Count > 1 Or valueRange.Areas.Count > 1 Then
-        MsgBox "각 범위는 떨어진 여러 영역이 아니라 하나의 연속 범위로 선택하세요.", vbExclamation, "모집단 구성표 리스트화"
-        Exit Function
-    End If
-
-    If columnHeaderRange.Rows.Count <> 1 Then
-        MsgBox "열 헤더 범위는 한 행으로 선택해야 합니다.", vbExclamation, "모집단 구성표 리스트화"
-        Exit Function
-    End If
-
-    If rowHeaderRange.Rows.Count <> valueRange.Rows.Count Then
-        MsgBox "행 구분 범위와 값 범위의 행 개수가 다릅니다." & vbCrLf & _
-               "행 구분: " & rowHeaderRange.Rows.Count & "행 / 값 범위: " & valueRange.Rows.Count & "행", _
-               vbExclamation, "모집단 구성표 리스트화"
-        Exit Function
-    End If
-
-    If columnHeaderRange.Columns.Count <> valueRange.Columns.Count Then
-        MsgBox "열 헤더 범위와 값 범위의 열 개수가 다릅니다." & vbCrLf & _
-               "열 헤더: " & columnHeaderRange.Columns.Count & "열 / 값 범위: " & valueRange.Columns.Count & "열", _
-               vbExclamation, "모집단 구성표 리스트화"
-        Exit Function
-    End If
-
-    SampleDesign_ValidateManualListifyRanges = True
+    Set PopList_DetectBlocks = blocks
 End Function
 
-Private Sub SampleDesign_WritePopulationListManual(ByVal rowHeaderRange As Range, _
-                                                   ByVal columnHeaderRange As Range, _
-                                                   ByVal valueRange As Range, _
-                                                   ByVal outWs As Worksheet, _
-                                                   ByVal dimensionName As String, _
-                                                   ByVal valueName As String)
+Private Function PopList_TryDetectBlock(ByVal sourceRange As Range, ByVal headerRelRow As Long) As Object
+    Dim firstValueCol As Long
+    firstValueCol = PopList_FirstValueHeaderCol(sourceRange, headerRelRow)
+    If firstValueCol <= 1 Then Exit Function
+
+    Dim rowAxisCount As Long
+    rowAxisCount = firstValueCol - 1
+
+    Dim valueCols As Collection
+    Set valueCols = PopList_DetectValueColumns(sourceRange, headerRelRow, firstValueCol)
+    If valueCols.Count = 0 Then Exit Function
+
+    Dim nonNumericHeaderCount As Long
+    nonNumericHeaderCount = PopList_CountNonNumericHeaders(sourceRange, headerRelRow, valueCols)
+    If Not PopList_RowAxisLooksLikeHeader(sourceRange, headerRelRow, rowAxisCount) _
+       And nonNumericHeaderCount = 0 Then Exit Function
+
+    Dim dataEndRow As Long
+    dataEndRow = PopList_FindDataEndRow(sourceRange, headerRelRow, valueCols)
+    If dataEndRow <= headerRelRow Then Exit Function
+    If PopList_CountUsableDataRows(sourceRange, headerRelRow + 1, dataEndRow, rowAxisCount, valueCols) = 0 Then Exit Function
+
+    Dim rowAxisHeaders As Collection
+    Set rowAxisHeaders = PopList_ReadRowAxisHeaders(sourceRange, headerRelRow, rowAxisCount)
+
+    Dim block As Object
+    Set block = CreateObject("Scripting.Dictionary")
+    block.Add "title", PopList_FindTitle(sourceRange, headerRelRow)
+    block.Add "headerRelRow", headerRelRow
+    block.Add "dataStartRelRow", headerRelRow + 1
+    block.Add "dataEndRelRow", dataEndRow
+    block.Add "rowAxisCount", rowAxisCount
+    block.Add "firstValueRelCol", firstValueCol
+    block.Add "valueCols", valueCols
+    block.Add "rowAxisHeaders", rowAxisHeaders
+    Set PopList_TryDetectBlock = block
+End Function
+
+Private Function PopList_FirstValueHeaderCol(ByVal sourceRange As Range, ByVal headerRelRow As Long) As Long
+    Dim relCol As Long
+    For relCol = 2 To sourceRange.Columns.Count
+        Dim headerText As String
+        headerText = PopList_CellText(sourceRange.Cells(headerRelRow, relCol))
+        If Len(headerText) > 0 And Not PopList_IsTotalLabel(headerText) Then
+            If PopList_ColumnHasNumericBelow(sourceRange, headerRelRow, relCol) Then
+                PopList_FirstValueHeaderCol = relCol
+                Exit Function
+            End If
+        End If
+    Next relCol
+End Function
+
+Private Function PopList_DetectValueColumns(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal firstValueCol As Long) As Collection
+    Dim cols As Collection
+    Set cols = New Collection
+
+    Dim relCol As Long
+    For relCol = firstValueCol To sourceRange.Columns.Count
+        Dim headerText As String
+        headerText = PopList_CellText(sourceRange.Cells(headerRelRow, relCol))
+        If Len(headerText) > 0 And Not PopList_IsTotalLabel(headerText) Then
+            If PopList_ColumnHasNumericBelow(sourceRange, headerRelRow, relCol) Then cols.Add relCol
+        End If
+    Next relCol
+
+    Set PopList_DetectValueColumns = cols
+End Function
+
+Private Function PopList_ColumnHasNumericBelow(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal relCol As Long) As Boolean
+    Dim relRow As Long
+    Dim scanLimit As Long
+    scanLimit = headerRelRow + 80
+    If scanLimit > sourceRange.Rows.Count Then scanLimit = sourceRange.Rows.Count
+
+    For relRow = headerRelRow + 1 To scanLimit
+        If PopList_IsNumberLike(sourceRange.Cells(relRow, relCol).Value) Then
+            PopList_ColumnHasNumericBelow = True
+            Exit Function
+        End If
+    Next relRow
+End Function
+
+Private Function PopList_FindDataEndRow(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal valueCols As Collection) As Long
+    Dim seenData As Boolean
+    Dim relRow As Long
+
+    For relRow = headerRelRow + 1 To sourceRange.Rows.Count
+        If PopList_RowHasNumericInValueCols(sourceRange, relRow, valueCols) Then
+            seenData = True
+            PopList_FindDataEndRow = relRow
+        ElseIf seenData Then
+            Exit Function
+        End If
+    Next relRow
+End Function
+
+Private Function PopList_RowHasNumericInValueCols(ByVal sourceRange As Range, ByVal relRow As Long, ByVal valueCols As Collection) As Boolean
+    Dim i As Long
+    For i = 1 To valueCols.Count
+        If PopList_IsNumberLike(sourceRange.Cells(relRow, CLng(valueCols(i))).Value) Then
+            PopList_RowHasNumericInValueCols = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function PopList_CountUsableDataRows(ByVal sourceRange As Range, ByVal firstRelRow As Long, ByVal lastRelRow As Long, _
+                                             ByVal rowAxisCount As Long, ByVal valueCols As Collection) As Long
+    Dim relRow As Long
+    For relRow = firstRelRow To lastRelRow
+        If Not PopList_RowIsTotalByCurrentCells(sourceRange, relRow, rowAxisCount) Then
+            If PopList_RowHasNumericInValueCols(sourceRange, relRow, valueCols) Then PopList_CountUsableDataRows = PopList_CountUsableDataRows + 1
+        End If
+    Next relRow
+End Function
+
+Private Function PopList_ReadRowAxisHeaders(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal rowAxisCount As Long) As Collection
+    Dim headers As Collection
+    Set headers = New Collection
+
+    Dim relCol As Long
+    For relCol = 1 To rowAxisCount
+        Dim headerText As String
+        headerText = PopList_CellText(sourceRange.Cells(headerRelRow, relCol))
+        If Len(headerText) = 0 Then headerText = "행축" & relCol
+        headers.Add headerText
+    Next relCol
+
+    Set PopList_ReadRowAxisHeaders = headers
+End Function
+
+Private Function PopList_RowAxisLooksLikeHeader(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal rowAxisCount As Long) As Boolean
+    Dim joinedText As String
+    Dim relCol As Long
+    For relCol = 1 To rowAxisCount
+        joinedText = joinedText & PopList_NormalizeLabel(PopList_CellText(sourceRange.Cells(headerRelRow, relCol))) & "|"
+    Next relCol
+
+    If InStr(1, joinedText, "구분", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "분류", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "항목", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "업종", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "지역", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "성별", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "연령", vbTextCompare) > 0 _
+       Or InStr(1, joinedText, "규모", vbTextCompare) > 0 Then
+        PopList_RowAxisLooksLikeHeader = True
+    End If
+End Function
+
+Private Function PopList_CountNonNumericHeaders(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal valueCols As Collection) As Long
+    Dim i As Long
+    For i = 1 To valueCols.Count
+        Dim headerText As String
+        headerText = PopList_CellText(sourceRange.Cells(headerRelRow, CLng(valueCols(i))))
+        If Len(headerText) > 0 And Not PopList_IsNumberLike(headerText) Then PopList_CountNonNumericHeaders = PopList_CountNonNumericHeaders + 1
+    Next i
+End Function
+
+Private Function PopList_FindTitle(ByVal sourceRange As Range, ByVal headerRelRow As Long) As String
+    Dim relRow As Long
+    For relRow = headerRelRow - 1 To 1 Step -1
+        If PopList_RowNonEmptyCount(sourceRange, relRow) > 0 Then
+            PopList_FindTitle = PopList_FirstTextInRow(sourceRange, relRow)
+            If Len(PopList_FindTitle) > 0 Then Exit Function
+        End If
+    Next relRow
+    PopList_FindTitle = sourceRange.Worksheet.Name & "!" & sourceRange.Rows(headerRelRow).Address(False, False)
+End Function
+
+Private Function PopList_RowNonEmptyCount(ByVal sourceRange As Range, ByVal relRow As Long) As Long
+    Dim relCol As Long
+    For relCol = 1 To sourceRange.Columns.Count
+        If Len(PopList_CellText(sourceRange.Cells(relRow, relCol))) > 0 Then PopList_RowNonEmptyCount = PopList_RowNonEmptyCount + 1
+    Next relCol
+End Function
+
+Private Function PopList_FirstTextInRow(ByVal sourceRange As Range, ByVal relRow As Long) As String
+    Dim relCol As Long
+    For relCol = 1 To sourceRange.Columns.Count
+        PopList_FirstTextInRow = PopList_CellText(sourceRange.Cells(relRow, relCol))
+        If Len(PopList_FirstTextInRow) > 0 Then Exit Function
+    Next relCol
+End Function
+
+Private Function PopList_ShowPreviewForm(ByVal blocks As Collection, ByVal sourceRange As Range, _
+                                         ByRef columnAxisName As String, ByRef valueName As String, _
+                                         ByRef outputSheetName As String) As Boolean
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmPopulationListifyPreview")
+    form.Configure PopList_BuildSummary(blocks, sourceRange), _
+                   PopList_BuildPreview(blocks, sourceRange, columnAxisName, valueName, 25), _
+                   columnAxisName, valueName, outputSheetName
+    form.Show
+
+    If CBool(form.Confirmed) Then
+        columnAxisName = Trim$(CStr(form.ColumnAxisName))
+        valueName = Trim$(CStr(form.ValueName))
+        outputSheetName = Trim$(CStr(form.OutputSheetName))
+        If Len(columnAxisName) = 0 Then columnAxisName = "가로구분"
+        If Len(valueName) = 0 Then valueName = "값"
+        If Len(outputSheetName) = 0 Then outputSheetName = "모집단_리스트"
+        PopList_ShowPreviewForm = True
+    End If
+    Unload form
+    Exit Function
+
+Fallback:
+    On Error Resume Next
+    If Not form Is Nothing Then Unload form
+    On Error GoTo 0
+
+    If MsgBox("미리보기 창을 열지 못했습니다. 탐지 결과를 기준으로 바로 실행할까요?" & vbCrLf & vbCrLf & _
+              PopList_BuildSummary(blocks, sourceRange), _
+              vbQuestion + vbYesNo, "모집단 구성표 리스트화") = vbYes Then
+        PopList_ShowPreviewForm = True
+    End If
+End Function
+
+Private Function PopList_BuildSummary(ByVal blocks As Collection, ByVal sourceRange As Range) As String
+    Dim result As String
+    result = "선택 범위: " & sourceRange.Worksheet.Name & "!" & sourceRange.Address(False, False) & vbCrLf & _
+             "탐지된 집계표: " & blocks.Count & "개" & vbCrLf & vbCrLf
+
+    Dim i As Long
+    For i = 1 To blocks.Count
+        Dim block As Object
+        Set block = blocks(i)
+        result = result & i & ". " & CStr(block("title")) & vbCrLf & _
+                 "   헤더 행: " & (sourceRange.Row + CLng(block("headerRelRow")) - 1) & _
+                 " / 세로축: " & PopList_JoinCollection(block("rowAxisHeaders"), ", ") & _
+                 " / 가로 항목: " & CStr(block("valueCols").Count) & _
+                 " / 데이터 행: " & PopList_CountUsableDataRows(sourceRange, CLng(block("dataStartRelRow")), CLng(block("dataEndRelRow")), CLng(block("rowAxisCount")), block("valueCols")) & vbCrLf
+    Next i
+
+    PopList_BuildSummary = result
+End Function
+
+Private Function PopList_BuildPreview(ByVal blocks As Collection, ByVal sourceRange As Range, _
+                                      ByVal columnAxisName As String, ByVal valueName As String, _
+                                      ByVal maxRows As Long) As String
+    Dim result As String
+    result = "표제목" & vbTab & "행축명" & vbTab & "행축값" & vbTab & columnAxisName & vbTab & valueName & vbCrLf
+
+    Dim madeRows As Long
+    Dim i As Long
+    For i = 1 To blocks.Count
+        Dim block As Object
+        Set block = blocks(i)
+
+        Dim lastSeen() As String
+        ReDim lastSeen(1 To CLng(block("rowAxisCount")))
+
+        Dim relRow As Long
+        For relRow = CLng(block("dataStartRelRow")) To CLng(block("dataEndRelRow"))
+            If Not PopList_RowIsTotalByCurrentCells(sourceRange, relRow, CLng(block("rowAxisCount"))) Then
+                PopList_UpdateLastSeen sourceRange, relRow, CLng(block("rowAxisCount")), lastSeen
+
+                Dim valueCols As Collection
+                Set valueCols = block("valueCols")
+                Dim c As Long
+                For c = 1 To valueCols.Count
+                    Dim relCol As Long
+                    relCol = CLng(valueCols(c))
+                    If PopList_IsNumberLike(sourceRange.Cells(relRow, relCol).Value) Then
+                        result = result & CStr(block("title")) & vbTab & _
+                                 PopList_CollectionText(block("rowAxisHeaders"), 1) & vbTab & _
+                                 lastSeen(1) & vbTab & _
+                                 PopList_CellText(sourceRange.Cells(CLng(block("headerRelRow")), relCol)) & vbTab & _
+                                 PopList_ToNumber(sourceRange.Cells(relRow, relCol).Value) & vbCrLf
+                        madeRows = madeRows + 1
+                        If madeRows >= maxRows Then
+                            PopList_BuildPreview = result & "... (미리보기 " & maxRows & "행까지만 표시)"
+                            Exit Function
+                        End If
+                    End If
+                Next c
+            End If
+        Next relRow
+    Next i
+
+    PopList_BuildPreview = result
+End Function
+
+Private Function PopList_WriteOutput(ByVal blocks As Collection, ByVal sourceRange As Range, ByVal outWs As Worksheet, _
+                                     ByVal columnAxisName As String, ByVal valueName As String) As Long
     outWs.Cells.Clear
     outWs.Range("A1").Value = "모집단 구성표 리스트"
     outWs.Range("A1").Font.Bold = True
     outWs.Range("A1").Font.Size = 14
     outWs.Range("A2").Value = "원본 시트"
-    outWs.Range("B2").Value = valueRange.Worksheet.Name
-    outWs.Range("A3").Value = "행 구분 범위"
-    outWs.Range("B3").Value = rowHeaderRange.Address(False, False)
-    outWs.Range("D3").Value = "열 헤더 범위"
-    outWs.Range("E3").Value = columnHeaderRange.Address(False, False)
-    outWs.Range("G3").Value = "값 범위"
-    outWs.Range("H3").Value = valueRange.Address(False, False)
+    outWs.Range("B2").Value = sourceRange.Worksheet.Name
+    outWs.Range("A3").Value = "원본 범위"
+    outWs.Range("B3").Value = sourceRange.Address(False, False)
 
-    Dim rowFieldCount As Long
-    rowFieldCount = rowHeaderRange.Columns.Count
+    Dim maxAxisCount As Long
+    maxAxisCount = PopList_MaxRowAxisCount(blocks)
 
-    Dim headerFieldLimit As Long
-    headerFieldLimit = Application.Min(rowFieldCount, 5)
+    Dim headerRow As Long
+    headerRow = 5
+    Dim outCol As Long
+    outCol = 1
+    outWs.Cells(headerRow, outCol).Value = "표제목"
+    outCol = outCol + 1
 
-    SampleDesign_WriteArray outWs, 5, 1, Array("쿼터ID", "행구분1", "행구분2", "행구분3", "행구분4", "행구분5", dimensionName, valueName, "원본행", "원본열")
+    Dim axisIndex As Long
+    For axisIndex = 1 To maxAxisCount
+        outWs.Cells(headerRow, outCol).Value = "행축" & axisIndex & "명"
+        outWs.Cells(headerRow, outCol + 1).Value = "행축" & axisIndex & "값"
+        outCol = outCol + 2
+    Next axisIndex
 
-    Dim f As Long
-    For f = 1 To headerFieldLimit
-        Dim inferredHeader As String
-        inferredHeader = SampleDesign_InferRowHeaderCaption(rowHeaderRange, f)
-        If Len(inferredHeader) > 0 Then outWs.Cells(5, 1 + f).Value = inferredHeader
-    Next f
+    Dim columnAxisCol As Long
+    Dim valueCol As Long
+    Dim sourceRowCol As Long
+    Dim sourceColCol As Long
+    columnAxisCol = outCol
+    valueCol = outCol + 1
+    sourceRowCol = outCol + 2
+    sourceColCol = outCol + 3
+    outWs.Cells(headerRow, columnAxisCol).Value = columnAxisName
+    outWs.Cells(headerRow, valueCol).Value = valueName
+    outWs.Cells(headerRow, sourceRowCol).Value = "원본행"
+    outWs.Cells(headerRow, sourceColCol).Value = "원본열"
 
-    Dim lastSeen() As String
-    ReDim lastSeen(1 To rowFieldCount)
-
-    Dim relRow As Long
-    Dim relCol As Long
     Dim outRow As Long
-    outRow = 6
+    outRow = headerRow + 1
 
-    For relRow = 1 To valueRange.Rows.Count
-        For f = 1 To rowFieldCount
-            Dim curText As String
-            curText = Trim$(CStr(rowHeaderRange.Cells(relRow, f).Value))
-            If Len(curText) > 0 Then lastSeen(f) = curText
-        Next f
+    Dim i As Long
+    For i = 1 To blocks.Count
+        Dim block As Object
+        Set block = blocks(i)
 
-        If Not SampleDesign_IsManualTotalRow(lastSeen, rowFieldCount) Then
-            For relCol = 1 To valueRange.Columns.Count
-                If SampleDesign_IsPopulationNumber(valueRange.Cells(relRow, relCol).Value) Then
-                    Dim popN As Double
-                    popN = SampleDesign_ToPopulationNumber(valueRange.Cells(relRow, relCol).Value)
-                    If popN > 0 Then
-                        outWs.Cells(outRow, 1).Value = "Q" & Format$(outRow - 5, "0000")
-                        For f = 1 To headerFieldLimit
-                            outWs.Cells(outRow, 1 + f).Value = lastSeen(f)
-                        Next f
-                        outWs.Cells(outRow, 7).Value = Trim$(CStr(columnHeaderRange.Cells(1, relCol).Value))
-                        outWs.Cells(outRow, 8).Value = popN
-                        outWs.Cells(outRow, 9).Value = valueRange.Row + relRow - 1
-                        outWs.Cells(outRow, 10).Value = valueRange.Column + relCol - 1
+        Dim lastSeen() As String
+        ReDim lastSeen(1 To CLng(block("rowAxisCount")))
+
+        Dim relRow As Long
+        For relRow = CLng(block("dataStartRelRow")) To CLng(block("dataEndRelRow"))
+            If Not PopList_RowIsTotalByCurrentCells(sourceRange, relRow, CLng(block("rowAxisCount"))) Then
+                PopList_UpdateLastSeen sourceRange, relRow, CLng(block("rowAxisCount")), lastSeen
+
+                Dim valueCols As Collection
+                Set valueCols = block("valueCols")
+                Dim valueIndex As Long
+                For valueIndex = 1 To valueCols.Count
+                    Dim relCol As Long
+                    relCol = CLng(valueCols(valueIndex))
+                    If PopList_IsNumberLike(sourceRange.Cells(relRow, relCol).Value) Then
+                        outWs.Cells(outRow, 1).Value = CStr(block("title"))
+
+                        outCol = 2
+                        For axisIndex = 1 To maxAxisCount
+                            If axisIndex <= CLng(block("rowAxisCount")) Then
+                                outWs.Cells(outRow, outCol).Value = PopList_CollectionText(block("rowAxisHeaders"), axisIndex)
+                                outWs.Cells(outRow, outCol + 1).Value = lastSeen(axisIndex)
+                            End If
+                            outCol = outCol + 2
+                        Next axisIndex
+
+                        outWs.Cells(outRow, columnAxisCol).Value = PopList_CellText(sourceRange.Cells(CLng(block("headerRelRow")), relCol))
+                        outWs.Cells(outRow, valueCol).Value = PopList_ToNumber(sourceRange.Cells(relRow, relCol).Value)
+                        outWs.Cells(outRow, sourceRowCol).Value = sourceRange.Row + relRow - 1
+                        outWs.Cells(outRow, sourceColCol).Value = sourceRange.Column + relCol - 1
+
                         outRow = outRow + 1
                     End If
-                End If
-            Next relCol
-        End If
-    Next relRow
+                Next valueIndex
+            End If
+        Next relRow
+    Next i
 
-    With outWs.Range(outWs.Cells(5, 1), outWs.Cells(Application.Max(5, outRow - 1), 10))
+    Dim lastCol As Long
+    lastCol = sourceColCol
+    With outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(Application.Max(headerRow, outRow - 1), lastCol))
         .Borders.LineStyle = xlContinuous
         .Columns.AutoFit
     End With
-    outWs.Range("A5:J5").Font.Bold = True
-    outWs.Range("A5:J5").Interior.Color = RGB(220, 235, 250)
-    outWs.Range("H:H").NumberFormat = "#,##0"
+    outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(headerRow, lastCol)).Font.Bold = True
+    outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(headerRow, lastCol)).Interior.Color = RGB(220, 235, 250)
+    outWs.Columns(valueCol).NumberFormat = "#,##0"
+
+    PopList_WriteOutput = outRow - headerRow - 1
+End Function
+
+Private Sub PopList_UpdateLastSeen(ByVal sourceRange As Range, ByVal relRow As Long, ByVal rowAxisCount As Long, ByRef lastSeen() As String)
+    Dim axisIndex As Long
+    For axisIndex = 1 To rowAxisCount
+        Dim axisValue As String
+        axisValue = PopList_CellText(sourceRange.Cells(relRow, axisIndex))
+        If Len(axisValue) > 0 Then lastSeen(axisIndex) = axisValue
+    Next axisIndex
 End Sub
 
-Private Function SampleDesign_InferRowHeaderCaption(ByVal rowHeaderRange As Range, ByVal relCol As Long) As String
-    If rowHeaderRange.Row > 1 Then
-        SampleDesign_InferRowHeaderCaption = Trim$(CStr(rowHeaderRange.Worksheet.Cells(rowHeaderRange.Row - 1, rowHeaderRange.Column + relCol - 1).Value))
-    End If
-    If Len(SampleDesign_InferRowHeaderCaption) = 0 Then SampleDesign_InferRowHeaderCaption = "행구분" & relCol
-End Function
-
-Private Function SampleDesign_IsManualTotalRow(ByRef lastSeen() As String, ByVal rowFieldCount As Long) As Boolean
-    Dim f As Long
-    For f = 1 To rowFieldCount
-        Dim textValue As String
-        textValue = Replace(Trim$(lastSeen(f)), " ", "")
-        If textValue = "계" Or textValue = "합계" Or textValue = "총계" Then
-            SampleDesign_IsManualTotalRow = True
+Private Function PopList_RowIsTotalByCurrentCells(ByVal sourceRange As Range, ByVal relRow As Long, ByVal rowAxisCount As Long) As Boolean
+    Dim axisIndex As Long
+    For axisIndex = 1 To rowAxisCount
+        If PopList_IsTotalLabel(PopList_CellText(sourceRange.Cells(relRow, axisIndex))) Then
+            PopList_RowIsTotalByCurrentCells = True
             Exit Function
         End If
-    Next f
+    Next axisIndex
 End Function
 
-Private Function SampleDesign_DetectCrosstabHeaderRow(ByVal tableRange As Range) As Long
-    Dim maxScanRows As Long
-    maxScanRows = Application.Min(5, tableRange.Rows.Count)
-
-    Dim r As Long
-    Dim bestRow As Long
-    Dim bestScore As Long
-    For r = 1 To maxScanRows
-        Dim textCount As Long
-        Dim numericDataCols As Long
-        Dim c As Long
-
-        For c = 1 To tableRange.Columns.Count
-            If Len(Trim$(CStr(tableRange.Cells(r, c).Value))) > 0 Then textCount = textCount + 1
-            If SampleDesign_ColumnHasNumericBelow(tableRange, r, c) Then numericDataCols = numericDataCols + 1
-        Next c
-
-        Dim score As Long
-        score = textCount + numericDataCols * 2
-        If SampleDesign_RowLooksLikeHeader(tableRange, r) Then score = score + 10
-        If score > bestScore Then
-            bestScore = score
-            bestRow = r
-        End If
-    Next r
-
-    SampleDesign_DetectCrosstabHeaderRow = bestRow
+Private Function PopList_MaxRowAxisCount(ByVal blocks As Collection) As Long
+    Dim i As Long
+    For i = 1 To blocks.Count
+        If CLng(blocks(i)("rowAxisCount")) > PopList_MaxRowAxisCount Then PopList_MaxRowAxisCount = CLng(blocks(i)("rowAxisCount"))
+    Next i
 End Function
 
-Private Function SampleDesign_RowLooksLikeHeader(ByVal tableRange As Range, ByVal relRow As Long) As Boolean
-    Dim c As Long
-    For c = 1 To tableRange.Columns.Count
-        Dim textValue As String
-        textValue = Replace(Trim$(CStr(tableRange.Cells(relRow, c).Value)), " ", "")
-        If textValue = "합계" Or textValue = "계" _
-           Or InStr(1, textValue, "종사", vbTextCompare) > 0 _
-           Or InStr(1, textValue, "분류", vbTextCompare) > 0 _
-           Or InStr(1, textValue, "명", vbTextCompare) > 0 Then
-            SampleDesign_RowLooksLikeHeader = True
-            Exit Function
-        End If
-    Next c
+Private Function PopList_JoinCollection(ByVal items As Collection, ByVal delimiter As String) As String
+    Dim i As Long
+    For i = 1 To items.Count
+        If Len(PopList_JoinCollection) > 0 Then PopList_JoinCollection = PopList_JoinCollection & delimiter
+        PopList_JoinCollection = PopList_JoinCollection & CStr(items(i))
+    Next i
 End Function
 
-Private Function SampleDesign_DetectRowFieldCount(ByVal tableRange As Range, ByVal headerRelRow As Long) As Long
-    Dim c As Long
-    For c = 1 To tableRange.Columns.Count
-        If SampleDesign_ColumnHasNumericBelow(tableRange, headerRelRow, c) Then
-            SampleDesign_DetectRowFieldCount = c - 1
-            Exit Function
-        End If
-    Next c
+Private Function PopList_CollectionText(ByVal items As Collection, ByVal index As Long) As String
+    If index >= 1 And index <= items.Count Then PopList_CollectionText = CStr(items(index))
 End Function
 
-Private Function SampleDesign_DetectLastValueColumn(ByVal tableRange As Range, ByVal headerRelRow As Long, ByVal firstValueCol As Long) As Long
-    Dim c As Long
-    For c = tableRange.Columns.Count To firstValueCol Step -1
-        Dim headerText As String
-        headerText = Replace(Trim$(CStr(tableRange.Cells(headerRelRow, c).Value)), " ", "")
-        If headerText <> "합계" And headerText <> "계" And SampleDesign_ColumnHasNumericBelow(tableRange, headerRelRow, c) Then
-            SampleDesign_DetectLastValueColumn = c
-            Exit Function
-        End If
-    Next c
+Private Function PopList_CellText(ByVal targetCell As Range) As String
+    If IsError(targetCell.Value) Or IsEmpty(targetCell.Value) Then Exit Function
+    PopList_CellText = Trim$(CStr(targetCell.Value))
 End Function
 
-Private Function SampleDesign_ColumnHasNumericBelow(ByVal tableRange As Range, ByVal headerRelRow As Long, ByVal relCol As Long) As Boolean
-    Dim r As Long
-    For r = headerRelRow + 1 To tableRange.Rows.Count
-        If SampleDesign_IsPopulationNumber(tableRange.Cells(r, relCol).Value) Then
-            SampleDesign_ColumnHasNumericBelow = True
-            Exit Function
-        End If
-    Next r
-End Function
-
-Private Function SampleDesign_IsPopulationNumber(ByVal valueIn As Variant) As Boolean
+Private Function PopList_IsNumberLike(ByVal valueIn As Variant) As Boolean
     If IsError(valueIn) Or IsEmpty(valueIn) Then Exit Function
 
     Dim textValue As String
@@ -6937,98 +7088,48 @@ Private Function SampleDesign_IsPopulationNumber(ByVal valueIn As Variant) As Bo
     textValue = Replace(textValue, ",", "")
     textValue = Replace(textValue, " ", "")
     If Len(textValue) = 0 Then Exit Function
-    SampleDesign_IsPopulationNumber = IsNumeric(textValue)
+    PopList_IsNumberLike = IsNumeric(textValue)
 End Function
 
-Private Function SampleDesign_ToPopulationNumber(ByVal valueIn As Variant) As Double
+Private Function PopList_ToNumber(ByVal valueIn As Variant) As Double
     Dim textValue As String
     textValue = Trim$(CStr(valueIn))
     textValue = Replace(textValue, ",", "")
     textValue = Replace(textValue, " ", "")
-    If IsNumeric(textValue) Then SampleDesign_ToPopulationNumber = CDbl(textValue)
+    If IsNumeric(textValue) Then PopList_ToNumber = CDbl(textValue)
 End Function
 
-Private Function SampleDesign_IsTotalRowLabel(ByVal tableRange As Range, ByVal relRow As Long, ByVal rowFieldCount As Long) As Boolean
-    Dim c As Long
-    For c = 1 To rowFieldCount
-        Dim textValue As String
-        textValue = Replace(Trim$(CStr(tableRange.Cells(relRow, c).Value)), " ", "")
-        If textValue = "계" Or textValue = "합계" Or textValue = "총계" Then
-            SampleDesign_IsTotalRowLabel = True
-            Exit Function
-        End If
-    Next c
+Private Function PopList_IsTotalLabel(ByVal labelText As String) As Boolean
+    Dim normalizedText As String
+    normalizedText = PopList_NormalizeLabel(labelText)
+    PopList_IsTotalLabel = (normalizedText = "계" _
+                            Or normalizedText = "합계" _
+                            Or normalizedText = "총계" _
+                            Or normalizedText = "전체" _
+                            Or UCase$(normalizedText) = "TOTAL")
 End Function
 
-Private Sub SampleDesign_WritePopulationList(ByVal tableRange As Range, ByVal outWs As Worksheet, _
-                                             ByVal headerRelRow As Long, ByVal rowFieldCount As Long, _
-                                             ByVal firstValueCol As Long, ByVal lastValueCol As Long)
-    outWs.Cells.Clear
-    outWs.Range("A1").Value = "모집단 구성표 리스트"
-    outWs.Range("A1").Font.Bold = True
-    outWs.Range("A1").Font.Size = 14
-    outWs.Range("A2").Value = "원본 시트"
-    outWs.Range("B2").Value = tableRange.Worksheet.Name
-    outWs.Range("A3").Value = "원본 범위"
-    outWs.Range("B3").Value = tableRange.Address(False, False)
+Private Function PopList_NormalizeLabel(ByVal labelText As String) As String
+    PopList_NormalizeLabel = Replace(Trim$(CStr(labelText)), " ", "")
+End Function
 
-    SampleDesign_WriteArray outWs, 5, 1, Array("쿼터ID", "행구분1", "행구분2", "행구분3", "행구분4", "행구분5", "열구분", "모집단수", "원본행", "원본열")
+Private Function PopList_CleanSheetName(ByVal sheetName As String, ByVal defaultName As String) As String
+    Dim result As String
+    result = Trim$(sheetName)
+    If Len(result) = 0 Then result = defaultName
 
-    Dim headerFieldLimit As Long
-    headerFieldLimit = Application.Min(rowFieldCount, 5)
+    result = Replace(result, "\", "_")
+    result = Replace(result, "/", "_")
+    result = Replace(result, "?", "_")
+    result = Replace(result, "*", "_")
+    result = Replace(result, "[", "_")
+    result = Replace(result, "]", "_")
+    result = Replace(result, ":", "_")
 
-    Dim headerField As Long
-    For headerField = 1 To headerFieldLimit
-        Dim headerCaption As String
-        headerCaption = Trim$(CStr(tableRange.Cells(headerRelRow, headerField).Value))
-        If Len(headerCaption) > 0 Then outWs.Cells(5, 1 + headerField).Value = headerCaption
-    Next headerField
-
-    Dim lastSeen() As String
-    ReDim lastSeen(1 To rowFieldCount)
-
-    Dim outRow As Long
-    Dim relRow As Long
-    outRow = 6
-
-    For relRow = headerRelRow + 1 To tableRange.Rows.Count
-        If Not SampleDesign_IsTotalRowLabel(tableRange, relRow, rowFieldCount) Then
-            Dim f As Long
-            For f = 1 To rowFieldCount
-                Dim curText As String
-                curText = Trim$(CStr(tableRange.Cells(relRow, f).Value))
-                If Len(curText) > 0 Then lastSeen(f) = curText
-            Next f
-
-            Dim relCol As Long
-            For relCol = firstValueCol To lastValueCol
-                If SampleDesign_IsPopulationNumber(tableRange.Cells(relRow, relCol).Value) Then
-                    Dim popN As Double
-                    popN = SampleDesign_ToPopulationNumber(tableRange.Cells(relRow, relCol).Value)
-                    If popN > 0 Then
-                        outWs.Cells(outRow, 1).Value = "Q" & Format$(outRow - 5, "0000")
-                        For f = 1 To headerFieldLimit
-                            outWs.Cells(outRow, 1 + f).Value = lastSeen(f)
-                        Next f
-                        outWs.Cells(outRow, 7).Value = Trim$(CStr(tableRange.Cells(headerRelRow, relCol).Value))
-                        outWs.Cells(outRow, 8).Value = popN
-                        outWs.Cells(outRow, 9).Value = tableRange.Row + relRow - 1
-                        outWs.Cells(outRow, 10).Value = tableRange.Column + relCol - 1
-                        outRow = outRow + 1
-                    End If
-                End If
-            Next relCol
-        End If
-    Next relRow
-
-    With outWs.Range(outWs.Cells(5, 1), outWs.Cells(Application.Max(5, outRow - 1), 10))
-        .Borders.LineStyle = xlContinuous
-        .Columns.AutoFit
-    End With
-    outWs.Range("A5:J5").Font.Bold = True
-    outWs.Range("A5:J5").Interior.Color = RGB(220, 235, 250)
-    outWs.Range("H:H").NumberFormat = "#,##0"
-End Sub
+    If Len(result) > 31 Then result = Left$(result, 31)
+    If Len(result) = 0 Then result = defaultName
+    PopList_CleanSheetName = result
+End Function
 
 Private Function SampleDesign_PrepareSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal overwritePrompt As String) As Worksheet
     Dim ws As Worksheet
