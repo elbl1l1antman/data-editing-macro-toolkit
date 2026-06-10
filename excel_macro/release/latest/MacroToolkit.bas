@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.0"
+Public Const TOOLKIT_VERSION As String = "1.1.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -3689,13 +3689,14 @@ End Function
 
 Private Function OD_SelectEasyCriteria(ByRef criteria As String) As Boolean
     Dim criteriaInput As String
-    criteriaInput = InputBox( _
-        "이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
-        "1. " & OD_IQR15 & " : 일반적인 윈저라이징 기준" & vbCrLf & _
-        "2. " & OD_IQR20 & " : 조금 더 완화된 IQR 기준" & vbCrLf & _
-        "3. " & OD_P95 & " : 하위 5% / 상위 5% 기준" & vbCrLf & _
-        "4. " & OD_P99 & " : 하위 1% / 상위 1% 기준", _
-        "이상치 대체 - 기준 선택", "1")
+    criteriaInput = Toolkit_ButtonMenu( _
+        "이상치 대체 - 기준 선택", _
+        "이상치 기준을 선택하세요.", _
+        "1" & vbTab & OD_IQR15 & " : 일반적인 윈저라이징 기준" & vbLf & _
+        "2" & vbTab & OD_IQR20 & " : 조금 더 완화된 IQR 기준" & vbLf & _
+        "3" & vbTab & OD_P95 & " : 하위 5% / 상위 5% 기준" & vbLf & _
+        "4" & vbTab & OD_P99 & " : 하위 1% / 상위 1% 기준", _
+        "1")
     If Len(Trim$(criteriaInput)) = 0 Then Exit Function
 
     If Not OD_MapEasyCriteria(criteriaInput, criteria) Then
@@ -3757,20 +3758,21 @@ Private Function OD_SelectNumericColumnFromRange(ByVal dataArea As Range, _
         Exit Function
     End If
 
-    Dim prompt As String
-    prompt = "선택 범위에서 숫자형 열을 찾았습니다." & vbCrLf & _
-             "이상치를 탐지할 열 번호를 선택하세요." & vbCrLf & vbCrLf
+    Dim optionsText As String
 
     For c = 1 To numericCols.Count
         Dim listItem As Variant
         listItem = numericCols(c)
-        prompt = prompt & c & ". " & CStr(listItem(1)) & _
-                 " (유효값 " & CLng(listItem(2)) & _
-                 "개, IQR 이상치 " & CLng(listItem(3)) & "개)" & vbCrLf
+        If Len(optionsText) > 0 Then optionsText = optionsText & vbLf
+        optionsText = optionsText & c & vbTab & CStr(listItem(1)) & _
+                      " (유효값 " & CLng(listItem(2)) & _
+                      "개, IQR 이상치 " & CLng(listItem(3)) & "개)"
     Next c
 
     Dim userInput As String
-    userInput = InputBox(prompt, "이상치 대체 - 숫자 열 선택", "1")
+    userInput = Toolkit_ButtonMenu("이상치 대체 - 숫자 열 선택", _
+                                   "선택 범위에서 숫자형 열을 찾았습니다. 이상치를 탐지할 열을 선택하세요.", _
+                                   optionsText, "1")
     If Len(Trim$(userInput)) = 0 Then Exit Function
     If Not IsNumeric(userInput) Then
         MsgBox "목록의 번호를 입력하세요.", vbExclamation, "이상치 대체"
@@ -3946,13 +3948,14 @@ End Function
 
 Private Function OD_SelectEasyMethod(ByRef method As String) As Boolean
     Dim methodInput As String
-    methodInput = InputBox( _
-        "이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
-        "1. " & OD_CAP & " : 하한보다 작으면 하한, 상한보다 크면 상한으로 대체" & vbCrLf & _
-        "2. " & OD_MEDIAN & " : 정상 범위 데이터의 중앙값으로 대체" & vbCrLf & _
-        "3. " & OD_MEAN & " : 정상 범위 데이터의 평균으로 대체" & vbCrLf & _
-        "4. " & OD_REVIEW & " : 옆 열에 원본을 복사하고 이상치만 표시", _
-        "이상치 대체 - 방식 선택", "1")
+    methodInput = Toolkit_ButtonMenu( _
+        "이상치 대체 - 방식 선택", _
+        "이상치 대체 방식을 선택하세요.", _
+        "1" & vbTab & OD_CAP & " : 하한보다 작으면 하한, 상한보다 크면 상한으로 대체" & vbLf & _
+        "2" & vbTab & OD_MEDIAN & " : 정상 범위 데이터의 중앙값으로 대체" & vbLf & _
+        "3" & vbTab & OD_MEAN & " : 정상 범위 데이터의 평균으로 대체" & vbLf & _
+        "4" & vbTab & OD_REVIEW & " : 옆 열에 원본을 복사하고 이상치만 표시", _
+        "1")
     If Len(Trim$(methodInput)) = 0 Then Exit Function
 
     If Not OD_MapEasyMethod(methodInput, method) Then
@@ -4202,6 +4205,7 @@ Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
     Set srcWs = dataArea.Worksheet
 
     Dim headerList As String
+    Dim headerOptions As String
     Dim defaultIndex As Long: defaultIndex = 0
     Dim c As Long
     For c = 1 To dataArea.Columns.Count
@@ -4209,15 +4213,16 @@ Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
         headerText = Trim$(CStr(dataArea.Cells(1, c).Value))
         If Len(headerText) = 0 Then headerText = "열" & c
         headerList = headerList & c & ". " & headerText & vbCrLf
+        If Len(headerOptions) > 0 Then headerOptions = headerOptions & vbLf
+        headerOptions = headerOptions & c & vbTab & headerText
         If defaultIndex = 0 And OD_ColumnHasNumericValue(dataArea, c) Then defaultIndex = c
     Next c
     If defaultIndex = 0 Then defaultIndex = 1
 
     Dim varInput As String
-    varInput = InputBox( _
-        "② 이상치를 탐지할 분석 변수를 선택하세요." & vbCrLf & vbCrLf & _
-        "아래 목록에서 번호 또는 변수명을 입력하세요." & vbCrLf & vbCrLf & headerList, _
-        "이상치 탐지 - 분석 변수", CStr(defaultIndex))
+    varInput = Toolkit_ButtonMenu("이상치 탐지 - 분석 변수", _
+                                  "이상치를 탐지할 분석 변수를 선택하세요.", _
+                                  headerOptions, CStr(defaultIndex))
     If Len(Trim$(varInput)) = 0 Then Exit Function
 
     Dim varIndex As Long
@@ -4245,13 +4250,13 @@ Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
     If Len(varName) = 0 Then varName = "열" & varIndex
 
     Dim criteriaInput As String
-    criteriaInput = InputBox( _
-        "③ 이상치 기준을 선택하세요." & vbCrLf & vbCrLf & _
-        "1. " & OD_IQR15 & vbCrLf & _
-        "2. " & OD_IQR20 & vbCrLf & _
-        "3. " & OD_P95 & vbCrLf & _
-        "4. " & OD_P99, _
-        "이상치 탐지 - 기준", "1")
+    criteriaInput = Toolkit_ButtonMenu("이상치 탐지 - 기준", _
+                                       "이상치 기준을 선택하세요.", _
+                                       "1" & vbTab & OD_IQR15 & vbLf & _
+                                       "2" & vbTab & OD_IQR20 & vbLf & _
+                                       "3" & vbTab & OD_P95 & vbLf & _
+                                       "4" & vbTab & OD_P99, _
+                                       "1")
     If Len(Trim$(criteriaInput)) = 0 Then Exit Function
 
     Select Case Trim$(criteriaInput)
@@ -4265,12 +4270,12 @@ Private Function OD_CollectRunInputs(ByRef srcWs As Worksheet, _
     End Select
 
     Dim methodInput As String
-    methodInput = InputBox( _
-        "④ 이상치 대체 방식을 선택하세요." & vbCrLf & vbCrLf & _
-        "1. " & OD_CAP & vbCrLf & _
-        "2. " & OD_MEDIAN & vbCrLf & _
-        "3. " & OD_MEAN, _
-        "이상치 탐지 - 대체 방식", "1")
+    methodInput = Toolkit_ButtonMenu("이상치 탐지 - 대체 방식", _
+                                     "이상치 대체 방식을 선택하세요.", _
+                                     "1" & vbTab & OD_CAP & vbLf & _
+                                     "2" & vbTab & OD_MEDIAN & vbLf & _
+                                     "3" & vbTab & OD_MEAN, _
+                                     "1")
     If Len(Trim$(methodInput)) = 0 Then Exit Function
 
     Select Case Trim$(methodInput)
@@ -4680,10 +4685,10 @@ Public Sub SPSS_RebuildTablesFromIndex()
         Dim tableList As String
         tableList = SPSS_FormatTableList(tables)
 
-        deleteTableInput = InputBox( _
-            "탐지한 표 목록입니다. 삭제할 표 번호만 입력하세요." & vbCrLf & _
-            "비워두면 모든 표를 남깁니다. 예: 2,5-7" & vbCrLf & vbCrLf & tableList, _
-            "SPSS 표 재구성 - 삭제할 표", "")
+        deleteTableInput = Toolkit_CheckListMenu( _
+            "SPSS 표 재구성 - 삭제할 표", _
+            "삭제할 표를 선택하세요. 선택하지 않으면 모든 표를 남깁니다.", _
+            Toolkit_OptionsFromNumberedPrompt(tableList), "")
         Set deleteTables = SPSS_ParseIndexSelection(deleteTableInput, tables.Count)
 
         Set banners = SPSS_CollectUniqueBanners(tables, dataWs, deleteTables)
@@ -4697,10 +4702,10 @@ Public Sub SPSS_RebuildTablesFromIndex()
         bannerList = SPSS_FormatBannerList(banners)
 
         If banners.Count > 0 Then
-            deleteBannerInput = InputBox( _
-                "탐지한 배너 목록입니다. 삭제할 배너 번호만 입력하세요." & vbCrLf & _
-                "비워두면 모든 배너를 남깁니다. 예: 1,4-5" & vbCrLf & vbCrLf & bannerList, _
-                "SPSS 표 재구성 - 삭제할 배너", "")
+            deleteBannerInput = Toolkit_CheckListMenu( _
+                "SPSS 표 재구성 - 삭제할 배너", _
+                "삭제할 배너를 선택하세요. 선택하지 않으면 모든 배너를 남깁니다.", _
+                Toolkit_OptionsFromNumberedPrompt(bannerList), "")
 
         End If
     End If
@@ -4784,11 +4789,10 @@ Public Sub SPSS_DeleteVerticalBannersFromIndex()
     End If
 
     Dim deleteInput As String
-    deleteInput = InputBox( _
-        "삭제할 세로 배너 번호를 입력하세요." & vbCrLf & _
-        "BOT/TOP/MID 계열은 세로 배너로 분류합니다. 예: 1,3-4" & vbCrLf & vbCrLf & _
-        SPSS_FormatBannerList(verticalBanners), _
-        "SPSS 세로 배너 삭제", "")
+    deleteInput = Toolkit_CheckListMenu( _
+        "SPSS 세로 배너 삭제", _
+        "삭제할 세로 배너를 선택하세요. BOT/TOP/MID 계열은 세로 배너로 분류합니다.", _
+        Toolkit_OptionsFromNumberedPrompt(SPSS_FormatBannerList(verticalBanners)), "")
     If Len(Trim$(deleteInput)) = 0 Then Exit Sub
 
     Dim deleteBanners As Object
@@ -5777,7 +5781,13 @@ End Function
 
 Private Function Roster_SelectManualItems(ByVal title As String, ByVal promptText As String, ByVal maxIndex As Long, ByVal defaultText As String) As Object
     Dim inputText As String
-    inputText = InputBox(promptText, title, defaultText)
+    Dim optionsText As String
+    optionsText = Toolkit_OptionsFromNumberedPrompt(promptText)
+    If Len(optionsText) > 0 Then
+        inputText = Toolkit_CheckListMenu(title, Split(promptText, vbCrLf)(0), optionsText, defaultText)
+    Else
+        inputText = InputBox(promptText, title, defaultText)
+    End If
     Set Roster_SelectManualItems = SPSS_ParseIndexSelection(inputText, maxIndex)
 End Function
 
@@ -6492,7 +6502,7 @@ Public Sub SampleDesign_RunAllocation()
 
     If records.Count = 0 Then
         MsgBox "계산할 모집단 행을 찾지 못했습니다." & vbCrLf & _
-               "표본설계_입력 시트의 13행부터 모집단 정보를 입력하세요.", _
+               "표본설계_입력 시트의 14행부터 모집단 정보를 입력하세요.", _
                vbExclamation, "표본설계"
         Exit Sub
     End If
@@ -6627,6 +6637,13 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
     ws.Range("A7").Value = "배분 방식"
     ws.Range("A8").Value = "멱배분 alpha"
     ws.Range("A9").Value = "잔여 배정"
+    ws.Range("C3").Value = "선택"
+    ws.Range("C4").Value = "필수"
+    ws.Range("C5").Value = "선택"
+    ws.Range("C6").Value = "선택"
+    ws.Range("C7").Value = "필수"
+    ws.Range("C8").Value = "멱배분 선택 시 필수"
+    ws.Range("C9").Value = "자동"
     ws.Range("B3").Value = "신규 조사"
     ws.Range("B4").Value = 1000
     ws.Range("B5").Value = 0
@@ -6642,15 +6659,29 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
     ws.Range("D8").Value = "사용자 지정 가중"
     ws.Range("A11").Value = "모집단 표"
     ws.Range("A11").Font.Bold = True
-    SampleDesign_WriteArray ws, 12, 1, Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "모집단수", "우선배정여부", "최소표본", "최대표본", "사용자가중치", "비고")
-    SampleDesign_WriteArray ws, 13, 1, Array("Q001", "서울", "제조업", "10인 미만", "", "", 1000, "", "", "", "", "")
-    SampleDesign_WriteArray ws, 14, 1, Array("Q002", "부산", "서비스업", "10~49인", "", "", 500, "", "", "", "", "")
-    With ws.Range("A12:L12")
+    ws.Range("A12").Value = "쿼터 사용 여부"
+    SampleDesign_WriteArray ws, 12, 2, Array("사용", "사용", "사용", "미사용", "미사용")
+    ws.Range("G12").Value = "필수"
+    ws.Range("I12").Value = "선택"
+    ws.Range("J12").Value = "선택"
+    ws.Range("K12").Value = "사용자 지정 가중 선택 시 사용"
+    SampleDesign_WriteArray ws, 13, 1, Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "모집단수", "우선배정여부", "최소표본", "최대표본", "사용자가중치", "비고")
+    SampleDesign_WriteArray ws, 14, 1, Array("Q001", "서울", "제조업", "10인 미만", "", "", 1000, "", "", "", "", "")
+    SampleDesign_WriteArray ws, 15, 1, Array("Q002", "부산", "서비스업", "10~49인", "", "", 500, "", "", "", "", "")
+    With ws.Range("A13:L13")
         .Font.Bold = True
         .Interior.Color = RGB(220, 235, 250)
         .Borders.LineStyle = xlContinuous
     End With
-    ws.Range("A3:B9").Borders.LineStyle = xlContinuous
+    With ws.Range("A12:K12")
+        .Interior.Color = RGB(255, 245, 210)
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("B12:F12").Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, Formula1:="사용,미사용"
+    End With
+    ws.Range("A3:C9").Borders.LineStyle = xlContinuous
     ws.Columns("A:L").AutoFit
 End Sub
 
@@ -6671,17 +6702,17 @@ Private Sub SampleDesign_WriteEmptyReview(ByVal ws As Worksheet)
 End Sub
 
 Private Function SampleDesign_SelectMethod(ByRef methodName As String, ByRef alpha As Double) As Boolean
-    Dim prompt As String
-    prompt = "배분 방식을 선택하세요." & vbCrLf & vbCrLf & _
-             "1. 단순 비례" & vbCrLf & _
-             "2. 제곱근 비례" & vbCrLf & _
-             "3. 멱배분" & vbCrLf & _
-             "4. 균등 배분" & vbCrLf & _
-             "5. 사용자 지정 가중" & vbCrLf & vbCrLf & _
-             "현재 입력값: " & IIf(Len(methodName) = 0, "단순 비례", methodName)
-    Dim result As Variant
-    result = Application.InputBox(prompt, "표본설계 - 배분 방식", SampleDesign_MethodToChoice(methodName), Type:=2)
-    If VarType(result) = vbBoolean And result = False Then Exit Function
+    Dim result As String
+    result = Toolkit_ButtonMenu( _
+        "표본설계 - 배분 방식", _
+        "배분 방식을 선택하세요." & vbCrLf & "현재 입력값: " & IIf(Len(methodName) = 0, "단순 비례", methodName), _
+        "1" & vbTab & "단순 비례" & vbLf & _
+        "2" & vbTab & "제곱근 비례" & vbLf & _
+        "3" & vbTab & "멱배분" & vbLf & _
+        "4" & vbTab & "균등 배분" & vbLf & _
+        "5" & vbTab & "사용자 지정 가중", _
+        SampleDesign_MethodToChoice(methodName))
+    If Len(Trim$(result)) = 0 Then Exit Function
     Select Case Trim$(CStr(result))
         Case "1", "단순 비례", "비례": methodName = "단순 비례"
         Case "2", "제곱근 비례", "제곱근": methodName = "제곱근 비례": alpha = 0.5
@@ -6717,9 +6748,9 @@ Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByRef records As 
     Set dict = CreateObject("Scripting.Dictionary")
     Dim lastRow As Long
     lastRow = ws.Cells(ws.Rows.Count, 7).End(xlUp).Row
-    If lastRow < 13 Then Exit Sub
+    If lastRow < 14 Then Exit Sub
     Dim r As Long
-    For r = 13 To lastRow
+    For r = 14 To lastRow
         Dim popN As Double
         popN = Val(ws.Cells(r, 7).Value)
         If Len(Trim$(CStr(ws.Cells(r, 1).Value & ws.Cells(r, 2).Value & ws.Cells(r, 3).Value & ws.Cells(r, 4).Value & ws.Cells(r, 5).Value & ws.Cells(r, 6).Value & ws.Cells(r, 7).Value))) = 0 Then
@@ -6736,8 +6767,8 @@ Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByRef records As 
                 dict(key) = rec
                 issues.Add Array("중복합산", r, "같은 쿼터 조합을 기존 행에 합산했습니다.")
             Else
-                rec = Array(CStr(ws.Cells(r, 1).Value), CStr(ws.Cells(r, 2).Value), CStr(ws.Cells(r, 3).Value), _
-                            CStr(ws.Cells(r, 4).Value), CStr(ws.Cells(r, 5).Value), CStr(ws.Cells(r, 6).Value), _
+                rec = Array(CStr(ws.Cells(r, 1).Value), SampleDesign_QuotaValue(ws, r, 2), SampleDesign_QuotaValue(ws, r, 3), _
+                            SampleDesign_QuotaValue(ws, r, 4), SampleDesign_QuotaValue(ws, r, 5), SampleDesign_QuotaValue(ws, r, 6), _
                             popN, CStr(ws.Cells(r, 8).Value), CLng(Val(ws.Cells(r, 9).Value)), _
                             CLng(Val(ws.Cells(r, 10).Value)), CDbl(Val(ws.Cells(r, 11).Value)), _
                             CStr(ws.Cells(r, 12).Value), key, CStr(r))
@@ -6752,11 +6783,25 @@ Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByRef records As 
 End Sub
 
 Private Function SampleDesign_BuildQuotaKey(ByVal ws As Worksheet, ByVal rowIndex As Long) As String
-    SampleDesign_BuildQuotaKey = Trim$(CStr(ws.Cells(rowIndex, 2).Value)) & "|" & _
-                                Trim$(CStr(ws.Cells(rowIndex, 3).Value)) & "|" & _
-                                Trim$(CStr(ws.Cells(rowIndex, 4).Value)) & "|" & _
-                                Trim$(CStr(ws.Cells(rowIndex, 5).Value)) & "|" & _
-                                Trim$(CStr(ws.Cells(rowIndex, 6).Value))
+    SampleDesign_BuildQuotaKey = SampleDesign_QuotaValue(ws, rowIndex, 2) & "|" & _
+                                SampleDesign_QuotaValue(ws, rowIndex, 3) & "|" & _
+                                SampleDesign_QuotaValue(ws, rowIndex, 4) & "|" & _
+                                SampleDesign_QuotaValue(ws, rowIndex, 5) & "|" & _
+                                SampleDesign_QuotaValue(ws, rowIndex, 6)
+End Function
+
+Private Function SampleDesign_QuotaValue(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long) As String
+    If SampleDesign_QuotaEnabled(ws, colIndex) Then
+        SampleDesign_QuotaValue = Trim$(CStr(ws.Cells(rowIndex, colIndex).Value))
+    Else
+        SampleDesign_QuotaValue = ""
+    End If
+End Function
+
+Private Function SampleDesign_QuotaEnabled(ByVal ws As Worksheet, ByVal colIndex As Long) As Boolean
+    Dim flagText As String
+    flagText = Replace(Trim$(CStr(ws.Cells(12, colIndex).Value)), " ", "")
+    SampleDesign_QuotaEnabled = (flagText = "사용" Or UCase$(flagText) = "Y" Or UCase$(flagText) = "YES")
 End Function
 
 Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal targetN As Long, _
@@ -7189,18 +7234,103 @@ Public Sub Toolkit_LaunchSampleDesign()
 End Sub
 
 Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
-    Dim result As Variant
-    result = Application.InputBox(promptText, title, defaultChoice, Type:=2)
-    If VarType(result) = vbBoolean And result = False Then
-        Toolkit_LauncherPrompt = ""
+    Dim optionsText As String
+    optionsText = Toolkit_OptionsFromNumberedPrompt(promptText)
+    If Len(optionsText) > 0 Then
+        Toolkit_LauncherPrompt = Toolkit_ButtonMenu(title, Split(promptText, vbCrLf)(0), optionsText, defaultChoice)
     Else
-        Toolkit_LauncherPrompt = Trim$(CStr(result))
+        Toolkit_LauncherPrompt = Toolkit_ButtonMenuFallback(title, promptText, "", defaultChoice)
     End If
 End Function
 
 Private Sub Toolkit_ShowLauncherError(ByVal title As String, ByVal message As String)
     MsgBox message, vbExclamation, title
 End Sub
+
+Private Function Toolkit_ButtonMenu(ByVal title As String, ByVal guideText As String, _
+                                    ByVal optionsText As String, ByVal defaultChoice As String) As String
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmToolkitButtonMenu")
+    form.Configure title, guideText, optionsText, defaultChoice
+    form.Show
+    Toolkit_ButtonMenu = CStr(form.SelectedKey)
+    Unload form
+    Exit Function
+
+Fallback:
+    Toolkit_ButtonMenu = Toolkit_ButtonMenuFallback(title, guideText, optionsText, defaultChoice)
+End Function
+
+Private Function Toolkit_ButtonMenuFallback(ByVal title As String, ByVal guideText As String, _
+                                            ByVal optionsText As String, ByVal defaultChoice As String) As String
+    Dim promptText As String
+    promptText = guideText & vbCrLf & vbCrLf & Toolkit_OptionsTextToPrompt(optionsText)
+
+    Dim result As Variant
+    result = Application.InputBox(promptText, title, defaultChoice, Type:=2)
+    If VarType(result) = vbBoolean And result = False Then
+        Toolkit_ButtonMenuFallback = ""
+    Else
+        Toolkit_ButtonMenuFallback = Trim$(CStr(result))
+    End If
+End Function
+
+Private Function Toolkit_OptionsTextToPrompt(ByVal optionsText As String) As String
+    Dim lines As Variant
+    lines = Split(optionsText, vbLf)
+
+    Dim result As String
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim lineText As String
+        lineText = Trim$(CStr(lines(i)))
+        If Len(lineText) > 0 Then
+            Dim parts As Variant
+            parts = Split(lineText, vbTab)
+            If UBound(parts) >= 1 Then
+                result = result & CStr(parts(0)) & ". " & CStr(parts(1)) & vbCrLf
+            End If
+        End If
+    Next i
+    Toolkit_OptionsTextToPrompt = result
+End Function
+
+Private Function Toolkit_OptionsFromNumberedPrompt(ByVal promptText As String) As String
+    Dim lines As Variant
+    lines = Split(promptText, vbCrLf)
+
+    Dim result As String
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim lineText As String
+        lineText = Trim$(CStr(lines(i)))
+        Dim dotPos As Long
+        dotPos = InStr(1, lineText, ". ", vbTextCompare)
+        If dotPos > 1 And IsNumeric(Left$(lineText, dotPos - 1)) Then
+            If Len(result) > 0 Then result = result & vbLf
+            result = result & Left$(lineText, dotPos - 1) & vbTab & Mid$(lineText, dotPos + 2)
+        End If
+    Next i
+    Toolkit_OptionsFromNumberedPrompt = result
+End Function
+
+Private Function Toolkit_CheckListMenu(ByVal title As String, ByVal guideText As String, _
+                                       ByVal optionsText As String, ByVal defaultCsv As String) As String
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmToolkitCheckListMenu")
+    form.Configure title, guideText, optionsText, defaultCsv
+    form.Show
+    Toolkit_CheckListMenu = CStr(form.SelectedKeys)
+    Unload form
+    Exit Function
+
+Fallback:
+    Toolkit_CheckListMenu = InputBox(guideText & vbCrLf & vbCrLf & Toolkit_OptionsTextToPrompt(optionsText), title, defaultCsv)
+End Function
 
 ' ============================================================
 ' Ribbon callbacks
