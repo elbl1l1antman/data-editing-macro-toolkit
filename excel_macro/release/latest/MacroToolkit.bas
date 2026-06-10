@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.1"
+Public Const TOOLKIT_VERSION As String = "1.1.2"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -7234,13 +7234,19 @@ Public Sub Toolkit_LaunchSampleDesign()
 End Sub
 
 Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
+    On Error GoTo Fallback
+
     Dim optionsText As String
     optionsText = Toolkit_OptionsFromNumberedPrompt(promptText)
     If Len(optionsText) > 0 Then
-        Toolkit_LauncherPrompt = Toolkit_ButtonMenu(title, Split(promptText, vbCrLf)(0), optionsText, defaultChoice)
+        Toolkit_LauncherPrompt = Toolkit_ButtonMenu(title, Toolkit_FirstPromptLine(promptText), optionsText, defaultChoice)
     Else
         Toolkit_LauncherPrompt = Toolkit_ButtonMenuFallback(title, promptText, "", defaultChoice)
     End If
+    Exit Function
+
+Fallback:
+    Toolkit_LauncherPrompt = Toolkit_ButtonMenuFallback(title, promptText, "", defaultChoice)
 End Function
 
 Private Sub Toolkit_ShowLauncherError(ByVal title As String, ByVal message As String)
@@ -7298,22 +7304,64 @@ Private Function Toolkit_OptionsTextToPrompt(ByVal optionsText As String) As Str
 End Function
 
 Private Function Toolkit_OptionsFromNumberedPrompt(ByVal promptText As String) As String
-    Dim lines As Variant
-    lines = Split(promptText, vbCrLf)
+    On Error GoTo SafeExit
 
+    Dim normalizedText As String
+    Dim lines As Variant
     Dim result As String
     Dim i As Long
+
+    normalizedText = Replace(CStr(promptText), vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+
+    If Len(normalizedText) = 0 Then Exit Function
+
+    lines = Split(normalizedText, vbLf)
+
     For i = LBound(lines) To UBound(lines)
         Dim lineText As String
+        Dim sepPos As Long
+        Dim keyText As String
+        Dim labelText As String
+
         lineText = Trim$(CStr(lines(i)))
-        Dim dotPos As Long
-        dotPos = InStr(1, lineText, ". ", vbTextCompare)
-        If dotPos > 1 And IsNumeric(Left$(lineText, dotPos - 1)) Then
-            If Len(result) > 0 Then result = result & vbLf
-            result = result & Left$(lineText, dotPos - 1) & vbTab & Mid$(lineText, dotPos + 2)
+        If Len(lineText) > 0 Then
+            sepPos = InStr(1, lineText, ". ", vbTextCompare)
+            If sepPos = 0 Then sepPos = InStr(1, lineText, ") ", vbTextCompare)
+
+            If sepPos > 1 Then
+                keyText = Trim$(Left$(lineText, sepPos - 1))
+                labelText = Trim$(Mid$(lineText, sepPos + 2))
+                If IsNumeric(keyText) And Len(labelText) > 0 Then
+                    If Len(result) > 0 Then result = result & vbLf
+                    result = result & keyText & vbTab & labelText
+                End If
+            End If
         End If
     Next i
+
+SafeExit:
     Toolkit_OptionsFromNumberedPrompt = result
+End Function
+
+Private Function Toolkit_FirstPromptLine(ByVal promptText As String) As String
+    On Error GoTo Fallback
+
+    Dim normalizedText As String
+    Dim lines As Variant
+
+    normalizedText = Replace(CStr(promptText), vbCrLf, vbLf)
+    normalizedText = Replace(normalizedText, vbCr, vbLf)
+    lines = Split(normalizedText, vbLf)
+
+    If UBound(lines) >= LBound(lines) Then
+        Toolkit_FirstPromptLine = Trim$(CStr(lines(LBound(lines))))
+    End If
+    If Len(Toolkit_FirstPromptLine) = 0 Then Toolkit_FirstPromptLine = "실행할 기능을 선택하세요."
+    Exit Function
+
+Fallback:
+    Toolkit_FirstPromptLine = "실행할 기능을 선택하세요."
 End Function
 
 Private Function Toolkit_CheckListMenu(ByVal title As String, ByVal guideText As String, _
