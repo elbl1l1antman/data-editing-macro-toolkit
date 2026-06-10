@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.5"
+Public Const TOOLKIT_VERSION As String = "1.0.6"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -5503,8 +5503,18 @@ End Function
 
 Private Function Roster_RequestManualRange(ByVal title As String, ByVal label As String, ByRef targetRange As Range) As Boolean
     If Not Toolkit_GetRangeFromUserForm(title & " - " & label, _
-        label & " 범위를 선택하세요. 여러 열을 선택하면 첫 번째 열만 사용합니다.", _
+        label & " 범위를 선택하세요. 여러 열을 선택하면 첫 번째 열만 사용합니다." & vbCrLf & _
+        "여러 항목을 선택하는 경우 각 범위는 같은 시작 행과 같은 행 수로 맞춰주세요.", _
         targetRange) Then Exit Function
+
+    If targetRange.Areas.Count > 1 Then
+        MsgBox "수동 선택 범위는 한 덩어리의 연속 범위만 지원합니다." & vbCrLf & _
+               "떨어진 여러 범위가 아니라, 하나의 열 또는 하나의 연속 범위를 다시 선택하세요.", _
+               vbExclamation, title
+        Set targetRange = Nothing
+        Exit Function
+    End If
+
     Set targetRange = targetRange.Areas(1).Columns(1)
     Roster_RequestManualRange = True
 End Function
@@ -5546,6 +5556,7 @@ Private Sub Roster_QualityReportManual()
         MsgBox "수동 선택한 범위는 모두 같은 시트에 있어야 합니다.", vbExclamation, "명부 품질 진단"
         Exit Sub
     End If
+    If Not Roster_ManualRangesAligned("명부 품질 진단", nameRange, addressRange, phoneRange, bizRange) Then Exit Sub
 
     Dim wb As Workbook: Set wb = baseWs.Parent
     Dim outWs As Worksheet
@@ -5607,6 +5618,7 @@ Private Sub Roster_DetectDuplicatesManual()
         MsgBox "수동 선택한 범위는 모두 같은 시트에 있어야 합니다.", vbExclamation, "중복 업체 탐지"
         Exit Sub
     End If
+    If Not Roster_ManualRangesAligned("중복 업체 탐지", nameRange, addressRange, phoneRange, bizRange) Then Exit Sub
 
     Dim firstDataRow As Long: firstDataRow = Roster_FirstDataRow(baseRange, hasHeader)
     Dim lastRow As Long: lastRow = baseRange.Row + baseRange.Rows.Count - 1
@@ -5873,6 +5885,51 @@ Private Function Roster_RangesOnSameWorksheet(ByVal ws As Worksheet, ByVal nameR
     If Not phoneRange Is Nothing Then If Not phoneRange.Worksheet Is ws Then Exit Function
     If Not bizRange Is Nothing Then If Not bizRange.Worksheet Is ws Then Exit Function
     Roster_RangesOnSameWorksheet = True
+End Function
+
+Private Function Roster_ManualRangesAligned(ByVal title As String, ByVal nameRange As Range, ByVal addressRange As Range, ByVal phoneRange As Range, ByVal bizRange As Range) As Boolean
+    Dim baseRange As Range
+    Set baseRange = Roster_FirstAvailableRange(nameRange, addressRange, phoneRange, bizRange)
+    If baseRange Is Nothing Then Exit Function
+
+    Dim baseRow As Long: baseRow = baseRange.Row
+    Dim baseRows As Long: baseRows = baseRange.Rows.Count
+    Dim detail As String
+    detail = "기준 범위: " & Roster_RangeSummary(baseRange) & vbCrLf
+
+    If Not Roster_OneRangeAligned(nameRange, baseRow, baseRows, "업체명", detail) Then GoTo Misaligned
+    If Not Roster_OneRangeAligned(addressRange, baseRow, baseRows, "주소", detail) Then GoTo Misaligned
+    If Not Roster_OneRangeAligned(phoneRange, baseRow, baseRows, "전화번호", detail) Then GoTo Misaligned
+    If Not Roster_OneRangeAligned(bizRange, baseRow, baseRows, "사업자번호", detail) Then GoTo Misaligned
+
+    Roster_ManualRangesAligned = True
+    Exit Function
+
+Misaligned:
+    MsgBox "수동 선택한 범위의 시작 행 또는 행 수가 서로 다릅니다." & vbCrLf & vbCrLf & _
+           detail & vbCrLf & _
+           "같은 행에 있는 업체 정보끼리 비교하려면 모든 선택 범위를 같은 시작 행과 같은 행 수로 맞춰주세요.", _
+           vbExclamation, title
+End Function
+
+Private Function Roster_OneRangeAligned(ByVal targetRange As Range, ByVal baseRow As Long, ByVal baseRows As Long, ByVal label As String, ByRef detail As String) As Boolean
+    If targetRange Is Nothing Then
+        Roster_OneRangeAligned = True
+        Exit Function
+    End If
+
+    detail = detail & label & ": " & Roster_RangeSummary(targetRange) & vbCrLf
+    Roster_OneRangeAligned = (targetRange.Row = baseRow And targetRange.Rows.Count = baseRows)
+End Function
+
+Private Function Roster_RangeSummary(ByVal targetRange As Range) As String
+    If targetRange Is Nothing Then
+        Roster_RangeSummary = "(선택 안 함)"
+    Else
+        Roster_RangeSummary = targetRange.Worksheet.Name & "!" & targetRange.Address(False, False) & _
+                              " / 시작 행 " & targetRange.Row & _
+                              " / 행 수 " & targetRange.Rows.Count
+    End If
 End Function
 
 Private Function Roster_CountBlankRange(ByVal targetRange As Range, ByVal hasHeader As Boolean) As Long
