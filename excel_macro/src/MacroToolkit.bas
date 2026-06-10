@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.7"
+Public Const TOOLKIT_VERSION As String = "1.0.8"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -3343,6 +3343,10 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
     End If
     If Len(varName) = 0 Then varName = ws.Cells(firstDataRow, targetRange.Column).Address(False, False)
 
+    If Not suppressPrompts Then
+        If Not OD_ConfirmHeaderAndRange(ws, targetRange, headerRow, firstDataRow, varName) Then Exit Sub
+    End If
+
     If firstDataRow > lastRow Then
         MsgBox "분석할 숫자 데이터가 없습니다.", vbExclamation, "이상치 대체"
         Exit Sub
@@ -3360,9 +3364,10 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
         If Not ws.Rows(r).Hidden Then
             Dim cellValue As Variant
             cellValue = ws.Cells(r, targetRange.Column).Value
-            If Not IsError(cellValue) And Not IsEmpty(cellValue) And IsNumeric(cellValue) Then
+            Dim numericValue As Double
+            If OD_TryNumericValue(cellValue, numericValue) Then
                 numCount = numCount + 1
-                values(numCount) = CDbl(cellValue)
+                values(numCount) = numericValue
                 rowMap(numCount) = r
             ElseIf IsError(cellValue) Or IsEmpty(cellValue) Or Len(Trim$(CStr(cellValue))) = 0 Then
                 blankCount = blankCount + 1
@@ -3698,6 +3703,90 @@ Private Function OD_FirstDataRowForColumn(ByVal dataArea As Range, _
     End If
 End Function
 
+Private Function OD_ConfirmHeaderAndRange(ByVal ws As Worksheet, _
+                                          ByVal targetRange As Range, _
+                                          ByRef headerRow As Long, _
+                                          ByRef firstDataRow As Long, _
+                                          ByRef varName As String) As Boolean
+    Dim lastRow As Long
+    lastRow = targetRange.Row + targetRange.Rows.Count - 1
+
+    Do
+        Dim headerInfo As String
+        If headerRow > 0 Then
+            headerInfo = "헤더 행: " & headerRow & "행" & vbCrLf & _
+                         "헤더 값: " & Trim$(CStr(ws.Cells(headerRow, targetRange.Column).Value))
+        Else
+            headerInfo = "헤더 행: 없음" & vbCrLf & _
+                         "변수명: " & varName
+        End If
+
+        Dim answer As VbMsgBoxResult
+        answer = MsgBox("이상치 확인 범위를 검토하세요." & vbCrLf & vbCrLf & _
+                        "분석 열: " & targetRange.Address(False, False) & vbCrLf & _
+                        headerInfo & vbCrLf & _
+                        "데이터 시작 행: " & firstDataRow & "행" & vbCrLf & _
+                        "데이터 끝 행: " & lastRow & "행" & vbCrLf & vbCrLf & _
+                        "[예] 이 설정으로 진행" & vbCrLf & _
+                        "[아니오] 헤더 행을 직접 지정" & vbCrLf & _
+                        "[취소] 작업 중단", _
+                        vbQuestion + vbYesNoCancel, "이상치 확인 - 헤더/범위 검토")
+
+        If answer = vbYes Then
+            OD_ConfirmHeaderAndRange = True
+            Exit Function
+        ElseIf answer = vbCancel Then
+            Exit Function
+        End If
+
+        Dim headerInput As String
+        headerInput = InputBox("헤더 행 번호를 입력하세요." & vbCrLf & vbCrLf & _
+                               "0: 헤더 없음, 선택 범위 첫 행부터 데이터로 사용" & vbCrLf & _
+                               CStr(targetRange.Row) & "~" & CStr(lastRow) & ": 해당 행을 헤더로 사용", _
+                               "이상치 확인 - 헤더 행 지정", IIf(headerRow > 0, CStr(headerRow), "0"))
+        If Len(Trim$(headerInput)) = 0 Then Exit Function
+        If Not IsNumeric(headerInput) Then
+            MsgBox "헤더 행은 숫자로 입력하세요.", vbExclamation, "이상치 확인"
+        Else
+            Dim newHeaderRow As Long
+            newHeaderRow = CLng(headerInput)
+            If newHeaderRow = 0 Then
+                headerRow = 0
+                firstDataRow = targetRange.Row
+                varName = targetRange.Cells(1, 1).Address(False, False)
+            ElseIf newHeaderRow < targetRange.Row Or newHeaderRow >= lastRow Then
+                MsgBox "헤더 행은 선택 범위 안에 있어야 하며, 헤더 아래에 데이터가 1행 이상 필요합니다.", _
+                       vbExclamation, "이상치 확인"
+            Else
+                headerRow = newHeaderRow
+                firstDataRow = newHeaderRow + 1
+                varName = Trim$(CStr(ws.Cells(headerRow, targetRange.Column).Value))
+                If Len(varName) = 0 Then varName = ws.Cells(firstDataRow, targetRange.Column).Address(False, False)
+            End If
+        End If
+    Loop
+End Function
+
+Private Function OD_TryNumericValue(ByVal valueIn As Variant, ByRef valueOut As Double) As Boolean
+    If IsError(valueIn) Or IsEmpty(valueIn) Then Exit Function
+
+    If IsNumeric(valueIn) Then
+        valueOut = CDbl(valueIn)
+        OD_TryNumericValue = True
+        Exit Function
+    End If
+
+    Dim textValue As String
+    textValue = Trim$(CStr(valueIn))
+    If Len(textValue) = 0 Then Exit Function
+    textValue = Replace(textValue, ",", "")
+
+    If IsNumeric(textValue) Then
+        valueOut = CDbl(textValue)
+        OD_TryNumericValue = True
+    End If
+End Function
+
 Private Function OD_CountNumericValues(ByVal ws As Worksheet, _
                                        ByVal absoluteCol As Long, _
                                        ByVal firstDataRow As Long, _
@@ -3707,7 +3796,8 @@ Private Function OD_CountNumericValues(ByVal ws As Worksheet, _
         If Not ws.Rows(r).Hidden Then
             Dim v As Variant
             v = ws.Cells(r, absoluteCol).Value
-            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+            Dim numericValue As Double
+            If OD_TryNumericValue(v, numericValue) Then
                 OD_CountNumericValues = OD_CountNumericValues + 1
             End If
         End If
@@ -3731,9 +3821,10 @@ Private Function OD_CountIqrOutliers(ByVal ws As Worksheet, _
         If Not ws.Rows(r).Hidden Then
             Dim v As Variant
             v = ws.Cells(r, absoluteCol).Value
-            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+            Dim numericValue As Double
+            If OD_TryNumericValue(v, numericValue) Then
                 idx = idx + 1
-                values(idx) = CDbl(v)
+                values(idx) = numericValue
             End If
         End If
     Next r
@@ -4103,7 +4194,8 @@ Private Function OD_ColumnHasNumericValue(ByVal dataArea As Range, ByVal relativ
         If Not dataArea.Worksheet.Rows(dataArea.Row + r - 1).Hidden Then
             Dim v As Variant
             v = dataArea.Cells(r, relativeCol).Value
-            If Not IsError(v) And Not IsEmpty(v) And IsNumeric(v) Then
+            Dim numericValue As Double
+            If OD_TryNumericValue(v, numericValue) Then
                 OD_ColumnHasNumericValue = True
                 Exit Function
             End If
