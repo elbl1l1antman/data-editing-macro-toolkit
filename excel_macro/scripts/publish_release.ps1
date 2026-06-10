@@ -34,6 +34,258 @@ function Get-ZipTextEntry {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 
+function Add-ToolkitButtonMenuUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmToolkitButtonMenu"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "메뉴 선택"
+    $form.Properties.Item("Width").Value = 460
+    $form.Properties.Item("Height").Value = 420
+    $form.Properties.Item("ScrollBars").Value = 2
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Left = 12
+    $lblGuide.Top = 10
+    $lblGuide.Width = 420
+    $lblGuide.Height = 38
+    $lblGuide.WordWrap = $true
+
+    for ($i = 1; $i -le 20; $i++) {
+        $btn = $designer.Controls.Add("Forms.CommandButton.1", "cmdOption$i", $true)
+        $btn.Left = 16
+        $btn.Top = 54 + (($i - 1) * 30)
+        $btn.Width = 400
+        $btn.Height = 24
+        $btn.Visible = $false
+    }
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 336
+    $cmdCancel.Top = 360
+    $cmdCancel.Width = 80
+    $cmdCancel.Height = 26
+
+    $handlers = ""
+    for ($i = 1; $i -le 20; $i++) {
+        $handlers += @"
+Private Sub cmdOption$i`_Click()
+    PickOption $i
+End Sub
+
+"@
+    }
+
+    $formCode = @"
+Option Explicit
+Public SelectedKey As String
+
+Public Sub Configure(ByVal titleText As String, ByVal guideText As String, ByVal optionsText As String, ByVal defaultKey As String)
+    Caption = titleText
+    lblGuide.Caption = guideText
+    SelectedKey = ""
+
+    Dim i As Long
+    For i = 1 To 20
+        Controls("cmdOption" & CStr(i)).Visible = False
+        Controls("cmdOption" & CStr(i)).Tag = ""
+    Next i
+
+    Dim lines As Variant
+    lines = Split(optionsText, vbLf)
+    Dim visibleCount As Long
+    For i = LBound(lines) To UBound(lines)
+        If Len(Trim`$(CStr(lines(i)))) > 0 And visibleCount < 20 Then
+            Dim parts As Variant
+            parts = Split(CStr(lines(i)), vbTab)
+            If UBound(parts) >= 1 Then
+                visibleCount = visibleCount + 1
+                With Controls("cmdOption" & CStr(visibleCount))
+                    .Caption = CStr(parts(1))
+                    .Tag = CStr(parts(0))
+                    .Visible = True
+                    If CStr(parts(0)) = defaultKey Then .Default = True
+                End With
+            End If
+        End If
+    Next i
+
+    cmdCancel.Top = 60 + visibleCount * 30
+    Height = Application.WorksheetFunction.Min(560, cmdCancel.Top + 62)
+    ScrollHeight = cmdCancel.Top + 56
+End Sub
+
+Private Sub PickOption(ByVal idx As Long)
+    SelectedKey = CStr(Controls("cmdOption" & CStr(idx)).Tag)
+    Hide
+End Sub
+
+$handlers
+Private Sub cmdCancel_Click()
+    SelectedKey = ""
+    Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        SelectedKey = ""
+    End If
+End Sub
+"@
+    $form.CodeModule.AddFromString($formCode)
+}
+
+function Add-ToolkitCheckListMenuUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmToolkitCheckListMenu"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "항목 선택"
+    $form.Properties.Item("Width").Value = 500
+    $form.Properties.Item("Height").Value = 520
+    $form.Properties.Item("ScrollBars").Value = 2
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Left = 12
+    $lblGuide.Top = 10
+    $lblGuide.Width = 450
+    $lblGuide.Height = 38
+    $lblGuide.WordWrap = $true
+
+    for ($i = 1; $i -le 30; $i++) {
+        $chk = $designer.Controls.Add("Forms.CheckBox.1", "chkOption$i", $true)
+        $chk.Left = 16
+        $chk.Top = 54 + (($i - 1) * 24)
+        $chk.Width = 430
+        $chk.Height = 20
+        $chk.Visible = $false
+    }
+
+    $cmdAll = $designer.Controls.Add("Forms.CommandButton.1", "cmdAll", $true)
+    $cmdAll.Caption = "모두 선택"
+    $cmdAll.Left = 16
+    $cmdAll.Top = 420
+    $cmdAll.Width = 80
+    $cmdAll.Height = 26
+
+    $cmdNone = $designer.Controls.Add("Forms.CommandButton.1", "cmdNone", $true)
+    $cmdNone.Caption = "모두 해제"
+    $cmdNone.Left = 104
+    $cmdNone.Top = 420
+    $cmdNone.Width = 80
+    $cmdNone.Height = 26
+
+    $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOK.Caption = "확인"
+    $cmdOK.Left = 292
+    $cmdOK.Top = 420
+    $cmdOK.Width = 70
+    $cmdOK.Height = 26
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 372
+    $cmdCancel.Top = 420
+    $cmdCancel.Width = 70
+    $cmdCancel.Height = 26
+
+    $formCode = @'
+Option Explicit
+Public SelectedKeys As String
+Private optionCount As Long
+
+Public Sub Configure(ByVal titleText As String, ByVal guideText As String, ByVal optionsText As String, ByVal defaultCsv As String)
+    Caption = titleText
+    lblGuide.Caption = guideText
+    SelectedKeys = ""
+    optionCount = 0
+
+    Dim i As Long
+    For i = 1 To 30
+        Controls("chkOption" & CStr(i)).Visible = False
+        Controls("chkOption" & CStr(i)).Value = False
+        Controls("chkOption" & CStr(i)).Tag = ""
+    Next i
+
+    Dim defaults As Object
+    Set defaults = CreateObject("Scripting.Dictionary")
+    Dim defaultParts As Variant
+    defaultParts = Split(defaultCsv, ",")
+    For i = LBound(defaultParts) To UBound(defaultParts)
+        If Len(Trim$(CStr(defaultParts(i)))) > 0 Then defaults(Trim$(CStr(defaultParts(i)))) = True
+    Next i
+
+    Dim lines As Variant
+    lines = Split(optionsText, vbLf)
+    For i = LBound(lines) To UBound(lines)
+        If Len(Trim$(CStr(lines(i)))) > 0 And optionCount < 30 Then
+            Dim parts As Variant
+            parts = Split(CStr(lines(i)), vbTab)
+            If UBound(parts) >= 1 Then
+                optionCount = optionCount + 1
+                With Controls("chkOption" & CStr(optionCount))
+                    .Caption = CStr(parts(1))
+                    .Tag = CStr(parts(0))
+                    .Value = defaults.Exists(CStr(parts(0)))
+                    .Visible = True
+                End With
+            End If
+        End If
+    Next i
+
+    Dim buttonTop As Long
+    buttonTop = 62 + optionCount * 24
+    cmdAll.Top = buttonTop
+    cmdNone.Top = buttonTop
+    cmdOK.Top = buttonTop
+    cmdCancel.Top = buttonTop
+    Height = Application.WorksheetFunction.Min(620, buttonTop + 64)
+    ScrollHeight = buttonTop + 58
+End Sub
+
+Private Sub cmdAll_Click()
+    Dim i As Long
+    For i = 1 To optionCount
+        Controls("chkOption" & CStr(i)).Value = True
+    Next i
+End Sub
+
+Private Sub cmdNone_Click()
+    Dim i As Long
+    For i = 1 To optionCount
+        Controls("chkOption" & CStr(i)).Value = False
+    Next i
+End Sub
+
+Private Sub cmdOK_Click()
+    Dim i As Long
+    SelectedKeys = ""
+    For i = 1 To optionCount
+        If Controls("chkOption" & CStr(i)).Value Then
+            If Len(SelectedKeys) > 0 Then SelectedKeys = SelectedKeys & ","
+            SelectedKeys = SelectedKeys & CStr(Controls("chkOption" & CStr(i)).Tag)
+        End If
+    Next i
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    SelectedKeys = ""
+    Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        SelectedKeys = ""
+    End If
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-SpssRebuildUserForm {
     param($Workbook)
 
@@ -1480,12 +1732,14 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
         $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
+        Add-ToolkitButtonMenuUserForm -Workbook $workbook
+        Add-ToolkitCheckListMenuUserForm -Workbook $workbook
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
