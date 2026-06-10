@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.2"
+Public Const TOOLKIT_VERSION As String = "1.1.3"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -112,6 +112,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A39").Value = "SampleDesign_CreateTemplate"
     ws.Range("A40").Value = "SampleDesign_RunAllocation"
     ws.Range("A41").Value = "SampleDesign_CreateProgressTracker"
+    ws.Range("A42").Value = "SampleDesign_ListifyPopulationTable"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -6586,6 +6587,231 @@ Public Sub SampleDesign_ReviewQuota()
     SampleDesign_RunAllocation
 End Sub
 
+Public Sub SampleDesign_ListifyPopulationTable()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
+        "모집단 구성표 전체 범위를 선택하세요." & vbCrLf & _
+        "제목행, 헤더행, 행 구분, 종사자규모 열, 합계 열이 함께 포함되어도 됩니다.", _
+        targetRange) Then Exit Sub
+    If targetRange Is Nothing Then Exit Sub
+
+    If targetRange.Rows.Count < 3 Or targetRange.Columns.Count < 3 Then
+        MsgBox "집계표 리스트화에는 헤더와 데이터가 포함된 3행 x 3열 이상의 범위가 필요합니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Sub
+    End If
+
+    Dim headerRelRow As Long
+    headerRelRow = SampleDesign_DetectCrosstabHeaderRow(targetRange)
+    If headerRelRow = 0 Then
+        MsgBox "집계표 헤더 행을 찾지 못했습니다." & vbCrLf & _
+               "첫 행 또는 둘째 행에 행 구분명과 열 구분명이 들어가도록 범위를 다시 선택하세요.", _
+               vbExclamation, "모집단 구성표 리스트화"
+        Exit Sub
+    End If
+
+    Dim rowFieldCount As Long
+    Dim firstValueCol As Long
+    Dim lastValueCol As Long
+    rowFieldCount = SampleDesign_DetectRowFieldCount(targetRange, headerRelRow)
+    firstValueCol = rowFieldCount + 1
+    lastValueCol = SampleDesign_DetectLastValueColumn(targetRange, headerRelRow, firstValueCol)
+
+    If rowFieldCount < 1 Or firstValueCol > targetRange.Columns.Count Or lastValueCol < firstValueCol Then
+        MsgBox "행 구분 열과 값 열을 판별하지 못했습니다." & vbCrLf & _
+               "왼쪽에는 업종/지역 같은 행 구분, 오른쪽에는 종사자규모별 숫자 열이 오도록 선택하세요.", _
+               vbExclamation, "모집단 구성표 리스트화"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook
+    Set wb = targetRange.Worksheet.Parent
+
+    Dim outWs As Worksheet
+    Set outWs = SampleDesign_PrepareOutputSheet(wb, "모집단_리스트")
+    SampleDesign_WritePopulationList targetRange, outWs, headerRelRow, rowFieldCount, firstValueCol, lastValueCol
+
+    outWs.Activate
+    MsgBox "모집단 구성표를 리스트화했습니다." & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
+End Sub
+
+Private Function SampleDesign_DetectCrosstabHeaderRow(ByVal tableRange As Range) As Long
+    Dim maxScanRows As Long
+    maxScanRows = Application.Min(5, tableRange.Rows.Count)
+
+    Dim r As Long
+    Dim bestRow As Long
+    Dim bestScore As Long
+    For r = 1 To maxScanRows
+        Dim textCount As Long
+        Dim numericDataCols As Long
+        Dim c As Long
+
+        For c = 1 To tableRange.Columns.Count
+            If Len(Trim$(CStr(tableRange.Cells(r, c).Value))) > 0 Then textCount = textCount + 1
+            If SampleDesign_ColumnHasNumericBelow(tableRange, r, c) Then numericDataCols = numericDataCols + 1
+        Next c
+
+        Dim score As Long
+        score = textCount + numericDataCols * 2
+        If SampleDesign_RowLooksLikeHeader(tableRange, r) Then score = score + 10
+        If score > bestScore Then
+            bestScore = score
+            bestRow = r
+        End If
+    Next r
+
+    SampleDesign_DetectCrosstabHeaderRow = bestRow
+End Function
+
+Private Function SampleDesign_RowLooksLikeHeader(ByVal tableRange As Range, ByVal relRow As Long) As Boolean
+    Dim c As Long
+    For c = 1 To tableRange.Columns.Count
+        Dim textValue As String
+        textValue = Replace(Trim$(CStr(tableRange.Cells(relRow, c).Value)), " ", "")
+        If textValue = "합계" Or textValue = "계" _
+           Or InStr(1, textValue, "종사", vbTextCompare) > 0 _
+           Or InStr(1, textValue, "분류", vbTextCompare) > 0 _
+           Or InStr(1, textValue, "명", vbTextCompare) > 0 Then
+            SampleDesign_RowLooksLikeHeader = True
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function SampleDesign_DetectRowFieldCount(ByVal tableRange As Range, ByVal headerRelRow As Long) As Long
+    Dim c As Long
+    For c = 1 To tableRange.Columns.Count
+        If SampleDesign_ColumnHasNumericBelow(tableRange, headerRelRow, c) Then
+            SampleDesign_DetectRowFieldCount = c - 1
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function SampleDesign_DetectLastValueColumn(ByVal tableRange As Range, ByVal headerRelRow As Long, ByVal firstValueCol As Long) As Long
+    Dim c As Long
+    For c = tableRange.Columns.Count To firstValueCol Step -1
+        Dim headerText As String
+        headerText = Replace(Trim$(CStr(tableRange.Cells(headerRelRow, c).Value)), " ", "")
+        If headerText <> "합계" And headerText <> "계" And SampleDesign_ColumnHasNumericBelow(tableRange, headerRelRow, c) Then
+            SampleDesign_DetectLastValueColumn = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function SampleDesign_ColumnHasNumericBelow(ByVal tableRange As Range, ByVal headerRelRow As Long, ByVal relCol As Long) As Boolean
+    Dim r As Long
+    For r = headerRelRow + 1 To tableRange.Rows.Count
+        If SampleDesign_IsPopulationNumber(tableRange.Cells(r, relCol).Value) Then
+            SampleDesign_ColumnHasNumericBelow = True
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function SampleDesign_IsPopulationNumber(ByVal valueIn As Variant) As Boolean
+    If IsError(valueIn) Or IsEmpty(valueIn) Then Exit Function
+
+    Dim textValue As String
+    textValue = Trim$(CStr(valueIn))
+    textValue = Replace(textValue, ",", "")
+    textValue = Replace(textValue, " ", "")
+    If Len(textValue) = 0 Then Exit Function
+    SampleDesign_IsPopulationNumber = IsNumeric(textValue)
+End Function
+
+Private Function SampleDesign_ToPopulationNumber(ByVal valueIn As Variant) As Double
+    Dim textValue As String
+    textValue = Trim$(CStr(valueIn))
+    textValue = Replace(textValue, ",", "")
+    textValue = Replace(textValue, " ", "")
+    If IsNumeric(textValue) Then SampleDesign_ToPopulationNumber = CDbl(textValue)
+End Function
+
+Private Function SampleDesign_IsTotalRowLabel(ByVal tableRange As Range, ByVal relRow As Long, ByVal rowFieldCount As Long) As Boolean
+    Dim c As Long
+    For c = 1 To rowFieldCount
+        Dim textValue As String
+        textValue = Replace(Trim$(CStr(tableRange.Cells(relRow, c).Value)), " ", "")
+        If textValue = "계" Or textValue = "합계" Or textValue = "총계" Then
+            SampleDesign_IsTotalRowLabel = True
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Sub SampleDesign_WritePopulationList(ByVal tableRange As Range, ByVal outWs As Worksheet, _
+                                             ByVal headerRelRow As Long, ByVal rowFieldCount As Long, _
+                                             ByVal firstValueCol As Long, ByVal lastValueCol As Long)
+    outWs.Cells.Clear
+    outWs.Range("A1").Value = "모집단 구성표 리스트"
+    outWs.Range("A1").Font.Bold = True
+    outWs.Range("A1").Font.Size = 14
+    outWs.Range("A2").Value = "원본 시트"
+    outWs.Range("B2").Value = tableRange.Worksheet.Name
+    outWs.Range("A3").Value = "원본 범위"
+    outWs.Range("B3").Value = tableRange.Address(False, False)
+
+    SampleDesign_WriteArray outWs, 5, 1, Array("쿼터ID", "행구분1", "행구분2", "행구분3", "행구분4", "행구분5", "열구분", "모집단수", "원본행", "원본열")
+
+    Dim headerFieldLimit As Long
+    headerFieldLimit = Application.Min(rowFieldCount, 5)
+
+    Dim headerField As Long
+    For headerField = 1 To headerFieldLimit
+        Dim headerCaption As String
+        headerCaption = Trim$(CStr(tableRange.Cells(headerRelRow, headerField).Value))
+        If Len(headerCaption) > 0 Then outWs.Cells(5, 1 + headerField).Value = headerCaption
+    Next headerField
+
+    Dim lastSeen() As String
+    ReDim lastSeen(1 To rowFieldCount)
+
+    Dim outRow As Long
+    Dim relRow As Long
+    outRow = 6
+
+    For relRow = headerRelRow + 1 To tableRange.Rows.Count
+        If Not SampleDesign_IsTotalRowLabel(tableRange, relRow, rowFieldCount) Then
+            Dim f As Long
+            For f = 1 To rowFieldCount
+                Dim curText As String
+                curText = Trim$(CStr(tableRange.Cells(relRow, f).Value))
+                If Len(curText) > 0 Then lastSeen(f) = curText
+            Next f
+
+            Dim relCol As Long
+            For relCol = firstValueCol To lastValueCol
+                If SampleDesign_IsPopulationNumber(tableRange.Cells(relRow, relCol).Value) Then
+                    Dim popN As Double
+                    popN = SampleDesign_ToPopulationNumber(tableRange.Cells(relRow, relCol).Value)
+                    If popN > 0 Then
+                        outWs.Cells(outRow, 1).Value = "Q" & Format$(outRow - 5, "0000")
+                        For f = 1 To headerFieldLimit
+                            outWs.Cells(outRow, 1 + f).Value = lastSeen(f)
+                        Next f
+                        outWs.Cells(outRow, 7).Value = Trim$(CStr(tableRange.Cells(headerRelRow, relCol).Value))
+                        outWs.Cells(outRow, 8).Value = popN
+                        outWs.Cells(outRow, 9).Value = tableRange.Row + relRow - 1
+                        outWs.Cells(outRow, 10).Value = tableRange.Column + relCol - 1
+                        outRow = outRow + 1
+                    End If
+                End If
+            Next relCol
+        End If
+    Next relRow
+
+    With outWs.Range(outWs.Cells(5, 1), outWs.Cells(Application.Max(5, outRow - 1), 10))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    outWs.Range("A5:J5").Font.Bold = True
+    outWs.Range("A5:J5").Interior.Color = RGB(220, 235, 250)
+    outWs.Range("H:H").NumberFormat = "#,##0"
+End Sub
+
 Private Function SampleDesign_PrepareSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal overwritePrompt As String) As Worksheet
     Dim ws As Worksheet
     Set ws = SampleDesign_FindSheet(wb, sheetName)
@@ -7220,7 +7446,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "1. 설계 시트 생성" & vbCrLf & _
         "2. 할당 계산" & vbCrLf & _
         "3. 진행률 관리표 생성" & vbCrLf & _
-        "4. 쿼터 점검", _
+        "4. 쿼터 점검" & vbCrLf & _
+        "5. 모집단 구성표 리스트화", _
         "1")
 
     Select Case choice
@@ -7228,8 +7455,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "2": SampleDesign_RunAllocation
         Case "3": SampleDesign_CreateProgressTracker
         Case "4": SampleDesign_ReviewQuota
+        Case "5": SampleDesign_ListifyPopulationTable
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~4 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~5 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -7534,6 +7762,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignCreateTemplate(control As IRibbonControl)
     SampleDesign_CreateTemplate
+End Sub
+
+Public Sub Ribbon_SampleDesignListifyPopulationTable(control As IRibbonControl)
+    SampleDesign_ListifyPopulationTable
 End Sub
 
 Public Sub Ribbon_SampleDesignRunAllocation(control As IRibbonControl)
