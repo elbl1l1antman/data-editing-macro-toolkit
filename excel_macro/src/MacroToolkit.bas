@@ -8,10 +8,11 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.6"
+Public Const TOOLKIT_VERSION As String = "1.0.7"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
+Private Const LOG_SHEET As String = "_MacroToolkit_Log"
 Private Const BIZ_API_BASE_URL As String = "https://api.odcloud.kr/api/nts-businessman/v1/status"
 Private Const BIZ_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const BIZ_APP_SECTION As String = "BusinessApi"
@@ -23,6 +24,10 @@ Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
+Private Const API_RESOLVE_TIMEOUT_MS As Long = 5000
+Private Const API_CONNECT_TIMEOUT_MS As Long = 10000
+Private Const API_SEND_TIMEOUT_MS As Long = 15000
+Private Const API_RECEIVE_TIMEOUT_MS As Long = 30000
 
 Private mToolkitOperationDepth As Long
 Private mToolkitPrevScreenUpdating As Boolean
@@ -418,6 +423,36 @@ Private Function Toolkit_CanInsertColumns(ByVal ws As Worksheet, ByVal startCol 
 
     Toolkit_CanInsertColumns = True
 End Function
+
+Private Sub Toolkit_LogApiEvent(ByVal wb As Workbook, ByVal sourceName As String, ByVal actionName As String, _
+                                ByVal targetText As String, ByVal statusText As String, ByVal detailText As String)
+    On Error Resume Next
+
+    If wb Is Nothing Then Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+
+    Dim ws As Worksheet
+    Set ws = wb.Worksheets(LOG_SHEET)
+    If ws Is Nothing Then
+        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        ws.Name = LOG_SHEET
+        ws.Range("A1:F1").Value = Array("일시", "기능", "작업", "대상", "상태", "상세")
+        ws.Rows(1).Font.Bold = True
+        ws.Visible = xlSheetVeryHidden
+    End If
+
+    Dim nextRow As Long
+    nextRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 1
+    ws.Cells(nextRow, 1).Value = Now
+    ws.Cells(nextRow, 2).Value = sourceName
+    ws.Cells(nextRow, 3).Value = actionName
+    ws.Cells(nextRow, 4).Value = Left$(targetText, 250)
+    ws.Cells(nextRow, 5).Value = Left$(statusText, 120)
+    ws.Cells(nextRow, 6).Value = Left$(detailText, 1000)
+    ws.Visible = xlSheetVeryHidden
+
+    On Error GoTo 0
+End Sub
 
 Private Function Toolkit_GetActualDataRange(ByVal ws As Worksheet) As Range
     Dim firstCell As Range
@@ -1742,6 +1777,7 @@ Public Sub BizNo_QueryStatusForSelection()
     Dim batchRows(1 To 100) As Long
     Dim batchCount As Long
     Dim selectedFields As Collection
+    Dim responseCache As Object
 
     If Not Toolkit_GetRangeFromUserForm("사업자등록 상태조회", _
         "조회할 사업자등록번호 범위를 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
@@ -1793,20 +1829,28 @@ Public Sub BizNo_QueryStatusForSelection()
     Application.ScreenUpdating = False
     Toolkit_ProgressShow "사업자등록 상태조회", "조회 준비 중", lastRow - dataStartRow + 1
     On Error GoTo CleanFail
+    Set responseCache = CreateObject("Scripting.Dictionary")
 
     For rowIndex = dataStartRow To lastRow
         Toolkit_ProgressUpdate rowIndex - dataStartRow + 1, lastRow - dataStartRow + 1, "사업자등록번호 확인 중: " & CStr(rowIndex) & "행"
         Dim bizNo As String
         bizNo = DigitsOnly(CStr(ws.Cells(rowIndex, targetRange.Column).Value))
         If Len(bizNo) = 10 Then
-            batchCount = batchCount + 1
-            batchNos(batchCount) = bizNo
-            batchRows(batchCount) = rowIndex
             requestCount = requestCount + 1
+            If responseCache.Exists(bizNo) Then
+                Dim cachedStatus As Variant
+                cachedStatus = responseCache(bizNo)
+                Biz_WriteStatusRow ws, rowIndex, outputCol, CStr(cachedStatus(0)), bizNo, CStr(cachedStatus(1)), selectedFields
+                successCount = successCount + 1
+            Else
+                batchCount = batchCount + 1
+                batchNos(batchCount) = bizNo
+                batchRows(batchCount) = rowIndex
 
-            If batchCount = 100 Then
-                Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, successCount, failCount
-                batchCount = 0
+                If batchCount = 100 Then
+                    Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, responseCache, successCount, failCount
+                    batchCount = 0
+                End If
             End If
         ElseIf Len(Trim$(CStr(ws.Cells(rowIndex, targetRange.Column).Value))) > 0 Then
             failCount = failCount + 1
@@ -1815,7 +1859,7 @@ Public Sub BizNo_QueryStatusForSelection()
     Next rowIndex
 
     If batchCount > 0 Then
-        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, successCount, failCount
+        Biz_QueryStatusBatch ws, outputCol, batchNos, batchRows, batchCount, apiKey, selectedFields, responseCache, successCount, failCount
     End If
 
     ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(firstRow, outputCol + selectedFields.Count - 1)).EntireColumn.AutoFit
@@ -1923,12 +1967,13 @@ Private Function Biz_StatusFieldHeader(ByVal fieldKey As String) As String
     End Select
 End Function
 
-Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByVal selectedFields As Collection, ByRef successCount As Long, ByRef failCount As Long)
+Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef batchNos() As String, ByRef batchRows() As Long, ByVal batchCount As Long, ByVal apiKey As String, ByVal selectedFields As Collection, ByVal responseCache As Object, ByRef successCount As Long, ByRef failCount As Long)
     Dim responseText As String
     Dim statusCode As String
     Dim dataObjects As Collection
     Dim i As Long
 
+    On Error GoTo BatchFail
     responseText = Biz_PostStatus(batchNos, batchCount, apiKey)
     statusCode = Biz_JsonString(responseText, "status_code")
     If Len(statusCode) = 0 Then statusCode = "UNKNOWN"
@@ -1937,12 +1982,22 @@ Private Sub Biz_QueryStatusBatch(ws As Worksheet, ByVal outputCol As Long, ByRef
     For i = 1 To batchCount
         If i <= dataObjects.Count Then
             Biz_WriteStatusRow ws, batchRows(i), outputCol, statusCode, batchNos(i), CStr(dataObjects(i)), selectedFields
+            If Not responseCache Is Nothing Then responseCache(batchNos(i)) = Array(statusCode, CStr(dataObjects(i)))
             successCount = successCount + 1
         Else
             failCount = failCount + 1
             Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "응답 데이터가 없습니다. status_code=" & statusCode, selectedFields
         End If
     Next i
+    Exit Sub
+
+BatchFail:
+    For i = 1 To batchCount
+        failCount = failCount + 1
+        Biz_WriteStatusError ws, batchRows(i), outputCol, batchNos(i), "API 조회 실패: " & Err.Description, selectedFields
+        Toolkit_LogApiEvent ws.Parent, "사업자등록 상태조회", "batch", batchNos(i), "ERROR", Err.Description
+    Next i
+    Err.Clear
 End Sub
 
 Private Function Biz_PostStatus(ByRef batchNos() As String, ByVal batchCount As Long, ByVal apiKey As String) As String
@@ -1960,6 +2015,7 @@ Private Function Biz_PostStatus(ByRef batchNos() As String, ByVal batchCount As 
 
     url = BIZ_API_BASE_URL & "?serviceKey=" & Biz_ServiceKeyForUrl(apiKey)
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.setTimeouts API_RESOLVE_TIMEOUT_MS, API_CONNECT_TIMEOUT_MS, API_SEND_TIMEOUT_MS, API_RECEIVE_TIMEOUT_MS
     http.Open "POST", url, False
     http.setRequestHeader "Content-Type", "application/json; charset=utf-8"
     http.setRequestHeader "Accept", "application/json"
@@ -2160,6 +2216,7 @@ Public Sub NaverLocal_BuildListByDong()
             Set items = NaverLocal_Search(queryText, CLng(options("displayCount")), CStr(options("sortMode")))
             If Err.Number <> 0 Then
                 failCount = failCount + 1
+                Toolkit_LogApiEvent wb, "네이버 신규 리스트", "search", queryText, "ERROR", Err.Description
                 Err.Clear
             End If
             On Error GoTo ErrHandler
@@ -2334,6 +2391,7 @@ Public Sub NaverLocal_VerifyExistingData()
     Dim riskLabel As String
     Dim requestCount As Long
     Dim noResultCount As Long
+    Dim errorCount As Long
     Dim totalRows As Long
     totalRows = baseRange.Row + baseRange.Rows.Count - firstRow
 
@@ -2349,8 +2407,27 @@ Public Sub NaverLocal_VerifyExistingData()
         If Len(nameValue) > 0 Or Len(addressValue) > 0 Then
             requestCount = requestCount + 1
             queryText = NaverLocal_BuildVerifyQuery(nameValue, addressValue, CStr(options("queryMode")))
+
+            Set items = Nothing
+            Set bestItem = Nothing
+            nameScore = 0
+            addressScore = 0
+            On Error Resume Next
             Set items = NaverLocal_Search(queryText, CLng(options("displayCount")), CStr(options("sortMode")))
-            Set bestItem = NaverLocal_BestMatch(items, nameValue, addressValue, nameScore, addressScore)
+            If Err.Number <> 0 Then
+                errorCount = errorCount + 1
+                riskLabel = "오류 위험성 높음 확인 필요"
+                ws.Cells(rowIndex, outputCol + 7).Value = riskLabel
+                Toolkit_LogApiEvent ws.Parent, "네이버 주소 검증", "search", queryText, "ERROR", Err.Description
+                Err.Clear
+                On Error GoTo ErrHandler
+                NaverLocal_ColorRiskCell ws.Cells(rowIndex, outputCol + 7), riskLabel
+                NaverLocal_Delay CDbl(options("delaySeconds"))
+                GoTo NextVerifyRow
+            End If
+            On Error GoTo ErrHandler
+
+            If Not items Is Nothing Then Set bestItem = NaverLocal_BestMatch(items, nameValue, addressValue, nameScore, addressScore)
 
             If bestItem Is Nothing Then
                 noResultCount = noResultCount + 1
@@ -2371,6 +2448,7 @@ Public Sub NaverLocal_VerifyExistingData()
             NaverLocal_ColorRiskCell ws.Cells(rowIndex, outputCol + 7), riskLabel
             NaverLocal_Delay CDbl(options("delaySeconds"))
         End If
+NextVerifyRow:
     Next rowIndex
 
     ws.Range(ws.Cells(baseRange.Row, outputCol), ws.Cells(baseRange.Row, outputCol + 7)).Font.Bold = True
@@ -2380,7 +2458,8 @@ Public Sub NaverLocal_VerifyExistingData()
 
     MsgBox "네이버 지역검색 기반 주소 검증을 완료했습니다." & vbCrLf & _
            "조회: " & requestCount & "건" & vbCrLf & _
-           "검색결과 없음: " & noResultCount & "건", vbInformation, "네이버 지역검색"
+           "검색결과 없음: " & noResultCount & "건" & vbCrLf & _
+           "조회 오류: " & errorCount & "건", vbInformation, "네이버 지역검색"
     Exit Sub
 
 ErrHandler:
@@ -2573,12 +2652,23 @@ Private Function NaverLocal_Search(ByVal queryText As String, ByVal displayCount
     If displayCount > 5 Then displayCount = 5
     If sortMode <> "random" Then sortMode = "comment"
 
+    Static searchCache As Object
+    If searchCache Is Nothing Then Set searchCache = CreateObject("Scripting.Dictionary")
+
+    Dim cacheKey As String
+    cacheKey = NaverLocal_GetClientId() & "|" & queryText & "|" & CStr(displayCount) & "|" & sortMode
+    If searchCache.Exists(cacheKey) Then
+        Set NaverLocal_Search = searchCache(cacheKey)
+        Exit Function
+    End If
+
     Dim url As String
     url = NAVER_API_BASE_URL & "?query=" & NaverLocal_UrlEncode(queryText) & _
           "&display=" & CStr(displayCount) & "&start=1&sort=" & sortMode
 
     Dim http As Object
     Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.setTimeouts API_RESOLVE_TIMEOUT_MS, API_CONNECT_TIMEOUT_MS, API_SEND_TIMEOUT_MS, API_RECEIVE_TIMEOUT_MS
     http.Open "GET", url, False
     http.setRequestHeader "X-Naver-Client-Id", NaverLocal_GetClientId()
     http.setRequestHeader "X-Naver-Client-Secret", NaverLocal_GetClientSecret()
@@ -2590,6 +2680,7 @@ Private Function NaverLocal_Search(ByVal queryText As String, ByVal displayCount
     End If
 
     Set NaverLocal_Search = NaverLocal_ExtractItems(CStr(http.responseText))
+    searchCache.Add cacheKey, NaverLocal_Search
 End Function
 
 Private Function NaverLocal_ExtractItems(ByVal jsonText As String) As Collection
