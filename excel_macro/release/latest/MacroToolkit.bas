@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.4"
+Public Const TOOLKIT_VERSION As String = "1.1.5"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -6588,18 +6588,19 @@ Public Sub SampleDesign_ReviewQuota()
 End Sub
 
 Public Sub SampleDesign_ListifyPopulationTable()
-    Dim modeChoice As String
-    modeChoice = Toolkit_ButtonMenu("모집단 구성표 리스트화", _
-                                    "리스트화 방식을 선택하세요.", _
-                                    "1" & vbTab & "직접 지정" & vbLf & _
-                                    "2" & vbTab & "자동 추정", _
-                                    "1")
+    Dim modeAnswer As VbMsgBoxResult
+    modeAnswer = MsgBox("리스트화 방식을 선택하세요." & vbCrLf & vbCrLf & _
+                        "[예] 직접 지정: 행 구분, 열 헤더, 숫자 값 범위를 차례로 선택합니다." & vbCrLf & _
+                        "[아니오] 자동 추정: 구성표 전체 범위를 선택하면 헤더와 값 열을 자동으로 추정합니다." & vbCrLf & _
+                        "[취소] 작업을 중단합니다.", _
+                        vbQuestion + vbYesNoCancel, "모집단 구성표 리스트화")
 
-    If modeChoice = "1" Then
-        SampleDesign_ListifyPopulationTableManual
-    ElseIf modeChoice = "2" Then
-        SampleDesign_ListifyPopulationTableAuto
-    End If
+    Select Case modeAnswer
+        Case vbYes
+            SampleDesign_ListifyPopulationTableManual
+        Case vbNo
+            SampleDesign_ListifyPopulationTableAuto
+    End Select
 End Sub
 
 Private Sub SampleDesign_ListifyPopulationTableManual()
@@ -7686,12 +7687,12 @@ Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText 
     If Len(optionsText) > 0 Then
         Toolkit_LauncherPrompt = Toolkit_ButtonMenu(title, Toolkit_FirstPromptLine(promptText), optionsText, defaultChoice)
     Else
-        Toolkit_LauncherPrompt = Toolkit_ButtonMenuFallback(title, promptText, "", defaultChoice)
+        Toolkit_LauncherPrompt = ""
     End If
     Exit Function
 
 Fallback:
-    Toolkit_LauncherPrompt = Toolkit_ButtonMenuFallback(title, promptText, "", defaultChoice)
+    Toolkit_LauncherPrompt = ""
 End Function
 
 Private Sub Toolkit_ShowLauncherError(ByVal title As String, ByVal message As String)
@@ -7711,21 +7712,12 @@ Private Function Toolkit_ButtonMenu(ByVal title As String, ByVal guideText As St
     Exit Function
 
 Fallback:
-    Toolkit_ButtonMenu = Toolkit_ButtonMenuFallback(title, guideText, optionsText, defaultChoice)
+    Toolkit_ButtonMenu = ""
 End Function
 
 Private Function Toolkit_ButtonMenuFallback(ByVal title As String, ByVal guideText As String, _
                                             ByVal optionsText As String, ByVal defaultChoice As String) As String
-    Dim promptText As String
-    promptText = guideText & vbCrLf & vbCrLf & Toolkit_OptionsTextToPrompt(optionsText)
-
-    Dim result As Variant
-    result = Application.InputBox(promptText, title, defaultChoice, Type:=2)
-    If VarType(result) = vbBoolean And result = False Then
-        Toolkit_ButtonMenuFallback = ""
-    Else
-        Toolkit_ButtonMenuFallback = Trim$(CStr(result))
-    End If
+    Toolkit_ButtonMenuFallback = ""
 End Function
 
 Private Function Toolkit_OptionsTextToPrompt(ByVal optionsText As String) As String
@@ -7822,7 +7814,7 @@ Private Function Toolkit_CheckListMenu(ByVal title As String, ByVal guideText As
     Exit Function
 
 Fallback:
-    Toolkit_CheckListMenu = InputBox(guideText & vbCrLf & vbCrLf & Toolkit_OptionsTextToPrompt(optionsText), title, defaultCsv)
+    Toolkit_CheckListMenu = ""
 End Function
 
 ' ============================================================
