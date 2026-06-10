@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.8"
+Public Const TOOLKIT_VERSION As String = "1.0.9"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -333,7 +333,8 @@ Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
 
     Dim promptText As String
     promptText = guideText & vbCrLf & vbCrLf & _
-                 "범위 입력칸을 클릭한 뒤 시트에서 마우스 드래그, Shift+방향키, Ctrl+Shift+방향키로 범위를 지정할 수 있습니다." & vbCrLf & _
+                 "범위 입력칸을 클릭한 뒤 시트에서 마우스 드래그, Shift+방향키, Ctrl+Shift+방향키로 연속 범위를 지정할 수 있습니다." & vbCrLf & _
+                 "떨어진 여러 범위는 한 번에 처리하지 않습니다. 필요한 경우 기능을 여러 번 실행하세요." & vbCrLf & _
                  "취소하면 작업을 실행하지 않습니다."
 
     On Error Resume Next
@@ -347,7 +348,43 @@ Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
     End If
     On Error GoTo 0
 
-    Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
+    If targetRange Is Nothing Then Exit Function
+
+    If targetRange.Areas.Count > 1 Then
+        MsgBox "떨어진 여러 범위가 선택되었습니다." & vbCrLf & vbCrLf & _
+               "현재 기능은 오류 방지를 위해 하나의 연속 범위만 처리합니다." & vbCrLf & _
+               "한 덩어리의 범위를 다시 선택하거나 기능을 여러 번 나누어 실행하세요.", _
+               vbExclamation, formTitle
+        Set targetRange = Nothing
+        Exit Function
+    End If
+
+    If Toolkit_RangeHasMergedCells(targetRange) Then
+        Dim mergeAnswer As VbMsgBoxResult
+        mergeAnswer = MsgBox("선택 범위에 병합된 셀이 포함되어 있습니다." & vbCrLf & vbCrLf & _
+                             "병합 셀은 열 추가, 행 복사, 결과 쓰기 과정에서 예기치 않은 오류를 만들 수 있습니다." & vbCrLf & _
+                             "그래도 계속 진행할까요?", _
+                             vbQuestion + vbYesNo, formTitle)
+        If mergeAnswer <> vbYes Then
+            Set targetRange = Nothing
+            Exit Function
+        End If
+    End If
+
+    Toolkit_GetRangeFromUserForm = True
+End Function
+
+Private Function Toolkit_RangeHasMergedCells(ByVal targetRange As Range) As Boolean
+    On Error GoTo SafeExit
+    Dim mergeState As Variant
+    mergeState = targetRange.MergeCells
+
+    If IsNull(mergeState) Then
+        Toolkit_RangeHasMergedCells = True
+    ElseIf CBool(mergeState) Then
+        Toolkit_RangeHasMergedCells = True
+    End If
+SafeExit:
 End Function
 
 Private Sub Toolkit_BeginOperation(Optional ByVal statusMessage As String = "")
