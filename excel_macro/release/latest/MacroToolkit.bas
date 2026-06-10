@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.3"
+Public Const TOOLKIT_VERSION As String = "1.1.4"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -6588,10 +6588,93 @@ Public Sub SampleDesign_ReviewQuota()
 End Sub
 
 Public Sub SampleDesign_ListifyPopulationTable()
+    Dim modeChoice As String
+    modeChoice = Toolkit_ButtonMenu("모집단 구성표 리스트화", _
+                                    "리스트화 방식을 선택하세요.", _
+                                    "1" & vbTab & "직접 지정" & vbLf & _
+                                    "2" & vbTab & "자동 추정", _
+                                    "1")
+
+    If modeChoice = "1" Then
+        SampleDesign_ListifyPopulationTableManual
+    ElseIf modeChoice = "2" Then
+        SampleDesign_ListifyPopulationTableAuto
+    End If
+End Sub
+
+Private Sub SampleDesign_ListifyPopulationTableManual()
+    Dim rowHeaderRange As Range
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
+        "행에서 반복될 구분 범위를 선택하세요." & vbCrLf & _
+        "예: 중분류/KSIC명 데이터 행. 병합셀 때문에 비어 있는 값은 위 값을 이어받습니다." & vbCrLf & _
+        "헤더 행과 합계 행은 제외하고 실제 데이터 행만 선택하는 것을 권장합니다.", _
+        rowHeaderRange) Then Exit Sub
+    If rowHeaderRange Is Nothing Then Exit Sub
+
+    Dim columnHeaderRange As Range
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
+        "리스트화할 항목의 열 헤더 범위를 선택하세요." & vbCrLf & _
+        "예: 1-4명, 5-9명 같은 종사자규모 또는 인구수/사업체규모 구간 헤더입니다." & vbCrLf & _
+        "값 범위와 같은 열 개수여야 합니다.", _
+        columnHeaderRange) Then Exit Sub
+    If columnHeaderRange Is Nothing Then Exit Sub
+
+    Dim valueRange As Range
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
+        "리스트로 펼칠 숫자 값 범위를 선택하세요." & vbCrLf & _
+        "앞에서 선택한 행 구분 범위와 행 개수가 같고, 열 헤더 범위와 열 개수가 같아야 합니다.", _
+        valueRange) Then Exit Sub
+    If valueRange Is Nothing Then Exit Sub
+
+    If Not SampleDesign_ValidateManualListifyRanges(rowHeaderRange, columnHeaderRange, valueRange) Then Exit Sub
+
+    Dim dimensionAnswer As Variant
+    dimensionAnswer = Application.InputBox( _
+        Prompt:="열 방향으로 펼칠 항목의 이름을 입력하세요." & vbCrLf & _
+                "예: 종사자규모, 인구수, 사업체규모", _
+        Title:="리스트 항목 이름", _
+        Default:="구분", _
+        Type:=2)
+    Dim dimensionName As String
+    If VarType(dimensionAnswer) = vbBoolean Then
+        dimensionName = "구분"
+    Else
+        dimensionName = Trim$(CStr(dimensionAnswer))
+        If Len(dimensionName) = 0 Then dimensionName = "구분"
+    End If
+
+    Dim valueAnswer As Variant
+    valueAnswer = Application.InputBox( _
+        Prompt:="숫자 값 열의 이름을 입력하세요." & vbCrLf & _
+                "예: 모집단수, 사업체수, 인구수", _
+        Title:="값 열 이름", _
+        Default:="모집단수", _
+        Type:=2)
+    Dim valueName As String
+    If VarType(valueAnswer) = vbBoolean Then
+        valueName = "모집단수"
+    Else
+        valueName = Trim$(CStr(valueAnswer))
+        If Len(valueName) = 0 Then valueName = "모집단수"
+    End If
+
+    Dim wb As Workbook
+    Set wb = valueRange.Worksheet.Parent
+
+    Dim outWs As Worksheet
+    Set outWs = SampleDesign_PrepareOutputSheet(wb, "모집단_리스트")
+    SampleDesign_WritePopulationListManual rowHeaderRange, columnHeaderRange, valueRange, outWs, dimensionName, valueName
+
+    outWs.Activate
+    MsgBox "선택한 범위를 기준으로 모집단 구성표를 리스트화했습니다." & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
+End Sub
+
+Private Sub SampleDesign_ListifyPopulationTableAuto()
     Dim targetRange As Range
     If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
         "모집단 구성표 전체 범위를 선택하세요." & vbCrLf & _
-        "제목행, 헤더행, 행 구분, 종사자규모 열, 합계 열이 함께 포함되어도 됩니다.", _
+        "제목행, 헤더행, 행 구분, 값 열, 합계 열이 함께 포함되어도 됩니다.", _
         targetRange) Then Exit Sub
     If targetRange Is Nothing Then Exit Sub
 
@@ -6634,6 +6717,140 @@ Public Sub SampleDesign_ListifyPopulationTable()
     MsgBox "모집단 구성표를 리스트화했습니다." & vbCrLf & _
            "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
 End Sub
+
+Private Function SampleDesign_ValidateManualListifyRanges(ByVal rowHeaderRange As Range, _
+                                                          ByVal columnHeaderRange As Range, _
+                                                          ByVal valueRange As Range) As Boolean
+    If Not (rowHeaderRange.Worksheet Is valueRange.Worksheet) _
+       Or Not (columnHeaderRange.Worksheet Is valueRange.Worksheet) Then
+        MsgBox "행 구분, 열 헤더, 값 범위는 모두 같은 시트에서 선택해야 합니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If rowHeaderRange.Areas.Count > 1 Or columnHeaderRange.Areas.Count > 1 Or valueRange.Areas.Count > 1 Then
+        MsgBox "각 범위는 떨어진 여러 영역이 아니라 하나의 연속 범위로 선택하세요.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If columnHeaderRange.Rows.Count <> 1 Then
+        MsgBox "열 헤더 범위는 한 행으로 선택해야 합니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If rowHeaderRange.Rows.Count <> valueRange.Rows.Count Then
+        MsgBox "행 구분 범위와 값 범위의 행 개수가 다릅니다." & vbCrLf & _
+               "행 구분: " & rowHeaderRange.Rows.Count & "행 / 값 범위: " & valueRange.Rows.Count & "행", _
+               vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If columnHeaderRange.Columns.Count <> valueRange.Columns.Count Then
+        MsgBox "열 헤더 범위와 값 범위의 열 개수가 다릅니다." & vbCrLf & _
+               "열 헤더: " & columnHeaderRange.Columns.Count & "열 / 값 범위: " & valueRange.Columns.Count & "열", _
+               vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    SampleDesign_ValidateManualListifyRanges = True
+End Function
+
+Private Sub SampleDesign_WritePopulationListManual(ByVal rowHeaderRange As Range, _
+                                                   ByVal columnHeaderRange As Range, _
+                                                   ByVal valueRange As Range, _
+                                                   ByVal outWs As Worksheet, _
+                                                   ByVal dimensionName As String, _
+                                                   ByVal valueName As String)
+    outWs.Cells.Clear
+    outWs.Range("A1").Value = "모집단 구성표 리스트"
+    outWs.Range("A1").Font.Bold = True
+    outWs.Range("A1").Font.Size = 14
+    outWs.Range("A2").Value = "원본 시트"
+    outWs.Range("B2").Value = valueRange.Worksheet.Name
+    outWs.Range("A3").Value = "행 구분 범위"
+    outWs.Range("B3").Value = rowHeaderRange.Address(False, False)
+    outWs.Range("D3").Value = "열 헤더 범위"
+    outWs.Range("E3").Value = columnHeaderRange.Address(False, False)
+    outWs.Range("G3").Value = "값 범위"
+    outWs.Range("H3").Value = valueRange.Address(False, False)
+
+    Dim rowFieldCount As Long
+    rowFieldCount = rowHeaderRange.Columns.Count
+
+    Dim headerFieldLimit As Long
+    headerFieldLimit = Application.Min(rowFieldCount, 5)
+
+    SampleDesign_WriteArray outWs, 5, 1, Array("쿼터ID", "행구분1", "행구분2", "행구분3", "행구분4", "행구분5", dimensionName, valueName, "원본행", "원본열")
+
+    Dim f As Long
+    For f = 1 To headerFieldLimit
+        Dim inferredHeader As String
+        inferredHeader = SampleDesign_InferRowHeaderCaption(rowHeaderRange, f)
+        If Len(inferredHeader) > 0 Then outWs.Cells(5, 1 + f).Value = inferredHeader
+    Next f
+
+    Dim lastSeen() As String
+    ReDim lastSeen(1 To rowFieldCount)
+
+    Dim relRow As Long
+    Dim relCol As Long
+    Dim outRow As Long
+    outRow = 6
+
+    For relRow = 1 To valueRange.Rows.Count
+        For f = 1 To rowFieldCount
+            Dim curText As String
+            curText = Trim$(CStr(rowHeaderRange.Cells(relRow, f).Value))
+            If Len(curText) > 0 Then lastSeen(f) = curText
+        Next f
+
+        If Not SampleDesign_IsManualTotalRow(lastSeen, rowFieldCount) Then
+            For relCol = 1 To valueRange.Columns.Count
+                If SampleDesign_IsPopulationNumber(valueRange.Cells(relRow, relCol).Value) Then
+                    Dim popN As Double
+                    popN = SampleDesign_ToPopulationNumber(valueRange.Cells(relRow, relCol).Value)
+                    If popN > 0 Then
+                        outWs.Cells(outRow, 1).Value = "Q" & Format$(outRow - 5, "0000")
+                        For f = 1 To headerFieldLimit
+                            outWs.Cells(outRow, 1 + f).Value = lastSeen(f)
+                        Next f
+                        outWs.Cells(outRow, 7).Value = Trim$(CStr(columnHeaderRange.Cells(1, relCol).Value))
+                        outWs.Cells(outRow, 8).Value = popN
+                        outWs.Cells(outRow, 9).Value = valueRange.Row + relRow - 1
+                        outWs.Cells(outRow, 10).Value = valueRange.Column + relCol - 1
+                        outRow = outRow + 1
+                    End If
+                End If
+            Next relCol
+        End If
+    Next relRow
+
+    With outWs.Range(outWs.Cells(5, 1), outWs.Cells(Application.Max(5, outRow - 1), 10))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    outWs.Range("A5:J5").Font.Bold = True
+    outWs.Range("A5:J5").Interior.Color = RGB(220, 235, 250)
+    outWs.Range("H:H").NumberFormat = "#,##0"
+End Sub
+
+Private Function SampleDesign_InferRowHeaderCaption(ByVal rowHeaderRange As Range, ByVal relCol As Long) As String
+    If rowHeaderRange.Row > 1 Then
+        SampleDesign_InferRowHeaderCaption = Trim$(CStr(rowHeaderRange.Worksheet.Cells(rowHeaderRange.Row - 1, rowHeaderRange.Column + relCol - 1).Value))
+    End If
+    If Len(SampleDesign_InferRowHeaderCaption) = 0 Then SampleDesign_InferRowHeaderCaption = "행구분" & relCol
+End Function
+
+Private Function SampleDesign_IsManualTotalRow(ByRef lastSeen() As String, ByVal rowFieldCount As Long) As Boolean
+    Dim f As Long
+    For f = 1 To rowFieldCount
+        Dim textValue As String
+        textValue = Replace(Trim$(lastSeen(f)), " ", "")
+        If textValue = "계" Or textValue = "합계" Or textValue = "총계" Then
+            SampleDesign_IsManualTotalRow = True
+            Exit Function
+        End If
+    Next f
+End Function
 
 Private Function SampleDesign_DetectCrosstabHeaderRow(ByVal tableRange As Range) As Long
     Dim maxScanRows As Long
