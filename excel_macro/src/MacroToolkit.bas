@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.10"
+Public Const TOOLKIT_VERSION As String = "1.1.0"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -51,7 +51,8 @@ Public Sub Toolkit_About()
            "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
            "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
            "- 네이버 지역검색 API 기반 업체 리스트 생성/주소 검증" & vbCrLf & _
-           "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성", _
+           "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성" & vbCrLf & _
+           "- 표본설계 시트 생성 및 표본할당 계산", _
            vbInformation, "매크로 툴킷"
 End Sub
 
@@ -108,6 +109,9 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A36").Value = "Address_SplitAdministrativeParts"
     ws.Range("A37").Value = "Phone_ValidateSelection"
     ws.Range("A38").Value = "SPSS_ExtractTableMetadata"
+    ws.Range("A39").Value = "SampleDesign_CreateTemplate"
+    ws.Range("A40").Value = "SampleDesign_RunAllocation"
+    ws.Range("A41").Value = "SampleDesign_CreateProgressTracker"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -6412,6 +6416,654 @@ Private Function SPSS_JoinCollection(ByVal items As Collection) As String
     Next i
     SPSS_JoinCollection = result
 End Function
+
+' ============================================================
+' 표본설계/표본할당 도구
+' ============================================================
+Public Sub SampleDesign_CreateTemplate()
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "표본설계 시트를 만들 통합문서를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim inputWs As Worksheet
+    Dim resultWs As Worksheet
+    Dim reviewWs As Worksheet
+    Set inputWs = SampleDesign_PrepareSheet(wb, "표본설계_입력", "표본설계 입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
+    If inputWs Is Nothing Then Exit Sub
+    Set resultWs = SampleDesign_PrepareSheet(wb, "표본설계_할당결과", "표본설계 할당결과 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
+    If resultWs Is Nothing Then Exit Sub
+    Set reviewWs = SampleDesign_PrepareSheet(wb, "표본설계_검토", "표본설계 검토 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
+    If reviewWs Is Nothing Then Exit Sub
+
+    SampleDesign_WriteInputTemplate inputWs
+    SampleDesign_WriteEmptyResult resultWs
+    SampleDesign_WriteEmptyReview reviewWs
+
+    inputWs.Activate
+    inputWs.Range("B4").Select
+    MsgBox "표본설계 입력/결과/검토 시트를 만들었습니다." & vbCrLf & _
+           "목표 표본 수와 모집단 표를 입력한 뒤 [할당 계산]을 실행하세요.", _
+           vbInformation, "표본설계"
+End Sub
+
+Public Sub SampleDesign_RunAllocation()
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "작업할 통합문서를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim inputWs As Worksheet
+    Set inputWs = SampleDesign_FindInputSheet(wb)
+    If inputWs Is Nothing Then
+        MsgBox "'표본설계_입력' 시트를 찾지 못했습니다." & vbCrLf & _
+               "먼저 [설계 시트 생성]을 실행하세요.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim targetN As Long
+    targetN = CLng(Val(inputWs.Range("B4").Value))
+    If targetN <= 0 Then
+        MsgBox "목표 표본 수(B4)를 1 이상의 숫자로 입력하세요.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim minN As Long
+    Dim maxN As Long
+    Dim alpha As Double
+    Dim methodName As String
+    minN = CLng(Val(inputWs.Range("B5").Value))
+    maxN = CLng(Val(inputWs.Range("B6").Value))
+    methodName = Trim$(CStr(inputWs.Range("B7").Value))
+    alpha = Val(inputWs.Range("B8").Value)
+    If alpha <= 0 Then alpha = 0.5
+
+    If Not SampleDesign_SelectMethod(methodName, alpha) Then Exit Sub
+
+    Dim records As Collection
+    Dim issues As Collection
+    Set records = New Collection
+    Set issues = New Collection
+    SampleDesign_ReadPopulation inputWs, records, issues
+
+    If records.Count = 0 Then
+        MsgBox "계산할 모집단 행을 찾지 못했습니다." & vbCrLf & _
+               "표본설계_입력 시트의 13행부터 모집단 정보를 입력하세요.", _
+               vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim resultWs As Worksheet
+    Dim reviewWs As Worksheet
+    Set resultWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_할당결과")
+    Set reviewWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_검토")
+
+    Dim allocation As Collection
+    Set allocation = SampleDesign_Allocate(records, targetN, methodName, alpha, minN, maxN, issues)
+
+    Application.ScreenUpdating = False
+    SampleDesign_WriteAllocationResult resultWs, allocation, targetN, methodName
+    SampleDesign_WriteReviewReport reviewWs, allocation, issues, targetN, methodName, alpha
+    Application.ScreenUpdating = True
+
+    resultWs.Activate
+    MsgBox "표본할당 계산을 완료했습니다." & vbCrLf & _
+           "배분 방식: " & methodName & vbCrLf & _
+           "목표 표본 수: " & targetN & vbCrLf & _
+           "최종 배정 표본 수: " & SampleDesign_TotalFinalN(allocation), _
+           vbInformation, "표본설계"
+End Sub
+
+Public Sub SampleDesign_CreateProgressTracker()
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+
+    Dim resultWs As Worksheet
+    Set resultWs = SampleDesign_FindSheet(wb, "표본설계_할당결과")
+    If resultWs Is Nothing Then
+        MsgBox "먼저 [할당 계산]을 실행해 표본설계_할당결과 시트를 만드세요.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim outWs As Worksheet
+    Set outWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_진행관리")
+    outWs.Range("A1").Value = "표본설계 진행관리"
+    outWs.Range("A1").Font.Bold = True
+    outWs.Range("A1").Font.Size = 14
+    SampleDesign_WriteArray outWs, 3, 1, Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "최종할당", "회수", "부족", "초과", "달성률", "상태")
+
+    Dim lastRow As Long
+    lastRow = resultWs.Cells(resultWs.Rows.Count, 1).End(xlUp).Row
+    If lastRow < 4 Then
+        MsgBox "할당결과 시트에 진행관리로 옮길 데이터가 없습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim r As Long
+    Dim outRow As Long
+    outRow = 4
+    For r = 4 To lastRow
+        If Trim$(CStr(resultWs.Cells(r, 1).Value)) <> "총계" And Len(Trim$(CStr(resultWs.Cells(r, 1).Value))) > 0 Then
+            outWs.Cells(outRow, 1).Resize(1, 6).Value = resultWs.Cells(r, 1).Resize(1, 6).Value
+            outWs.Cells(outRow, 7).Value = resultWs.Cells(r, 11).Value
+            outWs.Cells(outRow, 8).Value = 0
+            outWs.Cells(outRow, 9).FormulaR1C1 = "=MAX(RC[-2]-RC[-1],0)"
+            outWs.Cells(outRow, 10).FormulaR1C1 = "=MAX(RC[-2]-RC[-3],0)"
+            outWs.Cells(outRow, 11).FormulaR1C1 = "=IF(RC[-4]=0,0,RC[-3]/RC[-4])"
+            outWs.Cells(outRow, 12).FormulaR1C1 = "=IF(RC[-5]=0,""할당없음"",IF(RC[-4]=0,""미착수"",IF(RC[-2]>0,""초과"",IF(RC[-3]>0,""미달"",""충족""))))"
+            outRow = outRow + 1
+        End If
+    Next r
+
+    With outWs.Range(outWs.Cells(3, 1), outWs.Cells(Application.Max(3, outRow - 1), 12))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    outWs.Range("A3:L3").Font.Bold = True
+    outWs.Range("A3:L3").Interior.Color = RGB(220, 235, 250)
+    outWs.Range("K:K").NumberFormat = "0.0%"
+    SampleDesign_ApplyProgressFormatting outWs, 4, outRow - 1
+    outWs.Activate
+    MsgBox "표본설계 진행관리 시트를 생성했습니다.", vbInformation, "표본설계"
+End Sub
+
+Public Sub SampleDesign_ReviewQuota()
+    SampleDesign_RunAllocation
+End Sub
+
+Private Function SampleDesign_PrepareSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal overwritePrompt As String) As Worksheet
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, sheetName)
+    If Not ws Is Nothing Then
+        If MsgBox(overwritePrompt, vbQuestion + vbYesNo, "표본설계") = vbYes Then
+            ws.Cells.Clear
+            Set SampleDesign_PrepareSheet = ws
+        Else
+            Set SampleDesign_PrepareSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+            SampleDesign_PrepareSheet.Name = SPSS_UniqueSheetName(wb, sheetName)
+        End If
+    Else
+        Set SampleDesign_PrepareSheet = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        SampleDesign_PrepareSheet.Name = sheetName
+    End If
+End Function
+
+Private Function SampleDesign_PrepareOutputSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, sheetName)
+    If ws Is Nothing Then
+        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        ws.Name = sheetName
+    Else
+        ws.Cells.Clear
+    End If
+    Set SampleDesign_PrepareOutputSheet = ws
+End Function
+
+Private Function SampleDesign_FindInputSheet(ByVal wb As Workbook) As Worksheet
+    Set SampleDesign_FindInputSheet = SampleDesign_FindSheet(wb, "표본설계_입력")
+End Function
+
+Private Function SampleDesign_FindSheet(ByVal wb As Workbook, ByVal sheetName As String) As Worksheet
+    On Error Resume Next
+    Set SampleDesign_FindSheet = wb.Worksheets(sheetName)
+    On Error GoTo 0
+End Function
+
+Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 입력"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 16
+    ws.Range("A3").Value = "프로젝트명"
+    ws.Range("A4").Value = "목표 표본 수"
+    ws.Range("A5").Value = "기본 최소 셀 표본"
+    ws.Range("A6").Value = "기본 최대 셀 표본"
+    ws.Range("A7").Value = "배분 방식"
+    ws.Range("A8").Value = "멱배분 alpha"
+    ws.Range("A9").Value = "잔여 배정"
+    ws.Range("B3").Value = "신규 조사"
+    ws.Range("B4").Value = 1000
+    ws.Range("B5").Value = 0
+    ws.Range("B6").Value = 0
+    ws.Range("B7").Value = "단순 비례"
+    ws.Range("B8").Value = 0.5
+    ws.Range("B9").Value = "소수점 잔차 큰 순"
+    ws.Range("D3").Value = "배분 방식 입력값"
+    ws.Range("D4").Value = "단순 비례"
+    ws.Range("D5").Value = "제곱근 비례"
+    ws.Range("D6").Value = "멱배분"
+    ws.Range("D7").Value = "균등 배분"
+    ws.Range("D8").Value = "사용자 지정 가중"
+    ws.Range("A11").Value = "모집단 표"
+    ws.Range("A11").Font.Bold = True
+    SampleDesign_WriteArray ws, 12, 1, Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "모집단수", "우선배정여부", "최소표본", "최대표본", "사용자가중치", "비고")
+    SampleDesign_WriteArray ws, 13, 1, Array("Q001", "서울", "제조업", "10인 미만", "", "", 1000, "", "", "", "", "")
+    SampleDesign_WriteArray ws, 14, 1, Array("Q002", "부산", "서비스업", "10~49인", "", "", 500, "", "", "", "", "")
+    With ws.Range("A12:L12")
+        .Font.Bold = True
+        .Interior.Color = RGB(220, 235, 250)
+        .Borders.LineStyle = xlContinuous
+    End With
+    ws.Range("A3:B9").Borders.LineStyle = xlContinuous
+    ws.Columns("A:L").AutoFit
+End Sub
+
+Private Sub SampleDesign_WriteEmptyResult(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 할당결과"
+    ws.Range("A1").Font.Bold = True
+    SampleDesign_WriteArray ws, 3, 1, SampleDesign_ResultHeaders()
+    ws.Columns("A:O").AutoFit
+End Sub
+
+Private Sub SampleDesign_WriteEmptyReview(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 검토"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A3").Value = "할당 계산 후 검토 요약이 표시됩니다."
+    ws.Columns("A:D").AutoFit
+End Sub
+
+Private Function SampleDesign_SelectMethod(ByRef methodName As String, ByRef alpha As Double) As Boolean
+    Dim prompt As String
+    prompt = "배분 방식을 선택하세요." & vbCrLf & vbCrLf & _
+             "1. 단순 비례" & vbCrLf & _
+             "2. 제곱근 비례" & vbCrLf & _
+             "3. 멱배분" & vbCrLf & _
+             "4. 균등 배분" & vbCrLf & _
+             "5. 사용자 지정 가중" & vbCrLf & vbCrLf & _
+             "현재 입력값: " & IIf(Len(methodName) = 0, "단순 비례", methodName)
+    Dim result As Variant
+    result = Application.InputBox(prompt, "표본설계 - 배분 방식", SampleDesign_MethodToChoice(methodName), Type:=2)
+    If VarType(result) = vbBoolean And result = False Then Exit Function
+    Select Case Trim$(CStr(result))
+        Case "1", "단순 비례", "비례": methodName = "단순 비례"
+        Case "2", "제곱근 비례", "제곱근": methodName = "제곱근 비례": alpha = 0.5
+        Case "3", "멱배분"
+            methodName = "멱배분"
+            Dim alphaInput As Variant
+            alphaInput = Application.InputBox("멱배분 지수 alpha를 입력하세요." & vbCrLf & _
+                                              "1=단순 비례, 0.5=제곱근 비례, 0=균등 배분", _
+                                              "표본설계 - alpha", CStr(alpha), Type:=1)
+            If VarType(alphaInput) = vbBoolean And alphaInput = False Then Exit Function
+            alpha = CDbl(alphaInput)
+        Case "4", "균등 배분", "균등": methodName = "균등 배분": alpha = 0
+        Case "5", "사용자 지정 가중", "사용자 가중": methodName = "사용자 지정 가중"
+        Case Else
+            MsgBox "배분 방식은 1~5 중 하나를 선택하세요.", vbExclamation, "표본설계"
+            Exit Function
+    End Select
+    SampleDesign_SelectMethod = True
+End Function
+
+Private Function SampleDesign_MethodToChoice(ByVal methodName As String) As String
+    Select Case Trim$(methodName)
+        Case "제곱근 비례": SampleDesign_MethodToChoice = "2"
+        Case "멱배분": SampleDesign_MethodToChoice = "3"
+        Case "균등 배분": SampleDesign_MethodToChoice = "4"
+        Case "사용자 지정 가중": SampleDesign_MethodToChoice = "5"
+        Case Else: SampleDesign_MethodToChoice = "1"
+    End Select
+End Function
+
+Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByRef records As Collection, ByRef issues As Collection)
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 7).End(xlUp).Row
+    If lastRow < 13 Then Exit Sub
+    Dim r As Long
+    For r = 13 To lastRow
+        Dim popN As Double
+        popN = Val(ws.Cells(r, 7).Value)
+        If Len(Trim$(CStr(ws.Cells(r, 1).Value & ws.Cells(r, 2).Value & ws.Cells(r, 3).Value & ws.Cells(r, 4).Value & ws.Cells(r, 5).Value & ws.Cells(r, 6).Value & ws.Cells(r, 7).Value))) = 0 Then
+        ElseIf popN <= 0 Then
+            issues.Add Array("제외", r, "모집단수가 0 이하이거나 숫자가 아닙니다.")
+        Else
+            Dim key As String
+            key = SampleDesign_BuildQuotaKey(ws, r)
+            Dim rec As Variant
+            If dict.Exists(key) Then
+                rec = dict(key)
+                rec(6) = CDbl(rec(6)) + popN
+                rec(13) = CStr(rec(13)) & ", " & r
+                dict(key) = rec
+                issues.Add Array("중복합산", r, "같은 쿼터 조합을 기존 행에 합산했습니다.")
+            Else
+                rec = Array(CStr(ws.Cells(r, 1).Value), CStr(ws.Cells(r, 2).Value), CStr(ws.Cells(r, 3).Value), _
+                            CStr(ws.Cells(r, 4).Value), CStr(ws.Cells(r, 5).Value), CStr(ws.Cells(r, 6).Value), _
+                            popN, CStr(ws.Cells(r, 8).Value), CLng(Val(ws.Cells(r, 9).Value)), _
+                            CLng(Val(ws.Cells(r, 10).Value)), CDbl(Val(ws.Cells(r, 11).Value)), _
+                            CStr(ws.Cells(r, 12).Value), key, CStr(r))
+                dict.Add key, rec
+            End If
+        End If
+    Next r
+    Dim item As Variant
+    For Each item In dict.Items
+        records.Add item
+    Next item
+End Sub
+
+Private Function SampleDesign_BuildQuotaKey(ByVal ws As Worksheet, ByVal rowIndex As Long) As String
+    SampleDesign_BuildQuotaKey = Trim$(CStr(ws.Cells(rowIndex, 2).Value)) & "|" & _
+                                Trim$(CStr(ws.Cells(rowIndex, 3).Value)) & "|" & _
+                                Trim$(CStr(ws.Cells(rowIndex, 4).Value)) & "|" & _
+                                Trim$(CStr(ws.Cells(rowIndex, 5).Value)) & "|" & _
+                                Trim$(CStr(ws.Cells(rowIndex, 6).Value))
+End Function
+
+Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal targetN As Long, _
+                                       ByVal methodName As String, ByVal alpha As Double, _
+                                       ByVal defaultMin As Long, ByVal defaultMax As Long, _
+                                       ByRef issues As Collection) As Collection
+    Dim result As New Collection
+    Dim i As Long, totalPop As Double, totalWeight As Double
+    For i = 1 To records.Count
+        Dim rec As Variant
+        rec = records(i)
+        totalPop = totalPop + CDbl(rec(6))
+        totalWeight = totalWeight + SampleDesign_RecordWeight(rec, methodName, alpha)
+    Next i
+    If totalWeight <= 0 Then
+        issues.Add Array("오류", 0, "배분 가중치 합계가 0입니다.")
+        Set SampleDesign_Allocate = result
+        Exit Function
+    End If
+    Dim finals() As Long, residuals() As Double, raws() As Double
+    ReDim finals(1 To records.Count)
+    ReDim residuals(1 To records.Count)
+    ReDim raws(1 To records.Count)
+    Dim assigned As Long
+    For i = 1 To records.Count
+        rec = records(i)
+        Dim weight As Double
+        weight = SampleDesign_RecordWeight(rec, methodName, alpha)
+        raws(i) = targetN * weight / totalWeight
+        finals(i) = Fix(raws(i))
+        residuals(i) = raws(i) - finals(i)
+        assigned = assigned + finals(i)
+    Next i
+    Dim remain As Long
+    remain = targetN - assigned
+    Do While remain > 0
+        Dim addIndex As Long
+        addIndex = SampleDesign_LargestResidualIndex(residuals, finals, records, defaultMax)
+        If addIndex = 0 Then Exit Do
+        finals(addIndex) = finals(addIndex) + 1
+        residuals(addIndex) = -1
+        remain = remain - 1
+    Loop
+    For i = 1 To records.Count
+        rec = records(i)
+        Dim minN As Long, maxN As Long
+        minN = CLng(rec(8)): maxN = CLng(rec(9))
+        If minN <= 0 Then minN = defaultMin
+        If maxN <= 0 Then maxN = defaultMax
+        If minN > 0 And finals(i) < minN Then
+            issues.Add Array("최소보정", rec(13), "최소표본 " & minN & " 적용")
+            finals(i) = minN
+        End If
+        If maxN > 0 And finals(i) > maxN Then
+            issues.Add Array("최대보정", rec(13), "최대표본 " & maxN & " 적용")
+            finals(i) = maxN
+        End If
+    Next i
+    SampleDesign_AdjustToTarget finals, raws, records, targetN, defaultMax, issues
+    For i = 1 To records.Count
+        rec = records(i)
+        Dim noteText As String
+        noteText = CStr(rec(11))
+        If finals(i) = 0 Then noteText = Trim$(noteText & " 최종할당0")
+        result.Add Array(rec(0), rec(1), rec(2), rec(3), rec(4), rec(5), CDbl(rec(6)), _
+                         CDbl(rec(6)) / totalPop, methodName, raws(i), finals(i), _
+                         IIf(targetN > 0, finals(i) / targetN, 0), CDbl(rec(10)), _
+                         SampleDesign_ConstraintLabel(rec, finals(i), defaultMin, defaultMax), noteText)
+    Next i
+    Set SampleDesign_Allocate = result
+End Function
+
+Private Function SampleDesign_RecordWeight(ByVal rec As Variant, ByVal methodName As String, ByVal alpha As Double) As Double
+    Select Case methodName
+        Case "제곱근 비례": SampleDesign_RecordWeight = Sqr(CDbl(rec(6)))
+        Case "멱배분": SampleDesign_RecordWeight = CDbl(rec(6)) ^ alpha
+        Case "균등 배분": SampleDesign_RecordWeight = 1
+        Case "사용자 지정 가중"
+            If CDbl(rec(10)) > 0 Then
+                SampleDesign_RecordWeight = CDbl(rec(10))
+            Else
+                SampleDesign_RecordWeight = CDbl(rec(6))
+            End If
+        Case Else: SampleDesign_RecordWeight = CDbl(rec(6))
+    End Select
+End Function
+
+Private Function SampleDesign_LargestResidualIndex(ByRef residuals() As Double, ByRef finalN() As Long, ByVal records As Collection, ByVal defaultMax As Long) As Long
+    Dim bestIdx As Long, bestVal As Double, i As Long
+    bestVal = -2
+    For i = LBound(residuals) To UBound(residuals)
+        Dim rec As Variant
+        rec = records(i)
+        Dim maxN As Long
+        maxN = CLng(rec(9))
+        If maxN <= 0 Then maxN = defaultMax
+        If (maxN <= 0 Or finalN(i) < maxN) And residuals(i) > bestVal Then
+            bestVal = residuals(i)
+            bestIdx = i
+        End If
+    Next i
+    SampleDesign_LargestResidualIndex = bestIdx
+End Function
+
+Private Sub SampleDesign_AdjustToTarget(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection, _
+                                        ByVal targetN As Long, ByVal defaultMax As Long, ByRef issues As Collection)
+    Dim currentTotal As Long
+    currentTotal = SampleDesign_ArrayTotal(finalN)
+    Dim guard As Long
+    Do While currentTotal < targetN And guard < 100000
+        Dim addIdx As Long
+        addIdx = SampleDesign_AdjustAddIndex(finalN, rawN, records, defaultMax)
+        If addIdx = 0 Then Exit Do
+        finalN(addIdx) = finalN(addIdx) + 1
+        currentTotal = currentTotal + 1
+        guard = guard + 1
+    Loop
+    Do While currentTotal > targetN And guard < 100000
+        Dim subIdx As Long
+        subIdx = SampleDesign_AdjustSubtractIndex(finalN, rawN, records)
+        If subIdx = 0 Then Exit Do
+        finalN(subIdx) = finalN(subIdx) - 1
+        currentTotal = currentTotal - 1
+        guard = guard + 1
+    Loop
+    If currentTotal <> targetN Then
+        issues.Add Array("합계불일치", 0, "최소/최대 제약 때문에 최종합계가 목표 표본 수와 다릅니다. 최종합계=" & currentTotal)
+    End If
+End Sub
+
+Private Function SampleDesign_AdjustAddIndex(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection, ByVal defaultMax As Long) As Long
+    Dim bestIdx As Long, bestGap As Double, i As Long
+    bestGap = -999999
+    For i = LBound(finalN) To UBound(finalN)
+        Dim rec As Variant
+        rec = records(i)
+        Dim maxN As Long
+        maxN = CLng(rec(9))
+        If maxN <= 0 Then maxN = defaultMax
+        If maxN <= 0 Or finalN(i) < maxN Then
+            If rawN(i) - finalN(i) > bestGap Then
+                bestGap = rawN(i) - finalN(i)
+                bestIdx = i
+            End If
+        End If
+    Next i
+    SampleDesign_AdjustAddIndex = bestIdx
+End Function
+
+Private Function SampleDesign_AdjustSubtractIndex(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection) As Long
+    Dim bestIdx As Long, bestGap As Double, i As Long
+    bestGap = -999999
+    For i = LBound(finalN) To UBound(finalN)
+        Dim rec As Variant
+        rec = records(i)
+        Dim minN As Long
+        minN = CLng(rec(8))
+        If finalN(i) > minN And finalN(i) > 0 Then
+            If finalN(i) - rawN(i) > bestGap Then
+                bestGap = finalN(i) - rawN(i)
+                bestIdx = i
+            End If
+        End If
+    Next i
+    SampleDesign_AdjustSubtractIndex = bestIdx
+End Function
+
+Private Function SampleDesign_ArrayTotal(ByRef values() As Long) As Long
+    Dim i As Long
+    For i = LBound(values) To UBound(values)
+        SampleDesign_ArrayTotal = SampleDesign_ArrayTotal + values(i)
+    Next i
+End Function
+
+Private Function SampleDesign_ConstraintLabel(ByVal rec As Variant, ByVal finalN As Long, ByVal defaultMin As Long, ByVal defaultMax As Long) As String
+    Dim minN As Long, maxN As Long
+    minN = CLng(rec(8)): maxN = CLng(rec(9))
+    If minN <= 0 Then minN = defaultMin
+    If maxN <= 0 Then maxN = defaultMax
+    If minN > 0 And finalN = minN Then
+        SampleDesign_ConstraintLabel = "최소 적용"
+    ElseIf maxN > 0 And finalN = maxN Then
+        SampleDesign_ConstraintLabel = "최대 적용"
+    Else
+        SampleDesign_ConstraintLabel = ""
+    End If
+End Function
+
+Private Sub SampleDesign_WriteAllocationResult(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal targetN As Long, ByVal methodName As String)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 할당결과"
+    ws.Range("B1").Value = "배분 방식": ws.Range("C1").Value = methodName
+    ws.Range("D1").Value = "목표 표본 수": ws.Range("E1").Value = targetN
+    SampleDesign_WriteArray ws, 3, 1, SampleDesign_ResultHeaders()
+    Dim r As Long
+    For r = 1 To allocation.Count
+        SampleDesign_WriteArray ws, r + 3, 1, allocation(r)
+    Next r
+    Dim totalRow As Long
+    totalRow = allocation.Count + 4
+    ws.Cells(totalRow, 1).Value = "총계"
+    ws.Cells(totalRow, 7).Formula = "=SUM(G4:G" & (totalRow - 1) & ")"
+    ws.Cells(totalRow, 11).Formula = "=SUM(K4:K" & (totalRow - 1) & ")"
+    ws.Cells(totalRow, 12).Formula = "=SUM(L4:L" & (totalRow - 1) & ")"
+    ws.Range(ws.Cells(totalRow, 1), ws.Cells(totalRow, 15)).Font.Bold = True
+    With ws.Range(ws.Cells(3, 1), ws.Cells(totalRow, 15))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    ws.Range("A3:O3").Font.Bold = True
+    ws.Range("A3:O3").Interior.Color = RGB(220, 235, 250)
+    ws.Range("H:H,L:L").NumberFormat = "0.0%"
+    ws.Range("J:J").NumberFormat = "0.000"
+    SampleDesign_ApplyResultFormatting ws, 4, totalRow - 1
+End Sub
+
+Private Function SampleDesign_ResultHeaders() As Variant
+    SampleDesign_ResultHeaders = Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "모집단수", _
+                                       "모집단비율", "배분방식", "원시할당", "최종할당", "표본비율", _
+                                       "사용자가중치", "제약 적용", "비고")
+End Function
+
+Private Sub SampleDesign_WriteReviewReport(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal issues As Collection, _
+                                           ByVal targetN As Long, ByVal methodName As String, ByVal alpha As Double)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 검토"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+    Dim totalPop As Double, totalFinal As Long, zeroCount As Long, i As Long
+    For i = 1 To allocation.Count
+        Dim rec As Variant
+        rec = allocation(i)
+        totalPop = totalPop + CDbl(rec(6))
+        totalFinal = totalFinal + CLng(rec(10))
+        If CLng(rec(10)) = 0 Then zeroCount = zeroCount + 1
+    Next i
+    Dim rowNo As Long
+    rowNo = 3
+    SampleDesign_WriteKV ws, rowNo, "배분 방식", methodName
+    SampleDesign_WriteKV ws, rowNo, "멱배분 alpha", alpha
+    SampleDesign_WriteKV ws, rowNo, "총 모집단 수", totalPop
+    SampleDesign_WriteKV ws, rowNo, "목표 표본 수", targetN
+    SampleDesign_WriteKV ws, rowNo, "최종 배정 표본 수", totalFinal
+    SampleDesign_WriteKV ws, rowNo, "쿼터 셀 수", allocation.Count
+    SampleDesign_WriteKV ws, rowNo, "최종할당 0인 셀 수", zeroCount
+    SampleDesign_WriteKV ws, rowNo, "검토/경고 건수", issues.Count
+    rowNo = rowNo + 2
+    ws.Cells(rowNo, 1).Value = "검토 항목": ws.Cells(rowNo, 1).Font.Bold = True
+    rowNo = rowNo + 1
+    SampleDesign_WriteArray ws, rowNo, 1, Array("유형", "원본행", "내용")
+    ws.Range(ws.Cells(rowNo, 1), ws.Cells(rowNo, 3)).Font.Bold = True
+    rowNo = rowNo + 1
+    For i = 1 To issues.Count
+        SampleDesign_WriteArray ws, rowNo, 1, issues(i)
+        rowNo = rowNo + 1
+    Next i
+    If issues.Count = 0 Then ws.Cells(rowNo, 1).Value = "검토 경고 없음"
+    ws.Columns("A:D").AutoFit
+End Sub
+
+Private Sub SampleDesign_WriteKV(ByVal ws As Worksheet, ByRef rowNo As Long, ByVal keyText As String, ByVal valueData As Variant)
+    ws.Cells(rowNo, 1).Value = keyText
+    ws.Cells(rowNo, 2).Value = valueData
+    rowNo = rowNo + 1
+End Sub
+
+Private Sub SampleDesign_WriteArray(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long, ByVal values As Variant)
+    ws.Cells(rowIndex, colIndex).Resize(1, UBound(values) - LBound(values) + 1).Value = values
+End Sub
+
+Private Function SampleDesign_TotalFinalN(ByVal allocation As Collection) As Long
+    Dim i As Long
+    For i = 1 To allocation.Count
+        Dim rec As Variant
+        rec = allocation(i)
+        SampleDesign_TotalFinalN = SampleDesign_TotalFinalN + CLng(rec(10))
+    Next i
+End Function
+
+Private Sub SampleDesign_ApplyResultFormatting(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
+    If lastRow < firstRow Then Exit Sub
+    On Error Resume Next
+    With ws.Range(ws.Cells(firstRow, 11), ws.Cells(lastRow, 11)).FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, Formula1:="=0")
+        .Interior.Color = RGB(255, 230, 230)
+        .Font.Color = RGB(160, 0, 0)
+    End With
+    With ws.Range(ws.Cells(firstRow, 14), ws.Cells(lastRow, 14)).FormatConditions.Add(Type:=xlCellValue, Operator:=xlNotEqual, Formula1:="=" & Chr$(34) & Chr$(34))
+        .Interior.Color = RGB(255, 245, 190)
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Sub SampleDesign_ApplyProgressFormatting(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
+    If lastRow < firstRow Then Exit Sub
+    On Error Resume Next
+    With ws.Range(ws.Cells(firstRow, 12), ws.Cells(lastRow, 12)).FormatConditions.Add(Type:=xlTextString, String:="미달", TextOperator:=xlContains)
+        .Interior.Color = RGB(255, 245, 190)
+    End With
+    With ws.Range(ws.Cells(firstRow, 12), ws.Cells(lastRow, 12)).FormatConditions.Add(Type:=xlTextString, String:="충족", TextOperator:=xlContains)
+        .Interior.Color = RGB(220, 245, 220)
+    End With
+    With ws.Range(ws.Cells(firstRow, 12), ws.Cells(lastRow, 12)).FormatConditions.Add(Type:=xlTextString, String:="초과", TextOperator:=xlContains)
+        .Interior.Color = RGB(255, 220, 220)
+    End With
+    On Error GoTo 0
+End Sub
+
 ' ============================================================
 ' 통합 실행 런처
 ' 설  명  : 리본 버튼 수가 많아지는 문제를 줄이기 위해 유사 기능을
@@ -6515,6 +7167,27 @@ Public Sub Toolkit_LaunchSpssTools()
     End Select
 End Sub
 
+Public Sub Toolkit_LaunchSampleDesign()
+    Dim choice As String
+    choice = Toolkit_LauncherPrompt( _
+        "표본설계", _
+        "실행할 표본설계 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "1. 설계 시트 생성" & vbCrLf & _
+        "2. 할당 계산" & vbCrLf & _
+        "3. 진행률 관리표 생성" & vbCrLf & _
+        "4. 쿼터 점검", _
+        "1")
+
+    Select Case choice
+        Case "1": SampleDesign_CreateTemplate
+        Case "2": SampleDesign_RunAllocation
+        Case "3": SampleDesign_CreateProgressTracker
+        Case "4": SampleDesign_ReviewQuota
+        Case Else
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~4 중 하나를 입력하세요."
+    End Select
+End Sub
+
 Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
     Dim result As Variant
     result = Application.InputBox(promptText, title, defaultChoice, Type:=2)
@@ -6547,6 +7220,10 @@ End Sub
 
 Public Sub Ribbon_LaunchSpssTools(control As IRibbonControl)
     Toolkit_LaunchSpssTools
+End Sub
+
+Public Sub Ribbon_LaunchSampleDesign(control As IRibbonControl)
+    Toolkit_LaunchSampleDesign
 End Sub
 
 Public Sub Ribbon_ToolkitAbout(control As IRibbonControl)
@@ -6675,6 +7352,18 @@ End Sub
 
 Public Sub Ribbon_SPSSExtractTableMetadata(control As IRibbonControl)
     SPSS_ExtractTableMetadata
+End Sub
+
+Public Sub Ribbon_SampleDesignCreateTemplate(control As IRibbonControl)
+    SampleDesign_CreateTemplate
+End Sub
+
+Public Sub Ribbon_SampleDesignRunAllocation(control As IRibbonControl)
+    SampleDesign_RunAllocation
+End Sub
+
+Public Sub Ribbon_SampleDesignCreateProgressTracker(control As IRibbonControl)
+    SampleDesign_CreateProgressTracker
 End Sub
 
 

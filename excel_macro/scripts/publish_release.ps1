@@ -1332,6 +1332,7 @@ function Add-RibbonCustomUi {
           <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchSampleDesign" label="표본설계" size="large" imageMso="PivotTableInsert" onAction="Ribbon_LaunchSampleDesign" screentip="표본설계 통합 실행" supertip="표본설계 시트 생성, 단순 비례/제곱근 비례/멱배분 할당 계산, 진행률 관리표 생성을 하나의 선택 창에서 실행합니다." />
         </group>
         <group id="grpNumberTools" label="값 정리">
           <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="선택 범위 숫자 변환" supertip="선택한 범위에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
@@ -1369,6 +1370,11 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
+        </group>
+        <group id="grpSampleDesignTools" label="표본설계">
+          <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="모집단 정보, 쿼터, 목표 표본 수, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
+          <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 최종 표본할당표와 검토 시트를 생성합니다." />
+          <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>
         <group id="grpToolkitInfo" label="정보">
           <button id="btnSelectA1AllSheets" label="모든 시트 A1 선택" imageMso="GoToTop" onAction="Ribbon_SelectA1OnAllSheets" screentip="모든 시트 A1 선택" supertip="통합문서의 모든 워크시트를 순회하며 선택 셀을 A1로 변경하고 화면 위치도 최상단으로 맞춥니다." />
