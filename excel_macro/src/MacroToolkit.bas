@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.0.4"
+Public Const TOOLKIT_VERSION As String = "1.0.5"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -23,6 +23,13 @@ Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
+
+Private mToolkitOperationDepth As Long
+Private mToolkitPrevScreenUpdating As Boolean
+Private mToolkitPrevEnableEvents As Boolean
+Private mToolkitPrevDisplayAlerts As Boolean
+Private mToolkitPrevCalculation As XlCalculation
+Private mToolkitPrevStatusBar As Variant
 
 Private gProgressForm As Object
 
@@ -214,6 +221,11 @@ End Sub
 '           텍스트 형식 숫자를 실제 숫자로 일괄 변환한다.
 ' ============================================================
 Public Sub ConvertTextNumbersInCurrentSheetDataRange()
+    If TypeName(ActiveSheet) <> "Worksheet" Then
+        MsgBox "현재 활성화된 항목이 워크시트가 아닙니다.", vbExclamation, "시트 전체 숫자 변환"
+        Exit Sub
+    End If
+
     Dim targetRange As Range
     Set targetRange = Toolkit_GetActualDataRange(ActiveSheet)
     If targetRange Is Nothing Then
@@ -331,6 +343,80 @@ Private Function Toolkit_GetRangeFromUserForm(ByVal formTitle As String, _
     On Error GoTo 0
 
     Toolkit_GetRangeFromUserForm = Not targetRange Is Nothing
+End Function
+
+Private Sub Toolkit_BeginOperation(Optional ByVal statusMessage As String = "")
+    If mToolkitOperationDepth = 0 Then
+        mToolkitPrevScreenUpdating = Application.ScreenUpdating
+        mToolkitPrevEnableEvents = Application.EnableEvents
+        mToolkitPrevDisplayAlerts = Application.DisplayAlerts
+        mToolkitPrevCalculation = Application.Calculation
+        mToolkitPrevStatusBar = Application.StatusBar
+
+        Application.ScreenUpdating = False
+        Application.EnableEvents = False
+        Application.DisplayAlerts = False
+        Application.Calculation = xlCalculationManual
+    End If
+
+    mToolkitOperationDepth = mToolkitOperationDepth + 1
+    If Len(statusMessage) > 0 Then Application.StatusBar = statusMessage
+End Sub
+
+Private Sub Toolkit_EndOperation()
+    On Error Resume Next
+
+    If mToolkitOperationDepth > 0 Then mToolkitOperationDepth = mToolkitOperationDepth - 1
+    If mToolkitOperationDepth = 0 Then
+        Application.ScreenUpdating = mToolkitPrevScreenUpdating
+        Application.EnableEvents = mToolkitPrevEnableEvents
+        Application.DisplayAlerts = mToolkitPrevDisplayAlerts
+        Application.Calculation = mToolkitPrevCalculation
+        Application.StatusBar = mToolkitPrevStatusBar
+    End If
+
+    On Error GoTo 0
+End Sub
+
+Private Function Toolkit_ValidateWorksheet(ByVal ws As Worksheet, ByVal purpose As String, _
+                                           Optional ByVal requiresWrite As Boolean = True) As Boolean
+    If ws Is Nothing Then
+        MsgBox "작업할 워크시트를 찾지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If requiresWrite And ws.ProtectContents Then
+        MsgBox "현재 시트가 보호되어 있어 '" & purpose & "' 작업을 실행할 수 없습니다." & vbCrLf & _
+               "시트 보호를 해제한 뒤 다시 실행하세요.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    Toolkit_ValidateWorksheet = True
+End Function
+
+Private Function Toolkit_CanInsertColumns(ByVal ws As Worksheet, ByVal startCol As Long, _
+                                          ByVal colCount As Long, ByVal purpose As String) As Boolean
+    If Not Toolkit_ValidateWorksheet(ws, purpose, True) Then Exit Function
+
+    If startCol < 1 Or colCount < 1 Then
+        MsgBox "추가할 열 위치를 계산하지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    If startCol > ws.Columns.Count Or startCol + colCount - 1 > ws.Columns.Count Then
+        MsgBox "오른쪽에 결과 열을 추가할 공간이 부족합니다." & vbCrLf & _
+               "처리 범위를 왼쪽으로 옮기거나 빈 열을 확보한 뒤 다시 실행하세요.", _
+               vbExclamation, purpose
+        Exit Function
+    End If
+
+    If ws.AutoFilterMode Then
+        MsgBox "현재 시트에 필터가 켜져 있습니다." & vbCrLf & _
+               "필터 상태에서 열을 추가하면 결과 위치가 헷갈릴 수 있으니, 필요하면 필터를 해제한 뒤 실행하세요.", _
+               vbInformation, purpose
+    End If
+
+    Toolkit_CanInsertColumns = True
 End Function
 
 Private Function Toolkit_GetActualDataRange(ByVal ws As Worksheet) As Range
@@ -466,6 +552,8 @@ ErrHandler:
 End Sub
 
 Private Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal headerSuffix As String) As Range
+    On Error GoTo ErrHandler
+
     Dim ws As Worksheet
     Set ws = sourceRange.Worksheet
 
@@ -477,8 +565,9 @@ Private Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal he
 
     Dim outputCol As Long
     outputCol = sourceRange.Column + sourceRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, sourceRange.Columns.Count, "복사본 열 생성") Then Exit Function
 
-    Application.ScreenUpdating = False
+    Toolkit_BeginOperation "복사본 열을 생성하는 중입니다..."
     ws.Columns(outputCol).Resize(, sourceRange.Columns.Count).Insert Shift:=xlToRight
 
     Dim outputRange As Range
@@ -492,8 +581,15 @@ Private Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal he
         outputRange.Columns(c).NumberFormat = "@"
     Next c
 
-    Application.ScreenUpdating = True
+    Toolkit_EndOperation
     Set CopyRangeToAdjacentColumns = outputRange
+    Exit Function
+
+ErrHandler:
+    Toolkit_EndOperation
+    Application.CutCopyMode = False
+    MsgBox "복사본 열을 생성하는 중 오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, "복사본 열 생성"
 End Function
 
 Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle As String)
@@ -806,6 +902,7 @@ Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
 
     Dim outputCol As Long
     outputCol = workRange.Column + workRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 2, "주소 유형 판별") Then Exit Sub
 
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
@@ -887,6 +984,7 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
 
     Dim outputCol As Long
     outputCol = workRange.Column + workRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 2, "주소 체계 분리") Then Exit Sub
 
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
@@ -964,6 +1062,7 @@ Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal m
 
     Dim outputCol As Long
     outputCol = workRange.Column + workRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 3, "주소 변환") Then Exit Sub
 
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 3).Insert Shift:=xlToRight
@@ -1605,6 +1704,7 @@ Public Sub BizNo_MergeThreeColumns()
         dataStartRow = firstRow + 1
     End If
 
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "사업자등록번호 병합") Then Exit Sub
     ws.Columns(outputCol).Insert Shift:=xlToRight
     If dataStartRow > firstRow Then
         ws.Cells(firstRow, outputCol).Value = "사업자등록번호"
@@ -1686,6 +1786,7 @@ Public Sub BizNo_QueryStatusForSelection()
     End If
 
     outputCol = targetRange.Column + targetRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, selectedFields.Count, "사업자등록 상태조회") Then Exit Sub
     ws.Columns(outputCol).Resize(, selectedFields.Count).Insert Shift:=xlToRight
     If headerRow > 0 Then Biz_WriteStatusHeaders ws, headerRow, outputCol, selectedFields
 
@@ -2218,6 +2319,7 @@ Public Sub NaverLocal_VerifyExistingData()
     Else
         outputCol = addressRange.Column + addressRange.Columns.Count
     End If
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 8, "네이버 주소 검증") Then Exit Sub
     ws.Columns(outputCol).Resize(, 8).Insert Shift:=xlToRight
     NaverLocal_WriteVerifyHeaders ws, baseRange.Row, outputCol
 
@@ -3222,6 +3324,10 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
                                 blankCount, nonNumericCount, minV, maxV, meanV, medV, _
                                 q1, q3, iqrVal, lo, hi
 
+    If Not Toolkit_CanInsertColumns(ws, thresholdCol, 2, "이상치 대체") Then
+        Application.ScreenUpdating = True
+        Exit Sub
+    End If
     ws.Columns(thresholdCol).Resize(, 2).Insert Shift:=xlToRight
     If headerRow > 0 Then
         ws.Cells(headerRow, thresholdCol).Value = varName & "_Q1_Q3기준"
@@ -5564,6 +5670,7 @@ Public Sub Roster_MatchCompanyNames()
     If InStr(1, CStr(ws.Cells(firstRow, workRange.Column).Value), "명", vbTextCompare) > 0 Then dataStart = firstRow + 1
 
     Dim outCol As Long: outCol = workRange.Column + workRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outCol, 2, "업체명 유사도 매칭") Then Exit Sub
     ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
     ws.Cells(firstRow, outCol).Value = "업체명 표준화"
     ws.Cells(firstRow, outCol + 1).Value = "유사그룹"
@@ -5600,6 +5707,7 @@ Public Sub Address_SplitAdministrativeParts()
     If Address_LooksLikeHeader(CStr(ws.Cells(firstRow, addressRange.Column).Value)) Then dataStart = firstRow + 1
 
     Dim outCol As Long: outCol = addressRange.Column + addressRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outCol, 4, "행정구역 분해") Then Exit Sub
     ws.Columns(outCol).Resize(, 4).Insert Shift:=xlToRight
     Roster_WriteArray ws, firstRow, outCol, Array("광역시도", "시군구", "읍면동", "상세주소")
 
@@ -5627,6 +5735,7 @@ Public Sub Phone_ValidateSelection()
     If Len(DigitsOnly(CStr(ws.Cells(firstRow, phoneRange.Column).Value))) = 0 Then dataStart = firstRow + 1
 
     Dim outCol As Long: outCol = phoneRange.Column + phoneRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outCol, 2, "전화번호 유효성 검사") Then Exit Sub
     ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
     Roster_WriteArray ws, firstRow, outCol, Array("전화번호 유형", "전화번호 유효성")
 
