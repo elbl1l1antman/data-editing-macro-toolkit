@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.6"
+Public Const TOOLKIT_VERSION As String = "1.1.7"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -810,6 +810,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("addCorpPrefix") = CBool(form.AddCorpPrefix)
     options("addCorpSuffix") = CBool(form.AddCorpSuffix)
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
+    options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
 
     Unload form
@@ -833,6 +834,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("addCorpPrefix") = False
     options("addCorpSuffix") = False
     options("cutBeforePossessive") = True
+    options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
     Set CompanyName_DefaultOptions = options
 End Function
@@ -892,7 +894,8 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     End If
 
     If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
-    If CBool(options("removeSpaces")) Then textValue = CompanyName_RemoveSpaces(textValue)
+    If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
+    If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
     If CBool(options("normalizeCorpSymbol")) Then textValue = Replace(textValue, "㈜", "(주)")
     If CBool(options("normalizeCorpText")) Then textValue = Replace(textValue, "주식회사", "(주)")
     If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
@@ -942,6 +945,106 @@ Private Function CompanyName_MoveCorpMarker(ByVal textValue As String, ByVal mov
     Else
         CompanyName_MoveCorpMarker = baseName & "(주)"
     End If
+End Function
+
+Private Function CompanyName_PronounceEnglishWords(ByVal textValue As String) As String
+    Dim result As String
+    Dim token As String
+    Dim i As Long
+
+    For i = 1 To Len(textValue)
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsAsciiLetter(ch) Then
+            token = token & ch
+        Else
+            If Len(token) > 0 Then
+                result = result & CompanyName_EnglishWordKorean(token)
+                token = ""
+            End If
+            result = result & ch
+        End If
+    Next i
+
+    If Len(token) > 0 Then result = result & CompanyName_EnglishWordKorean(token)
+    CompanyName_PronounceEnglishWords = result
+End Function
+
+Private Function CompanyName_IsAsciiLetter(ByVal ch As String) As Boolean
+    If Len(ch) <> 1 Then Exit Function
+    Dim codeValue As Long
+    codeValue = AscW(ch)
+    CompanyName_IsAsciiLetter = ((codeValue >= 65 And codeValue <= 90) Or (codeValue >= 97 And codeValue <= 122))
+End Function
+
+Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As String
+    Select Case LCase$(wordText)
+        Case "ai": CompanyName_EnglishWordKorean = "에이아이"
+        Case "app": CompanyName_EnglishWordKorean = "앱"
+        Case "bank": CompanyName_EnglishWordKorean = "뱅크"
+        Case "bio": CompanyName_EnglishWordKorean = "바이오"
+        Case "cloud": CompanyName_EnglishWordKorean = "클라우드"
+        Case "commerce": CompanyName_EnglishWordKorean = "커머스"
+        Case "communication", "communications": CompanyName_EnglishWordKorean = "커뮤니케이션"
+        Case "company": CompanyName_EnglishWordKorean = "컴퍼니"
+        Case "consulting": CompanyName_EnglishWordKorean = "컨설팅"
+        Case "contents", "content": CompanyName_EnglishWordKorean = "콘텐츠"
+        Case "data": CompanyName_EnglishWordKorean = "데이터"
+        Case "design": CompanyName_EnglishWordKorean = "디자인"
+        Case "digital": CompanyName_EnglishWordKorean = "디지털"
+        Case "edu", "education": CompanyName_EnglishWordKorean = "에듀"
+        Case "energy": CompanyName_EnglishWordKorean = "에너지"
+        Case "entertainment": CompanyName_EnglishWordKorean = "엔터테인먼트"
+        Case "factory": CompanyName_EnglishWordKorean = "팩토리"
+        Case "finance", "financial": CompanyName_EnglishWordKorean = "파이낸스"
+        Case "food": CompanyName_EnglishWordKorean = "푸드"
+        Case "game", "games", "gaming": CompanyName_EnglishWordKorean = "게임"
+        Case "global": CompanyName_EnglishWordKorean = "글로벌"
+        Case "group": CompanyName_EnglishWordKorean = "그룹"
+        Case "health", "healthcare": CompanyName_EnglishWordKorean = "헬스케어"
+        Case "holdings", "holding": CompanyName_EnglishWordKorean = "홀딩스"
+        Case "hotel": CompanyName_EnglishWordKorean = "호텔"
+        Case "inc": CompanyName_EnglishWordKorean = "인크"
+        Case "innovation": CompanyName_EnglishWordKorean = "이노베이션"
+        Case "international": CompanyName_EnglishWordKorean = "인터내셔널"
+        Case "investment": CompanyName_EnglishWordKorean = "인베스트먼트"
+        Case "it": CompanyName_EnglishWordKorean = "아이티"
+        Case "korea": CompanyName_EnglishWordKorean = "코리아"
+        Case "lab", "labs": CompanyName_EnglishWordKorean = "랩"
+        Case "life": CompanyName_EnglishWordKorean = "라이프"
+        Case "logistics": CompanyName_EnglishWordKorean = "로지스틱스"
+        Case "mall": CompanyName_EnglishWordKorean = "몰"
+        Case "marketing": CompanyName_EnglishWordKorean = "마케팅"
+        Case "media": CompanyName_EnglishWordKorean = "미디어"
+        Case "medical": CompanyName_EnglishWordKorean = "메디컬"
+        Case "mobility": CompanyName_EnglishWordKorean = "모빌리티"
+        Case "mobile": CompanyName_EnglishWordKorean = "모바일"
+        Case "network", "networks": CompanyName_EnglishWordKorean = "네트워크"
+        Case "online": CompanyName_EnglishWordKorean = "온라인"
+        Case "partners": CompanyName_EnglishWordKorean = "파트너스"
+        Case "platform": CompanyName_EnglishWordKorean = "플랫폼"
+        Case "plus": CompanyName_EnglishWordKorean = "플러스"
+        Case "power": CompanyName_EnglishWordKorean = "파워"
+        Case "project": CompanyName_EnglishWordKorean = "프로젝트"
+        Case "research": CompanyName_EnglishWordKorean = "리서치"
+        Case "service", "services": CompanyName_EnglishWordKorean = "서비스"
+        Case "shop": CompanyName_EnglishWordKorean = "샵"
+        Case "smart": CompanyName_EnglishWordKorean = "스마트"
+        Case "soft", "software": CompanyName_EnglishWordKorean = "소프트웨어"
+        Case "solution", "solutions": CompanyName_EnglishWordKorean = "솔루션"
+        Case "studio": CompanyName_EnglishWordKorean = "스튜디오"
+        Case "system", "systems": CompanyName_EnglishWordKorean = "시스템"
+        Case "tech": CompanyName_EnglishWordKorean = "테크"
+        Case "technology", "technologies": CompanyName_EnglishWordKorean = "테크놀로지"
+        Case "telecom": CompanyName_EnglishWordKorean = "텔레콤"
+        Case "tour": CompanyName_EnglishWordKorean = "투어"
+        Case "trade", "trading": CompanyName_EnglishWordKorean = "트레이딩"
+        Case "venture", "ventures": CompanyName_EnglishWordKorean = "벤처스"
+        Case "vision": CompanyName_EnglishWordKorean = "비전"
+        Case "works": CompanyName_EnglishWordKorean = "웍스"
+        Case "world": CompanyName_EnglishWordKorean = "월드"
+        Case Else: CompanyName_EnglishWordKorean = wordText
+    End Select
 End Function
 
 Private Function CompanyName_SpellAlphabetKorean(ByVal textValue As String) As String
