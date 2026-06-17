@@ -101,10 +101,27 @@ Public Function ReportAutomation_RunWithOptions(ByVal bannerSetting As String, B
     mOverrideTitlePrefixes = Trim$(titlePrefixes)
 
     If Len(mOverrideBannerSetting) = 0 Then mOverrideBannerSetting = "전체"
-    If Len(mOverrideTitlePrefixes) = 0 Then mOverrideTitlePrefixes = "진흥지구별,사업체 특성별,산업별"
+    If Len(mOverrideTitlePrefixes) = 0 Then mOverrideTitlePrefixes = ""
 
     ReportAutomation_GenerateExcelOutputsCore False
     ReportAutomation_RunWithOptions = True
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_RunWithOptionsSilent
+' 설  명 : 외부 런처/테스트 자동화에서 메시지 박스 없이 산출 생성을 실행한다.
+' 반환값 : 실행 요청을 정상 접수했으면 True
+' ============================================================
+Public Function ReportAutomation_RunWithOptionsSilent(ByVal bannerSetting As String, ByVal titlePrefixes As String) As Boolean
+    mHasOptionOverrides = True
+    mOverrideBannerSetting = Trim$(bannerSetting)
+    mOverrideTitlePrefixes = Trim$(titlePrefixes)
+
+    If Len(mOverrideBannerSetting) = 0 Then mOverrideBannerSetting = "전체"
+    If Len(mOverrideTitlePrefixes) = 0 Then mOverrideTitlePrefixes = ""
+
+    ReportAutomation_GenerateExcelOutputsCore True
+    ReportAutomation_RunWithOptionsSilent = True
 End Function
 
 ' ============================================================
@@ -124,7 +141,7 @@ End Function
 Public Function ReportAutomation_DefaultTitlePrefixes() As String
     Dim ws As Worksheet
     If Not ActiveWorkbook Is Nothing Then Set ws = ReportAutomation_FindLatestOutputSheet(ActiveWorkbook, "보고서_설정")
-    ReportAutomation_DefaultTitlePrefixes = CStr(ReportAutomation_SettingValue("제목 제거 접두어", "진흥지구별,사업체 특성별,산업별", ws))
+    ReportAutomation_DefaultTitlePrefixes = CStr(ReportAutomation_SettingValue("제목 제거 접두어", "", ws))
 End Function
 
 ' ============================================================
@@ -268,11 +285,21 @@ End Sub
 ' ============================================================
 ' 함수명 : ReportAutomation_ResolveDataSheet
 ' 설  명 : 집계표 원본 시트를 결정한다.
-' 우선순위: 현재 활성 시트 → Sheet1 → 통합문서 내 첫 번째 집계표 포함 시트
+' 우선순위: 배너조정 시트 → 현재 활성 시트 → Sheet1 → 통합문서 내 첫 번째 집계표 포함 시트
 ' 반환값 : [표 ...] 제목행이 있는 Worksheet, 없으면 Nothing
 ' ============================================================
 Private Function ReportAutomation_ResolveDataSheet(ByVal wb As Workbook) As Worksheet
     Dim ws As Worksheet
+    ' 실제 보고서용으로 배너를 정리한 시트가 함께 있으면 원본보다 조정본을 우선 사용한다.
+    For Each ws In wb.Worksheets
+        If InStr(1, ws.Name, "배너조정", vbTextCompare) > 0 Then
+            If ReportAutomation_CountTableTitleRows(ws) > 0 Then
+                Set ReportAutomation_ResolveDataSheet = ws
+                Exit Function
+            End If
+        End If
+    Next ws
+
     ' 사용자가 보고 있던 시트를 가장 먼저 신뢰한다.
     If TypeName(ActiveSheet) = "Worksheet" Then
         Set ws = ActiveSheet
@@ -312,7 +339,7 @@ End Function
 ' ============================================================
 Private Function ReportAutomation_CountTableTitleRows(ByVal ws As Worksheet) As Long
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastRow = ReportAutomation_LastUsedRow(ws)
 
     Dim r As Long
     For r = 1 To lastRow
@@ -332,7 +359,7 @@ End Function
 Private Function ReportAutomation_CollectTables(ByVal ws As Worksheet) As Collection
     Dim titleRows As New Collection
     Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    lastRow = ReportAutomation_LastUsedRow(ws)
 
     Dim r As Long
     For r = 1 To lastRow
@@ -374,6 +401,24 @@ Private Function ReportAutomation_CollectTables(ByVal ws As Worksheet) As Collec
 End Function
 
 ' ============================================================
+' 함수명 : ReportAutomation_LastUsedRow
+' 설  명 : A열뿐 아니라 전체 UsedRange 기준으로 마지막 사용 행을 찾는다.
+' ============================================================
+Private Function ReportAutomation_LastUsedRow(ByVal ws As Worksheet) As Long
+    Dim lastCell As Range
+    On Error Resume Next
+    Set lastCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, _
+                                 SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    On Error GoTo 0
+
+    If lastCell Is Nothing Then
+        ReportAutomation_LastUsedRow = 1
+    Else
+        ReportAutomation_LastUsedRow = lastCell.Row
+    End If
+End Function
+
+' ============================================================
 ' 함수명 : ReportAutomation_IsTableTitle
 ' 설  명 : 셀 값이 집계표 제목행인지 판정한다.
 ' 기준   : 왼쪽 공백 제거 후 "[표 "로 시작
@@ -381,7 +426,7 @@ End Function
 Private Function ReportAutomation_IsTableTitle(ByVal valueData As Variant) As Boolean
     Dim text As String
     text = Trim$(CStr(valueData))
-    ReportAutomation_IsTableTitle = (Left$(text, 3) = "[표 ")
+    ReportAutomation_IsTableTitle = (Left$(text, 3) = "[표 " Or Left$(text, 3) = "[ 표")
 End Function
 
 ' ============================================================
@@ -425,9 +470,18 @@ End Function
 Private Function ReportAutomation_ParseTableNo(ByVal titleText As String) As String
     Dim startPos As Long, endPos As Long
     startPos = InStr(1, titleText, "[표 ", vbTextCompare)
+    If startPos = 0 Then startPos = InStr(1, titleText, "[ 표", vbTextCompare)
     endPos = InStr(1, titleText, ">", vbTextCompare)
     If startPos > 0 And endPos > startPos Then
         ReportAutomation_ParseTableNo = Trim$(Mid$(titleText, startPos + 3, endPos - startPos - 3))
+        Exit Function
+    End If
+
+    If startPos > 0 Then
+        endPos = InStr(startPos + 1, titleText, "]", vbTextCompare)
+        If endPos > startPos Then
+            ReportAutomation_ParseTableNo = Trim$(Replace(Mid$(titleText, startPos + 2, endPos - startPos - 2), "표", ""))
+        End If
     End If
 End Function
 
@@ -445,7 +499,33 @@ Private Function ReportAutomation_ParseTableTitle(ByVal titleText As String) As 
         If Right$(parsedTitle, 1) = "]" Then parsedTitle = Left$(parsedTitle, Len(parsedTitle) - 1)
         ReportAutomation_ParseTableTitle = Trim$(parsedTitle)
     Else
-        ReportAutomation_ParseTableTitle = titleText
+        Dim text As String
+        text = ReportAutomation_CleanText(titleText)
+
+        If Left$(text, 3) = "[ 표" Then
+            endPos = InStr(1, text, "]", vbTextCompare)
+            If endPos > 0 Then text = Trim$(Mid$(text, endPos + 1))
+
+            If Left$(text, 1) = "[" Then
+                endPos = InStr(1, text, "]", vbTextCompare)
+                If endPos > 0 Then text = Trim$(Mid$(text, endPos + 1))
+            End If
+
+            Dim dividerPos As Long
+            dividerPos = InStr(1, text, "─", vbTextCompare)
+            If dividerPos > 1 Then text = Trim$(Left$(text, dividerPos - 1))
+
+            Dim questionPos As Long
+            questionPos = InStr(1, text, "[ 문", vbTextCompare)
+            If questionPos > 1 Then text = Trim$(Left$(text, questionPos - 1))
+
+            Dim cleanedText As String
+            cleanedText = ReportAutomation_CleanText(text)
+            If Left$(text, 1) = "'" And Left$(cleanedText, 1) <> "'" Then cleanedText = "'" & cleanedText
+            ReportAutomation_ParseTableTitle = cleanedText
+        Else
+            ReportAutomation_ParseTableTitle = titleText
+        End If
     End If
 End Function
 
@@ -539,15 +619,15 @@ Private Sub ReportAutomation_WriteSettingsSheet(ByVal ws As Worksheet, ByVal wb 
     ' 현재 단계에서는 기본값을 먼저 깔아두고, 후속 UI에서 사용자가 수정하는 구조를 염두에 둔다.
     Dim labels As Variant, values As Variant
     labels = Array("프로젝트ID", "프로젝트명", "보고서명", "프로젝트 유형", "산출물 유형", _
-                   "문체 프로필", "수치 표기", "N 표기 여부", "비교 기준", "QA 실행 여부", _
+                   "문체 프로필", "보고서 작성 프로필", "수치 표기", "N 표기 여부", "비교 기준", "QA 실행 여부", _
                    "출처 관리 여부", "수정 이력 관리 여부", "LLM 문장 고도화", "LLM 제공자", _
                    "LLM API 키 입력 방식", "LLM 모델명", "원본 통합문서", "원본 집계표 시트", _
                    "추출 배너 목록", "제목 제거 접두어")
     values = Array("PRJ_" & Format(Now, "yyyymmdd_hhnn"), "", "", "데이터분석", "Excel 산출 시트", _
-                   "공공조사 보고서형", "소수점 1자리", "가중 사례수와 실제 사례수 보존", _
+                   "공공조사 보고서형", "인식도/만족도 조사형", "소수점 1자리", "가중 사례수와 실제 사례수 보존", _
                    "전체 대비", "수치 QA / 문체 QA / 표 서식 QA", "사용 안 함", "사용", _
                    "사용 안 함", "사용 안 함", "실행 시 입력", "", wb.Name, dataWs.Name, _
-                   "전체", "진흥지구별,사업체 특성별,산업별")
+                   "전체", "")
 
     Dim i As Long
     For i = LBound(labels) To UBound(labels)
@@ -575,6 +655,7 @@ Private Sub ReportAutomation_WriteTableList(ByVal ws As Worksheet, ByVal tables 
     ws.Range("A1:L1").Value = Array("선택", "table_key", "table_no", "title", "basis", "base_label", _
                                     "source_sheet", "source_range", "table_type", "row_count", "col_count", "warning")
     ReportAutomation_StyleHeader ws.Range("A1:L1")
+    ws.Columns(3).NumberFormat = "@"
 
     Dim i As Long, rec As Variant
     For i = 1 To tables.Count
@@ -659,9 +740,9 @@ Private Sub ReportAutomation_WriteNarratives(ByVal wsNarr As Worksheet, ByVal ws
             wsChart.Cells(chartRow, 1).Value = rec(IDX_TABLE_KEY)
             wsChart.Cells(chartRow, 2).Value = "전체"
             wsChart.Cells(chartRow, 3).Value = pointRec(0)
-            wsChart.Cells(chartRow, 4).Value = "%"
+            wsChart.Cells(chartRow, 4).Value = ReportAutomation_PointMeasure(pointRec)
             wsChart.Cells(chartRow, 5).Value = pointRec(1)
-            wsChart.Cells(chartRow, 6).Value = ReportAutomation_FormatPercent(CDbl(pointRec(1)))
+            wsChart.Cells(chartRow, 6).Value = ReportAutomation_FormatPointValue(pointRec)
             wsChart.Cells(chartRow, 7).Value = p
             wsChart.Cells(chartRow, 8).Value = IIf(p <= CHART_INCLUDE_TOP_N, "Y", "N")
             chartRow = chartRow + 1
@@ -672,7 +753,7 @@ Private Sub ReportAutomation_WriteNarratives(ByVal wsNarr As Worksheet, ByVal ws
             wsInsert.Cells(insertRow, 4).Value = pointRec(2)
             wsInsert.Cells(insertRow, 5).Value = pointRec(3)
             wsInsert.Cells(insertRow, 6).Value = pointRec(1)
-            wsInsert.Cells(insertRow, 7).Value = "%"
+            wsInsert.Cells(insertRow, 7).Value = ReportAutomation_PointMeasure(pointRec)
             wsInsert.Cells(insertRow, 8).Value = pointRec(4)
             insertRow = insertRow + 1
         Next p
@@ -722,6 +803,13 @@ Private Function ReportAutomation_ExtractKeyPoints(ByVal ws As Worksheet, ByVal 
     endRow = CLng(tableRec(IDX_END_ROW))
     lastCol = CLng(tableRec(IDX_LAST_COL))
 
+    If ReportAutomation_IsScoreTable(ws, CStr(tableRec(IDX_TITLE)), startRow, endRow, lastCol) Then
+        ReportAutomation_ExtractScorePoints ws, startRow, endRow, lastCol, points
+        ReportAutomation_SortPointsDescending points
+        Set ReportAutomation_ExtractKeyPoints = points
+        Exit Function
+    End If
+
     ' 열 수가 적은 표는 일반 분포표, 넓은 표는 배너 교차표로 보고 다른 파서를 적용한다.
     If lastCol <= SIMPLE_TABLE_MAX_COL Then
         ReportAutomation_ExtractSimplePoints ws, startRow, endRow, lastCol, points
@@ -731,6 +819,223 @@ Private Function ReportAutomation_ExtractKeyPoints(ByVal ws As Worksheet, ByVal 
 
     ReportAutomation_SortPointsDescending points
     Set ReportAutomation_ExtractKeyPoints = points
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsScoreTable
+' 설  명 : 인식도/만족도/동의도 조사에서 자주 쓰이는 100점 환산 또는 평균 점수 표인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsScoreTable(ByVal ws As Worksheet, ByVal titleText As String, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As Boolean
+    Dim hintText As String
+    hintText = titleText & " " & ReportAutomation_HeaderBlockText(ws, startRow, endRow, lastCol)
+
+    Dim totalRow As Long
+    totalRow = ReportAutomation_FindTotalRow(ws, startRow, endRow)
+
+    Dim scoreColCount As Long, pctColCount As Long
+    If totalRow > 0 Then
+        scoreColCount = ReportAutomation_CountScoreMeasureColumns(ws, startRow, totalRow, lastCol)
+        pctColCount = ReportAutomation_CountPercentMeasureColumns(ws, startRow, totalRow, lastCol)
+    End If
+
+    If pctColCount > 0 Then Exit Function
+
+    If InStr(1, titleText, "100점", vbTextCompare) > 0 Then
+        ReportAutomation_IsScoreTable = True
+        Exit Function
+    End If
+
+    If scoreColCount >= 2 Then
+        ReportAutomation_IsScoreTable = True
+        Exit Function
+    End If
+
+    If scoreColCount = 1 And pctColCount = 0 Then
+        If InStr(1, hintText, "100점", vbTextCompare) > 0 _
+            Or InStr(1, hintText, "점수", vbTextCompare) > 0 Then
+            ReportAutomation_IsScoreTable = True
+        End If
+    End If
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_HeaderBlockText
+' 설  명 : 제목 다음 헤더 영역의 텍스트를 모아 점수형 표 단서를 찾는 데 사용한다.
+' ============================================================
+Private Function ReportAutomation_HeaderBlockText(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As String
+    Dim limitRow As Long
+    limitRow = startRow + 5
+    If limitRow > endRow Then limitRow = endRow
+
+    Dim r As Long, c As Long, text As String
+    For r = startRow + 1 To limitRow
+        For c = 1 To lastCol
+            text = Trim$(CStr(ws.Cells(r, c).Value))
+            If Len(text) > 0 Then
+                If Len(ReportAutomation_HeaderBlockText) > 0 Then ReportAutomation_HeaderBlockText = ReportAutomation_HeaderBlockText & " "
+                ReportAutomation_HeaderBlockText = ReportAutomation_HeaderBlockText & text
+            End If
+        Next c
+    Next r
+End Function
+
+' ============================================================
+' 프로시저 : ReportAutomation_ExtractScorePoints
+' 설  명  : 100점 환산/평균 점수 표에서 항목별 점수를 추출한다.
+' ============================================================
+Private Sub ReportAutomation_ExtractScorePoints(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long, ByVal points As Collection)
+    Dim scoreCol As Long
+    scoreCol = ReportAutomation_FindScoreColumn(ws, startRow, endRow, lastCol)
+
+    If scoreCol > 0 And lastCol <= SIMPLE_TABLE_MAX_COL Then
+        Dim r As Long, category As String
+        For r = startRow + 1 To endRow
+            category = ReportAutomation_RowCategory(ws, r)
+            If Len(category) > 0 And Left$(category, 1) <> "■" And Left$(category, 1) <> "▣" Then
+                If IsNumeric(ws.Cells(r, scoreCol).Value) Then
+                    points.Add Array(category, CDbl(ws.Cells(r, scoreCol).Value), ws.Cells(r, 3).Value, "", ws.Cells(r, scoreCol).Address(False, False), "score_100")
+                End If
+            End If
+        Next r
+        Exit Sub
+    End If
+
+    Dim totalRow As Long
+    totalRow = ReportAutomation_FindTotalRow(ws, startRow, endRow)
+    If totalRow = 0 Then Exit Sub
+
+    Dim c As Long, label As String, scoreValue As Variant
+    For c = 1 To lastCol
+        If ReportAutomation_IsScoreMeasureColumn(ws, startRow, totalRow, c) Then
+            scoreValue = ws.Cells(totalRow, c).Value
+            If IsNumeric(scoreValue) Then
+                If CDbl(scoreValue) >= 0 And CDbl(scoreValue) <= 100 Then
+                    label = ReportAutomation_ScoreHeaderLabel(ws, startRow + 1, totalRow - 1, c)
+                    If Len(label) > 0 And label <> "계" And label <> "사례수" Then
+                        points.Add Array(label, CDbl(scoreValue), "", ws.Cells(totalRow, 3).Value, ws.Cells(totalRow, c).Address(False, False), "score_100")
+                    End If
+                End If
+            End If
+        End If
+    Next c
+End Sub
+
+' ============================================================
+' 함수명 : ReportAutomation_IsScoreMeasureColumn
+' 설  명 : 헤더 영역에 100점/점수/평균 표기가 있는 점수 열인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsScoreMeasureColumn(ByVal ws As Worksheet, ByVal startRow As Long, ByVal totalRow As Long, ByVal colIndex As Long) As Boolean
+    Dim r As Long, text As String
+    For r = startRow + 1 To totalRow - 1
+        text = Trim$(CStr(ws.Cells(r, colIndex).Value))
+        If InStr(1, text, "100점", vbTextCompare) > 0 _
+            Or InStr(1, text, "점수", vbTextCompare) > 0 Then
+            ReportAutomation_IsScoreMeasureColumn = True
+            Exit Function
+        End If
+    Next r
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CountScoreMeasureColumns
+' 설  명 : 표 헤더에서 점수형 측정 열 개수를 센다.
+' ============================================================
+Private Function ReportAutomation_CountScoreMeasureColumns(ByVal ws As Worksheet, ByVal startRow As Long, ByVal totalRow As Long, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = 1 To lastCol
+        If ReportAutomation_IsScoreMeasureColumn(ws, startRow, totalRow, c) Then
+            ReportAutomation_CountScoreMeasureColumns = ReportAutomation_CountScoreMeasureColumns + 1
+        End If
+    Next c
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CountPercentMeasureColumns
+' 설  명 : 표 헤더에서 % 측정 열 개수를 센다.
+' ============================================================
+Private Function ReportAutomation_CountPercentMeasureColumns(ByVal ws As Worksheet, ByVal startRow As Long, ByVal totalRow As Long, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = 1 To lastCol
+        If ReportAutomation_IsPercentMeasureColumn(ws, startRow, totalRow, c) Then
+            ReportAutomation_CountPercentMeasureColumns = ReportAutomation_CountPercentMeasureColumns + 1
+        End If
+    Next c
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_ScoreHeaderLabel
+' 설  명 : N/점수 쌍 구조에서 점수 열 왼쪽의 문항명을 찾아 반환한다.
+' ============================================================
+Private Function ReportAutomation_ScoreHeaderLabel(ByVal ws As Worksheet, ByVal firstHeaderRow As Long, ByVal lastHeaderRow As Long, ByVal colIndex As Long) As String
+    Dim r As Long, c As Long, text As String
+    For r = firstHeaderRow To lastHeaderRow
+        For c = colIndex To 1 Step -1
+            text = Trim$(CStr(ws.Cells(r, c).Value))
+            If ReportAutomation_IsScoreHeaderLabelCandidate(text) Then
+                ReportAutomation_ScoreHeaderLabel = ReportAutomation_CleanScoreItemLabel(text)
+                Exit Function
+            End If
+        Next c
+    Next r
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsScoreHeaderLabelCandidate
+' 설  명 : 점수 열 헤더에서 문항명으로 쓸 수 있는 텍스트인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsScoreHeaderLabelCandidate(ByVal text As String) As Boolean
+    If Len(text) = 0 Then Exit Function
+    If text = "%" Or UCase$(text) = "N" Or text = "사례수" Or text = "빈도" Then Exit Function
+    If InStr(1, text, "100점", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "점수", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "평균", vbTextCompare) > 0 Then Exit Function
+    If Left$(text, 1) = "▶" Then Exit Function
+    ReportAutomation_IsScoreHeaderLabelCandidate = True
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CleanScoreItemLabel
+' 설  명 : 점수형 종합표 문항명 앞의 기호를 제거한다.
+' ============================================================
+Private Function ReportAutomation_CleanScoreItemLabel(ByVal text As String) As String
+    text = ReportAutomation_CleanText(text)
+    Do While Len(text) > 0 And InStr(1, "○□", Left$(text, 1), vbBinaryCompare) > 0
+        text = Trim$(Mid$(text, 2))
+    Loop
+    ReportAutomation_CleanScoreItemLabel = text
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_FindScoreColumn
+' 설  명 : 단순 표에서 100점/평균/점수 열을 찾는다.
+' ============================================================
+Private Function ReportAutomation_FindScoreColumn(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As Long
+    Dim r As Long, c As Long, headerText As String
+    Dim limitRow As Long
+    limitRow = startRow + 5
+    If limitRow > endRow Then limitRow = endRow
+
+    For r = startRow + 1 To limitRow
+        For c = 1 To lastCol
+            headerText = Trim$(CStr(ws.Cells(r, c).Value))
+            If InStr(1, headerText, "100점", vbTextCompare) > 0 _
+                Or InStr(1, headerText, "점수", vbTextCompare) > 0 Then
+                ReportAutomation_FindScoreColumn = c
+                Exit Function
+            End If
+        Next c
+    Next r
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_RowCategory
+' 설  명 : SPSS 집계표의 행 범주명을 B열 우선, A열 보조로 읽는다.
+' ============================================================
+Private Function ReportAutomation_RowCategory(ByVal ws As Worksheet, ByVal rowIndex As Long) As String
+    ReportAutomation_RowCategory = Trim$(CStr(ws.Cells(rowIndex, 2).Value))
+    If Len(ReportAutomation_RowCategory) = 0 Then
+        ReportAutomation_RowCategory = Trim$(CStr(ws.Cells(rowIndex, 1).Value))
+    End If
 End Function
 
 ' ============================================================
@@ -773,9 +1078,18 @@ Private Sub ReportAutomation_ExtractWidePoints(ByVal ws As Worksheet, ByVal star
         If ReportAutomation_IsPercentMeasureColumn(ws, startRow, totalRow, c) And IsNumeric(ws.Cells(totalRow, c).Value) Then
             Dim category As String
             category = ReportAutomation_HeaderLabel(ws, startRow + 1, totalRow - 1, c)
-            If Len(category) > 0 And category <> "계" Then
+            If ReportAutomation_IsReportItemLabel(category) And Not ReportAutomation_IsNeutralCompositeLabel(category) Then
                 points.Add Array(category, CDbl(ws.Cells(totalRow, c).Value), "", ws.Cells(totalRow, 3).Value, ws.Cells(totalRow, c).Address(False, False))
             End If
+        End If
+    Next c
+
+    ' 7점/5점 척도형 표에는 분포율과 함께 100점 평균 열이 붙는 경우가 많다.
+    ' 이 값은 순위 후보가 아니라 본문 첫 문장에 붙이는 보조 지표로 별도 kind를 부여한다.
+    For c = 4 To lastCol
+        If ReportAutomation_IsScoreMeasureColumn(ws, startRow, totalRow, c) And IsNumeric(ws.Cells(totalRow, c).Value) Then
+            points.Add Array("100점 평균", CDbl(ws.Cells(totalRow, c).Value), "", ws.Cells(totalRow, 3).Value, ws.Cells(totalRow, c).Address(False, False), "scale_score_100")
+            Exit For
         End If
     Next c
 End Sub
@@ -834,15 +1148,71 @@ End Function
 ' ============================================================
 Private Function ReportAutomation_HeaderLabel(ByVal ws As Worksheet, ByVal firstHeaderRow As Long, ByVal lastHeaderRow As Long, ByVal colIndex As Long) As String
     Dim r As Long, c As Long, text As String
+
+    ' 먼저 현재 열 자체의 병합 헤더를 확인한다. 계 열은 왼쪽 항목으로 대체하지 않고 계로 반환해 후속 필터에서 제외한다.
+    For r = lastHeaderRow To firstHeaderRow Step -1
+        text = ReportAutomation_CellText(ws, r, colIndex)
+        If text = "계" Then
+            ReportAutomation_HeaderLabel = "계"
+            Exit Function
+        End If
+        If ReportAutomation_IsHeaderLabelCandidate(text) Then
+            ReportAutomation_HeaderLabel = ReportAutomation_CleanHeaderItemLabel(text)
+            Exit Function
+        End If
+    Next r
+
     For r = lastHeaderRow To firstHeaderRow Step -1
         For c = colIndex To 1 Step -1
-            text = Trim$(CStr(ws.Cells(r, c).Value))
-            If Len(text) > 0 And text <> "%" And UCase$(text) <> "N" And text <> "사례수" Then
-                ReportAutomation_HeaderLabel = text
+            text = ReportAutomation_CellText(ws, r, c)
+            If text = "계" Then
+                ReportAutomation_HeaderLabel = "계"
+                Exit Function
+            End If
+            If ReportAutomation_IsHeaderLabelCandidate(text) Then
+                ReportAutomation_HeaderLabel = ReportAutomation_CleanHeaderItemLabel(text)
                 Exit Function
             End If
         Next c
     Next r
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsHeaderLabelCandidate
+' 설  명 : 헤더에서 보고서 항목명으로 쓸 수 있는 텍스트인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsHeaderLabelCandidate(ByVal text As String) As Boolean
+    text = ReportAutomation_CleanText(text)
+    If Len(text) = 0 Then Exit Function
+    If text = "%" Or UCase$(text) = "N" Or text = "사례수" Or text = "빈도" Or text = "계" Then Exit Function
+    If InStr(1, text, "BASE", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "100점", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "점수", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "평균", vbTextCompare) > 0 Then Exit Function
+    ReportAutomation_IsHeaderLabelCandidate = True
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CleanHeaderItemLabel
+' 설  명 : 보고서 문장에 불필요한 헤더 기호를 제거한다.
+' ============================================================
+Private Function ReportAutomation_CleanHeaderItemLabel(ByVal text As String) As String
+    text = ReportAutomation_CleanText(text)
+    Do While Len(text) > 0 And InStr(1, "◐○□", Left$(text, 1), vbBinaryCompare) > 0
+        text = Trim$(Mid$(text, 2))
+    Loop
+    ReportAutomation_CleanHeaderItemLabel = text
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsReportItemLabel
+' 설  명 : 계/빈도/사례수 등 문장 후보가 아닌 항목을 제외한다.
+' ============================================================
+Private Function ReportAutomation_IsReportItemLabel(ByVal text As String) As Boolean
+    text = ReportAutomation_CleanText(text)
+    If Len(text) = 0 Then Exit Function
+    If text = "계" Or text = "빈도" Or text = "사례수" Or text = "%" Then Exit Function
+    ReportAutomation_IsReportItemLabel = True
 End Function
 
 ' ============================================================
@@ -864,7 +1234,11 @@ Private Sub ReportAutomation_SortPointsDescending(ByVal points As Collection)
     ' 데이터 수가 표별로 크지 않으므로 단순 비교 정렬로 충분하다.
     For i = LBound(arr) To UBound(arr) - 1
         For j = i + 1 To UBound(arr)
-            If CDbl(arr(j)(1)) > CDbl(arr(i)(1)) Then
+            Dim leftAux As Boolean, rightAux As Boolean
+            leftAux = (ReportAutomation_PointKind(arr(i)) = "scale_score_100")
+            rightAux = (ReportAutomation_PointKind(arr(j)) = "scale_score_100")
+            If (leftAux And Not rightAux) Or _
+               (leftAux = rightAux And CDbl(arr(j)(1)) > CDbl(arr(i)(1))) Then
                 Dim temp As Variant
                 temp = arr(i)
                 arr(i) = arr(j)
@@ -901,6 +1275,33 @@ Private Function ReportAutomation_BuildNarrative(ByVal titleText As String, ByVa
     p1 = points(1)
 
     Dim text As String
+    If ReportAutomation_PointKind(p1) = "score_100" Then
+        text = ReportAutomation_BuildScoreNarrative(normalizedTitle, points)
+        ReportAutomation_BuildNarrative = text
+        Exit Function
+    End If
+
+    Dim scaleScore As Variant
+    scaleScore = ReportAutomation_FindPointByKind(points, "scale_score_100")
+    If Not IsEmpty(scaleScore) And ReportAutomation_IsScaleSummaryPoint(CStr(p1(0))) Then
+        text = normalizedTitle & "에 대해 조사한 결과, " & _
+               ReportAutomation_Quoted(ReportAutomation_CleanScaleLabel(CStr(p1(0)))) & " 응답은 " & _
+               ReportAutomation_FormatPercent(CDbl(p1(1))) & ", 100점 평균은 " & _
+               ReportAutomation_FormatScore(CDbl(scaleScore(1))) & "으로 나타남"
+
+        Dim contrastPoint As Variant
+        contrastPoint = ReportAutomation_FindScaleContrastPoint(points)
+        If Not IsEmpty(contrastPoint) Then
+            text = text & vbLf & "반면, " & _
+                   ReportAutomation_Quoted(ReportAutomation_CleanScaleLabel(CStr(contrastPoint(0)))) & _
+                   ReportAutomation_TopicParticle(CStr(contrastPoint(0))) & " " & _
+                   ReportAutomation_FormatPercent(CDbl(contrastPoint(1))) & "로 나타남"
+        End If
+
+        ReportAutomation_BuildNarrative = text
+        Exit Function
+    End If
+
     ' 복수응답 문항은 해석 기준을 명시해 단일응답 문항과 구분한다.
     If ReportAutomation_IsMultiResponse(titleText, basisText) Then
         text = normalizedTitle & ReportAutomation_TopicParticle(normalizedTitle) & " 복수응답 기준으로 " & _
@@ -930,6 +1331,129 @@ Private Function ReportAutomation_BuildNarrative(ByVal titleText As String, ByVa
 End Function
 
 ' ============================================================
+' 함수명 : ReportAutomation_BuildScoreNarrative
+' 설  명 : 인식도/만족도/동의도 등 100점 환산 점수형 문장을 생성한다.
+' 예  시 : '권고안 관련 동의도'를 100점 환산 기준으로 분석한 결과, ...
+' ============================================================
+Private Function ReportAutomation_BuildScoreNarrative(ByVal normalizedTitle As String, ByVal points As Collection) As String
+    Dim p1 As Variant
+    p1 = points(1)
+
+    Dim displayTitle As String
+    displayTitle = ReportAutomation_CleanScoreTitle(normalizedTitle)
+
+    Dim text As String
+    text = "‘" & displayTitle & "’" & ReportAutomation_ObjectParticle(displayTitle) & _
+           " 100점 환산 기준으로 분석한 결과, " & _
+           ReportAutomation_Quoted(CStr(p1(0))) & ReportAutomation_SubjectParticle(CStr(p1(0))) & " " & _
+           ReportAutomation_FormatScore(CDbl(p1(1))) & "으로 가장 높게 나타남"
+
+    Dim othersText As String, i As Long, maxItems As Long, pointRec As Variant
+    maxItems = points.Count
+    If maxItems > NARRATIVE_TOP_ITEMS Then maxItems = NARRATIVE_TOP_ITEMS
+    For i = 2 To maxItems
+        pointRec = points(i)
+        If Len(othersText) > 0 Then othersText = othersText & ", "
+        othersText = othersText & ReportAutomation_Quoted(CStr(pointRec(0))) & _
+                     "(" & ReportAutomation_FormatScore(CDbl(pointRec(1))) & ")"
+    Next i
+    If Len(othersText) > 0 Then
+        text = text & vbLf & "그다음으로는 " & othersText & " 등의 순으로 높게 나타남"
+    End If
+
+    ReportAutomation_BuildScoreNarrative = text
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_FindPointByKind
+' 설  명 : 핵심 수치 목록에서 지정한 kind의 첫 번째 레코드를 찾는다.
+' ============================================================
+Private Function ReportAutomation_FindPointByKind(ByVal points As Collection, ByVal pointKind As String) As Variant
+    Dim i As Long, rec As Variant
+    For i = 1 To points.Count
+        rec = points(i)
+        If ReportAutomation_PointKind(rec) = pointKind Then
+            ReportAutomation_FindPointByKind = rec
+            Exit Function
+        End If
+    Next i
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_FindScaleContrastPoint
+' 설  명 : 척도형 표에서 부정/비인지/불만족 등 반대 방향 보조 수치를 찾는다.
+' ============================================================
+Private Function ReportAutomation_FindScaleContrastPoint(ByVal points As Collection) As Variant
+    Dim i As Long, rec As Variant, label As String
+    For i = 1 To points.Count
+        rec = points(i)
+        If ReportAutomation_PointKind(rec) <> "scale_score_100" Then
+            label = CStr(rec(0))
+            If InStr(1, label, "부정", vbTextCompare) > 0 _
+                Or InStr(1, label, "비인지", vbTextCompare) > 0 _
+                Or InStr(1, label, "불만족", vbTextCompare) > 0 _
+                Or InStr(1, label, "비동의", vbTextCompare) > 0 _
+                Or InStr(1, label, "불필요", vbTextCompare) > 0 Then
+                ReportAutomation_FindScaleContrastPoint = rec
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsScaleSummaryPoint
+' 설  명 : 긍정/만족/인지 등 척도형 표의 대표 지표인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsScaleSummaryPoint(ByVal text As String) As Boolean
+    If InStr(1, text, "부정", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "비인지", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "불만족", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "비동의", vbTextCompare) > 0 Then Exit Function
+    If InStr(1, text, "불필요", vbTextCompare) > 0 Then Exit Function
+
+    If InStr(1, text, "긍정", vbTextCompare) > 0 _
+        Or InStr(1, text, "만족", vbTextCompare) > 0 _
+        Or InStr(1, text, "인지", vbTextCompare) > 0 _
+        Or InStr(1, text, "필요함", vbTextCompare) > 0 _
+        Or InStr(1, text, "동의", vbTextCompare) > 0 Then
+        ReportAutomation_IsScaleSummaryPoint = True
+    End If
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CleanScaleLabel
+' 설  명 : 척도형 대표 지표명에서 보고서 문장에 불필요한 공백을 정리한다.
+' ============================================================
+Private Function ReportAutomation_CleanScaleLabel(ByVal text As String) As String
+    text = ReportAutomation_CleanText(text)
+    text = Replace(text, " (", "(")
+    text = Replace(text, "(합)", "(합)")
+    ReportAutomation_CleanScaleLabel = text
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_IsNeutralCompositeLabel
+' 설  명 : 원항목과 중복되는 보통(합) 계열의 보조 지표인지 판정한다.
+' ============================================================
+Private Function ReportAutomation_IsNeutralCompositeLabel(ByVal text As String) As Boolean
+    text = Replace(ReportAutomation_CleanText(text), " ", "")
+    ReportAutomation_IsNeutralCompositeLabel = (InStr(1, text, "보통(", vbTextCompare) > 0)
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_CleanScoreTitle
+' 설  명 : 문장 본문에서는 표 제목의 점수 단위 보조 표기를 제거한다.
+' ============================================================
+Private Function ReportAutomation_CleanScoreTitle(ByVal titleText As String) As String
+    Dim text As String
+    text = ReportAutomation_CleanText(titleText)
+    text = Replace(text, "(100점)", "")
+    text = Replace(text, "（100점）", "")
+    ReportAutomation_CleanScoreTitle = ReportAutomation_CleanText(text)
+End Function
+
+' ============================================================
 ' 함수명 : ReportAutomation_FormatPointSummary
 ' 설  명 : 리뷰용으로 핵심 수치와 원본 셀 주소를 압축 표기한다.
 ' 예  시 : 도소매업=43.1%(E12)
@@ -942,7 +1466,7 @@ Private Function ReportAutomation_FormatPointSummary(ByVal points As Collection)
     For i = 1 To maxItems
         rec = points(i)
         If Len(text) > 0 Then text = text & "; "
-        text = text & CStr(rec(0)) & "=" & ReportAutomation_FormatPercent(CDbl(rec(1))) & "(" & CStr(rec(4)) & ")"
+        text = text & CStr(rec(0)) & "=" & ReportAutomation_FormatPointValue(rec) & "(" & CStr(rec(4)) & ")"
     Next i
     ReportAutomation_FormatPointSummary = text
 End Function
@@ -1032,6 +1556,52 @@ Private Function ReportAutomation_FormatPercent(ByVal valueData As Double) As St
 End Function
 
 ' ============================================================
+' 함수명 : ReportAutomation_FormatScore
+' 설  명 : 100점 환산 점수를 보고서 문장 표기인 소수점 1자리 점수로 변환한다.
+' ============================================================
+Private Function ReportAutomation_FormatScore(ByVal valueData As Double) As String
+    ReportAutomation_FormatScore = Format(valueData, "0.0") & "점"
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_PointKind
+' 설  명 : point 배열의 선택 확장 필드에서 값 유형을 읽는다. 기본값은 percent.
+' ============================================================
+Private Function ReportAutomation_PointKind(ByVal pointRec As Variant) As String
+    On Error GoTo Fallback
+    If UBound(pointRec) >= 5 Then
+        ReportAutomation_PointKind = CStr(pointRec(5))
+        If Len(ReportAutomation_PointKind) > 0 Then Exit Function
+    End If
+Fallback:
+    ReportAutomation_PointKind = "percent"
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_PointMeasure
+' 설  명 : 차트/삽입표에 기록할 수치 단위명을 반환한다.
+' ============================================================
+Private Function ReportAutomation_PointMeasure(ByVal pointRec As Variant) As String
+    If ReportAutomation_PointKind(pointRec) = "score_100" Then
+        ReportAutomation_PointMeasure = "100점"
+    Else
+        ReportAutomation_PointMeasure = "%"
+    End If
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_FormatPointValue
+' 설  명 : point 유형에 따라 표시값을 % 또는 점수로 포맷한다.
+' ============================================================
+Private Function ReportAutomation_FormatPointValue(ByVal pointRec As Variant) As String
+    If ReportAutomation_PointKind(pointRec) = "score_100" Then
+        ReportAutomation_FormatPointValue = ReportAutomation_FormatScore(CDbl(pointRec(1)))
+    Else
+        ReportAutomation_FormatPointValue = ReportAutomation_FormatPercent(CDbl(pointRec(1)))
+    End If
+End Function
+
+' ============================================================
 ' 함수명 : ReportAutomation_Quoted
 ' 설  명 : 응답 항목명을 보고서 문장용 작은따옴표 표기로 감싼다.
 ' ============================================================
@@ -1045,6 +1615,14 @@ End Function
 ' ============================================================
 Private Function ReportAutomation_TopicParticle(ByVal text As String) As String
     ReportAutomation_TopicParticle = IIf(ReportAutomation_HasBatchim(text), "은", "는")
+End Function
+
+' ============================================================
+' 함수명 : ReportAutomation_ObjectParticle
+' 설  명 : 앞 단어 받침 여부에 따라 목적격 조사 "을/를"을 반환한다.
+' ============================================================
+Private Function ReportAutomation_ObjectParticle(ByVal text As String) As String
+    ReportAutomation_ObjectParticle = IIf(ReportAutomation_HasBatchim(text), "을", "를")
 End Function
 
 ' ============================================================
@@ -1063,6 +1641,11 @@ End Function
 Private Function ReportAutomation_HasBatchim(ByVal text As String) As Boolean
     Dim cleaned As String
     cleaned = ReportAutomation_CleanText(text)
+    If Right$(cleaned, 1) = ")" Then
+        Dim parenPos As Long
+        parenPos = InStrRev(cleaned, "(")
+        If parenPos > 1 Then cleaned = Trim$(Left$(cleaned, parenPos - 1))
+    End If
     Do While Len(cleaned) > 0 And InStr(1, "'""”)]} ", Right$(cleaned, 1), vbBinaryCompare) > 0
         cleaned = Left$(cleaned, Len(cleaned) - 1)
     Loop
@@ -1377,7 +1960,7 @@ End Function
 ' 함수명 : ReportAutomation_ReadTitlePrefixes
 ' 설  명 : 설정 시트의 "제목 제거 접두어" 항목을 읽어 배열로 반환한다.
 ' 반환값 : 쉼표로 분리된 접두어 문자열 배열. 항목 없으면 빈 배열.
-' 사용법 : 설정 시트 B열에 쉼표 구분으로 입력 (예: 진흥지구별,사업체 특성별)
+' 사용법 : 설정 시트 B열에 쉼표 구분으로 입력 (예: 사업체 특성별,응답자 특성별)
 ' ============================================================
 Private Function ReportAutomation_ReadTitlePrefixes(ByVal ws As Worksheet) As String()
     Dim defaultArr() As String
