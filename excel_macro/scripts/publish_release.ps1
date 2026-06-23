@@ -2529,6 +2529,11 @@ if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
 
 $manifest = [ordered]@{
     name = "Data Editing Macro Toolkit"
+    repository = "data-editing-macro-toolkit"
+    license = "data-editing-macro-toolkit Non-Commercial Software Use License"
+    licenseFile = "LICENSE.md"
+    copyright = "Copyright (c) 2026 Jung Suhyun (정수현). All rights reserved."
+    contact = "elbr1ll1antant@gmail.com"
     version = $Version
     versionTag = $VersionTag
     publishedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss K")

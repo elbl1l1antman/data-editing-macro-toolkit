@@ -2,6 +2,18 @@
 
 Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷입니다.
 
+## 라이선스
+
+이 저장소 `data-editing-macro-toolkit`은 `data-editing-macro-toolkit Non-Commercial Software Use License`를 따릅니다.
+
+- 저작권자: 정수현 (Jung Suhyun)
+- 연락처: `elbr1ll1antant@gmail.com`
+- 개인 사용, 내부 업무, 연구, 교육, 데이터 편집/처리/분석 보조 목적의 사용, 복사, 수정은 허용됩니다.
+- 유료 코드, 유료 프로그램, 유료 Excel 추가기능, 유료 매크로, SaaS, 상업용 소프트웨어 제품 또는 기타 수익형 소프트웨어 제품/서비스 개발에 활용하는 행위는 금지됩니다.
+- 유료 배포, 재판매, 재라이선스, 공개 재배포는 저작권자의 사전 서면 허가가 필요합니다.
+
+자세한 내용은 [`LICENSE.md`](LICENSE.md)를 확인하세요.
+
 ## 프로젝트 구조
 
 - `src/`: VBA 원본 소스입니다. 기능 수정은 여기서 먼저 합니다.
