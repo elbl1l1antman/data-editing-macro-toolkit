@@ -1491,14 +1491,14 @@ function Add-NaverLocalBuildOptionsUserForm {
     $form.Name = "frmNaverLocalBuildOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "네이버 지역검색 신규 리스트"
-    $form.Properties.Item("Width").Value = 460
-    $form.Properties.Item("Height").Value = 300
+    $form.Properties.Item("Width").Value = 560
+    $form.Properties.Item("Height").Value = 320
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "선택한 행정동/법정동마다 업종을 검색해 신규 업체 리스트를 만듭니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 12
-    $lblTitle.Width = 420
+    $lblTitle.Width = 520
     $lblTitle.Height = 20
 
     $lblIndustry = $designer.Controls.Add("Forms.Label.1", "lblIndustry", $true)
@@ -1511,7 +1511,7 @@ function Add-NaverLocalBuildOptionsUserForm {
     $txtIndustry = $designer.Controls.Add("Forms.TextBox.1", "txtIndustry", $true)
     $txtIndustry.Left = 128
     $txtIndustry.Top = 44
-    $txtIndustry.Width = 290
+    $txtIndustry.Width = 390
     $txtIndustry.Height = 22
     $txtIndustry.Text = "서점"
 
@@ -1531,13 +1531,13 @@ function Add-NaverLocalBuildOptionsUserForm {
 
     $lblDelay = $designer.Controls.Add("Forms.Label.1", "lblDelay", $true)
     $lblDelay.Caption = "요청 간격(초)"
-    $lblDelay.Left = 220
+    $lblDelay.Left = 240
     $lblDelay.Top = 84
     $lblDelay.Width = 90
     $lblDelay.Height = 18
 
     $txtDelay = $designer.Controls.Add("Forms.TextBox.1", "txtDelay", $true)
-    $txtDelay.Left = 318
+    $txtDelay.Left = 338
     $txtDelay.Top = 80
     $txtDelay.Width = 60
     $txtDelay.Height = 22
@@ -1555,71 +1555,78 @@ function Add-NaverLocalBuildOptionsUserForm {
     $cmbSort.Top = 116
     $cmbSort.Width = 140
     $cmbSort.Height = 22
+    $cmbSort.Style = 2
 
     $lblDongBasis = $designer.Controls.Add("Forms.Label.1", "lblDongBasis", $true)
     $lblDongBasis.Caption = "동 기준"
-    $lblDongBasis.Left = 280
+    $lblDongBasis.Left = 300
     $lblDongBasis.Top = 120
     $lblDongBasis.Width = 58
     $lblDongBasis.Height = 18
 
     $cmbDongBasis = $designer.Controls.Add("Forms.ComboBox.1", "cmbDongBasis", $true)
-    $cmbDongBasis.Left = 344
+    $cmbDongBasis.Left = 370
     $cmbDongBasis.Top = 116
-    $cmbDongBasis.Width = 74
+    $cmbDongBasis.Width = 100
     $cmbDongBasis.Height = 22
+    $cmbDongBasis.Style = 2
 
     $lblSido = $designer.Controls.Add("Forms.Label.1", "lblSido", $true)
-    $lblSido.Caption = "광역시도 필터"
+    $lblSido.Caption = "광역시도"
     $lblSido.Left = 12
     $lblSido.Top = 154
     $lblSido.Width = 110
     $lblSido.Height = 18
 
-    $txtSido = $designer.Controls.Add("Forms.TextBox.1", "txtSido", $true)
-    $txtSido.Left = 128
-    $txtSido.Top = 150
-    $txtSido.Width = 120
-    $txtSido.Height = 22
+    $cmbSido = $designer.Controls.Add("Forms.ComboBox.1", "cmbSido", $true)
+    $cmbSido.Left = 128
+    $cmbSido.Top = 150
+    $cmbSido.Width = 160
+    $cmbSido.Height = 22
+    $cmbSido.Style = 2
 
     $lblSigungu = $designer.Controls.Add("Forms.Label.1", "lblSigungu", $true)
-    $lblSigungu.Caption = "시군구 필터"
-    $lblSigungu.Left = 260
+    $lblSigungu.Caption = "시군구"
+    $lblSigungu.Left = 304
     $lblSigungu.Top = 154
-    $lblSigungu.Width = 82
+    $lblSigungu.Width = 58
     $lblSigungu.Height = 18
 
-    $txtSigungu = $designer.Controls.Add("Forms.TextBox.1", "txtSigungu", $true)
-    $txtSigungu.Left = 344
-    $txtSigungu.Top = 150
-    $txtSigungu.Width = 74
-    $txtSigungu.Height = 22
+    $cmbSigungu = $designer.Controls.Add("Forms.ComboBox.1", "cmbSigungu", $true)
+    $cmbSigungu.Left = 370
+    $cmbSigungu.Top = 150
+    $cmbSigungu.Width = 148
+    $cmbSigungu.Height = 22
+    $cmbSigungu.Style = 2
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "내장 행정동/법정동 마스터 또는 현재 통합문서의 사용자 마스터 시트를 사용합니다. 필터를 비우면 선택 기준 전체를 대상으로 합니다."
+    $lblTip.Caption = "내장 행정동/법정동 마스터 또는 현재 통합문서의 사용자 마스터 시트를 사용합니다. 광역시도/시군구를 전체로 두면 선택 기준 전체를 대상으로 합니다."
     $lblTip.Left = 12
     $lblTip.Top = 188
-    $lblTip.Width = 420
+    $lblTip.Width = 520
     $lblTip.Height = 44
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 250
+    $cmdOk.Left = 358
     $cmdOk.Top = 232
     $cmdOk.Width = 80
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 342
+    $cmdCancel.Left = 450
     $cmdCancel.Top = 232
     $cmdCancel.Width = 80
     $cmdCancel.Height = 28
 
-    $formCode = @'
+$formCode = @'
 Option Explicit
 
+Private Const ALL_TEXT As String = "(전체)"
 Public Cancelled As Boolean
+Private regionOptionsText As String
+Private loading As Boolean
 
 Private Sub UserForm_Initialize()
     Cancelled = True
@@ -1629,6 +1636,37 @@ Private Sub UserForm_Initialize()
     cmbDongBasis.AddItem "행정동"
     cmbDongBasis.AddItem "법정동"
     cmbDongBasis.Value = "행정동"
+    cmbSido.AddItem ALL_TEXT
+    cmbSido.Value = ALL_TEXT
+    cmbSigungu.AddItem ALL_TEXT
+    cmbSigungu.Value = ALL_TEXT
+End Sub
+
+Public Sub Configure(ByVal defaultIndustry As String, ByVal defaultDisplayCount As Long, _
+                     ByVal defaultDelaySeconds As Double, ByVal defaultSortMode As String, _
+                     ByVal defaultDongBasis As String, ByVal defaultSido As String, _
+                     ByVal defaultSigungu As String, ByVal regionOptions As String)
+    loading = True
+    regionOptionsText = regionOptions
+    txtIndustry.Value = defaultIndustry
+    txtDisplay.Value = CStr(defaultDisplayCount)
+    txtDelay.Value = CStr(defaultDelaySeconds)
+
+    If LCase$(Trim$(defaultSortMode)) = "random" Then
+        cmbSort.Value = "random"
+    Else
+        cmbSort.Value = "comment"
+    End If
+
+    If LCase$(Trim$(defaultDongBasis)) = "legal" Then
+        cmbDongBasis.Value = "법정동"
+    Else
+        cmbDongBasis.Value = "행정동"
+    End If
+
+    LoadSidoList defaultSido
+    LoadSigunguList defaultSigungu
+    loading = False
 End Sub
 
 Public Property Get IndustryText() As String
@@ -1652,20 +1690,138 @@ Public Property Get SortMode() As String
 End Property
 
 Public Property Get DongBasis() As String
-    If CStr(cmbDongBasis.Value) = "법정동" Then
-        DongBasis = "legal"
-    Else
-        DongBasis = "admin"
-    End If
+    DongBasis = BasisValue()
 End Property
 
 Public Property Get SidoFilter() As String
-    SidoFilter = Trim$(txtSido.Value)
+    SidoFilter = CurrentSidoFilter()
 End Property
 
 Public Property Get SigunguFilter() As String
-    SigunguFilter = Trim$(txtSigungu.Value)
+    If CStr(cmbSigungu.Value) = ALL_TEXT Then
+        SigunguFilter = ""
+    Else
+        SigunguFilter = Trim$(CStr(cmbSigungu.Value))
+    End If
 End Property
+
+Private Function BasisValue() As String
+    If CStr(cmbDongBasis.Value) = "법정동" Then
+        BasisValue = "legal"
+    Else
+        BasisValue = "admin"
+    End If
+End Function
+
+Private Function CurrentSidoFilter() As String
+    If CStr(cmbSido.Value) = ALL_TEXT Then
+        CurrentSidoFilter = ""
+    Else
+        CurrentSidoFilter = Trim$(CStr(cmbSido.Value))
+    End If
+End Function
+
+Private Sub cmbDongBasis_Change()
+    If loading Then Exit Sub
+    loading = True
+    LoadSidoList ""
+    LoadSigunguList ""
+    loading = False
+End Sub
+
+Private Sub cmbSido_Change()
+    If loading Then Exit Sub
+    loading = True
+    LoadSigunguList ""
+    loading = False
+End Sub
+
+Private Sub LoadSidoList(ByVal defaultValue As String)
+    cmbSido.Clear
+    cmbSido.AddItem ALL_TEXT
+
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim lines As Variant
+    lines = Split(regionOptionsText, vbLf)
+
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim parts As Variant
+        parts = Split(CStr(lines(i)), vbTab)
+        If UBound(parts) >= 1 Then
+            If CStr(parts(0)) = BasisValue() Then
+                Dim sido As String
+                sido = Trim$(CStr(parts(1)))
+                If Len(sido) > 0 And Not seen.Exists(sido) Then
+                    seen.Add sido, True
+                    cmbSido.AddItem sido
+                End If
+            End If
+        End If
+    Next i
+
+    If Len(Trim$(defaultValue)) > 0 Then AddComboItemIfMissing cmbSido, Trim$(defaultValue)
+    If Len(Trim$(defaultValue)) > 0 And ComboHasValue(cmbSido, Trim$(defaultValue)) Then
+        cmbSido.Value = Trim$(defaultValue)
+    Else
+        cmbSido.Value = ALL_TEXT
+    End If
+End Sub
+
+Private Sub LoadSigunguList(ByVal defaultValue As String)
+    cmbSigungu.Clear
+    cmbSigungu.AddItem ALL_TEXT
+
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim selectedSido As String
+    selectedSido = CurrentSidoFilter()
+
+    Dim lines As Variant
+    lines = Split(regionOptionsText, vbLf)
+
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim parts As Variant
+        parts = Split(CStr(lines(i)), vbTab)
+        If UBound(parts) >= 2 Then
+            If CStr(parts(0)) = BasisValue() Then
+                If Len(selectedSido) = 0 Or CStr(parts(1)) = selectedSido Then
+                    Dim sigungu As String
+                    sigungu = Trim$(CStr(parts(2)))
+                    If Len(sigungu) > 0 And Not seen.Exists(sigungu) Then
+                        seen.Add sigungu, True
+                        cmbSigungu.AddItem sigungu
+                    End If
+                End If
+            End If
+        End If
+    Next i
+
+    If Len(Trim$(defaultValue)) > 0 Then AddComboItemIfMissing cmbSigungu, Trim$(defaultValue)
+    If Len(Trim$(defaultValue)) > 0 And ComboHasValue(cmbSigungu, Trim$(defaultValue)) Then
+        cmbSigungu.Value = Trim$(defaultValue)
+    Else
+        cmbSigungu.Value = ALL_TEXT
+    End If
+End Sub
+
+Private Function ComboHasValue(ByVal combo As Object, ByVal valueText As String) As Boolean
+    Dim i As Long
+    For i = 0 To combo.ListCount - 1
+        If CStr(combo.List(i)) = valueText Then
+            ComboHasValue = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Sub AddComboItemIfMissing(ByVal combo As Object, ByVal valueText As String)
+    If Not ComboHasValue(combo, valueText) Then combo.AddItem valueText
+End Sub
 
 Private Sub cmdOK_Click()
     If Len(IndustryText) = 0 Then

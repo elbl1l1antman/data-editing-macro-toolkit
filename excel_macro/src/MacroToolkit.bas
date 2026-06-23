@@ -22,6 +22,13 @@ Private Const NAVER_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const NAVER_APP_SECTION As String = "NaverLocalSearch"
 Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
+Private Const NAVER_BUILD_INDUSTRY_KEY As String = "BuildIndustry"
+Private Const NAVER_BUILD_DISPLAY_KEY As String = "BuildDisplayCount"
+Private Const NAVER_BUILD_DELAY_KEY As String = "BuildDelaySeconds"
+Private Const NAVER_BUILD_SORT_KEY As String = "BuildSortMode"
+Private Const NAVER_BUILD_BASIS_KEY As String = "BuildDongBasis"
+Private Const NAVER_BUILD_SIDO_KEY As String = "BuildSidoFilter"
+Private Const NAVER_BUILD_SIGUNGU_KEY As String = "BuildSigunguFilter"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
 Private Const NAVER_LEGAL_DONG_MASTER_SHEET As String = "_NaverLocalLegalDongMaster"
@@ -2809,10 +2816,31 @@ ErrHandler:
 End Sub
 
 Private Function NaverLocal_GetBuildOptions() As Object
+    Dim defaultIndustry As String
+    Dim defaultDisplayCount As Long
+    Dim defaultDelaySeconds As Double
+    Dim defaultSortMode As String
+    Dim defaultDongBasis As String
+    Dim defaultSido As String
+    Dim defaultSigungu As String
+
+    defaultIndustry = GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_INDUSTRY_KEY, "서점")
+    defaultDisplayCount = CLng(Val(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_DISPLAY_KEY, "5")))
+    If defaultDisplayCount < 1 Or defaultDisplayCount > 5 Then defaultDisplayCount = 5
+    defaultDelaySeconds = CDbl(Val(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_DELAY_KEY, "0.4")))
+    If defaultDelaySeconds < 0 Then defaultDelaySeconds = 0.4
+    defaultSortMode = LCase$(Trim$(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SORT_KEY, "comment")))
+    If defaultSortMode <> "random" Then defaultSortMode = "comment"
+    defaultDongBasis = LCase$(Trim$(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_BASIS_KEY, "admin")))
+    If defaultDongBasis <> "legal" Then defaultDongBasis = "admin"
+    defaultSido = GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SIDO_KEY, "")
+    defaultSigungu = GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SIGUNGU_KEY, "")
+
     On Error GoTo Fallback
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmNaverLocalBuildOptions")
+    form.Configure defaultIndustry, defaultDisplayCount, defaultDelaySeconds, defaultSortMode, defaultDongBasis, defaultSido, defaultSigungu, NaverLocal_GetRegionOptionsText(ActiveWorkbook)
     form.Show
     If form.Cancelled Then
         Unload form
@@ -2829,34 +2857,94 @@ Private Function NaverLocal_GetBuildOptions() As Object
     options("sigunguFilter") = CStr(form.SigunguFilter)
     options("dongBasis") = CStr(form.DongBasis)
     Unload form
+    NaverLocal_SaveBuildOptions options
     Set NaverLocal_GetBuildOptions = options
     Exit Function
 
 Fallback:
     Dim industry As String
-    industry = InputBox("검색할 업종/키워드를 입력하세요. 예: 서점, 카페, 음식점", "네이버 신규 리스트")
+    industry = InputBox("검색할 업종/키워드를 입력하세요. 예: 서점, 카페, 음식점", "네이버 신규 리스트", defaultIndustry)
     If Len(Trim$(industry)) = 0 Then Exit Function
     Set options = CreateObject("Scripting.Dictionary")
     options("industry") = Trim$(industry)
-    options("displayCount") = 5
-    options("delaySeconds") = 0.4
-    options("sortMode") = "comment"
-    options("sidoFilter") = ""
-    options("sigunguFilter") = ""
-    options("dongBasis") = "admin"
+    options("displayCount") = defaultDisplayCount
+    options("delaySeconds") = defaultDelaySeconds
+    options("sortMode") = defaultSortMode
+    options("sidoFilter") = defaultSido
+    options("sigunguFilter") = defaultSigungu
+    options("dongBasis") = defaultDongBasis
+    NaverLocal_SaveBuildOptions options
     Set NaverLocal_GetBuildOptions = options
+End Function
+
+Private Sub NaverLocal_SaveBuildOptions(ByVal options As Object)
+    On Error Resume Next
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_INDUSTRY_KEY, CStr(options("industry"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_DISPLAY_KEY, CStr(options("displayCount"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_DELAY_KEY, CStr(options("delaySeconds"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SORT_KEY, CStr(options("sortMode"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_BASIS_KEY, CStr(options("dongBasis"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SIDO_KEY, CStr(options("sidoFilter"))
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUILD_SIGUNGU_KEY, CStr(options("sigunguFilter"))
+    On Error GoTo 0
+End Sub
+
+Private Function NaverLocal_GetRegionOptionsText(ByVal wb As Workbook) As String
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim result As String
+    NaverLocal_AddRegionOptions result, seen, "admin", NaverLocal_GetMasterSheetForBasis(wb, "admin")
+    NaverLocal_AddRegionOptions result, seen, "legal", NaverLocal_GetMasterSheetForBasis(wb, "legal")
+    NaverLocal_GetRegionOptionsText = result
+End Function
+
+Private Sub NaverLocal_AddRegionOptions(ByRef outputText As String, ByVal seen As Object, ByVal basis As String, ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+
+    Dim headerRow As Long: headerRow = 1
+    Dim sidoCol As Long, sigunguCol As Long
+    sidoCol = NaverLocal_FindHeaderColumn(ws, headerRow, "광역시도")
+    If sidoCol = 0 Then sidoCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시도명")
+    sigunguCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시군구")
+    If sigunguCol = 0 Then sigunguCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시군구명")
+    If sidoCol = 0 Then Exit Sub
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, sidoCol).End(xlUp).Row
+
+    Dim r As Long
+    For r = headerRow + 1 To lastRow
+        Dim sido As String
+        Dim sigungu As String
+        sido = Trim$(CStr(ws.Cells(r, sidoCol).Value))
+        If sigunguCol > 0 Then sigungu = Trim$(CStr(ws.Cells(r, sigunguCol).Value)) Else sigungu = ""
+        If Len(sido) > 0 Then
+            Dim key As String
+            key = basis & "|" & sido & "|" & sigungu
+            If Not seen.Exists(key) Then
+                seen.Add key, True
+                If Len(outputText) > 0 Then outputText = outputText & vbLf
+                outputText = outputText & basis & vbTab & sido & vbTab & sigungu
+            End If
+        End If
+    Next r
+End Sub
+
+Private Function NaverLocal_GetMasterSheetForBasis(ByVal wb As Workbook, ByVal basis As String) As Worksheet
+    If LCase$(Trim$(basis)) = "legal" Then
+        Set NaverLocal_GetMasterSheetForBasis = NaverLocal_GetUserLegalDongMasterSheet(wb)
+        If NaverLocal_GetMasterSheetForBasis Is Nothing Then Set NaverLocal_GetMasterSheetForBasis = NaverLocal_GetEmbeddedLegalDongMasterSheet()
+    Else
+        Set NaverLocal_GetMasterSheetForBasis = NaverLocal_GetUserDongMasterSheet(wb)
+        If NaverLocal_GetMasterSheetForBasis Is Nothing Then Set NaverLocal_GetMasterSheetForBasis = NaverLocal_GetEmbeddedDongMasterSheet()
+    End If
 End Function
 
 Private Function NaverLocal_GetDongNamesForSearch(ByVal wb As Workbook, ByVal options As Object) As Collection
     Dim result As New Collection
     Dim ws As Worksheet
-    If NaverLocal_DongBasis(options) = "legal" Then
-        Set ws = NaverLocal_GetUserLegalDongMasterSheet(wb)
-        If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedLegalDongMasterSheet()
-    Else
-        Set ws = NaverLocal_GetUserDongMasterSheet(wb)
-        If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedDongMasterSheet()
-    End If
+    Set ws = NaverLocal_GetMasterSheetForBasis(wb, NaverLocal_DongBasis(options))
     If ws Is Nothing Then
         Set NaverLocal_GetDongNamesForSearch = result
         Exit Function
