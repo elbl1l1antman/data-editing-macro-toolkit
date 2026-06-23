@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.7"
+Public Const TOOLKIT_VERSION As String = "1.1.9"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -24,6 +24,8 @@ Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
 Private Const NAVER_CLIENT_SECRET_KEY As String = "ClientSecret"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
+Private Const NAVER_LEGAL_DONG_MASTER_SHEET As String = "_NaverLocalLegalDongMaster"
+Private Const NAVER_USER_LEGAL_DONG_MASTER_SHEET As String = "법정동_마스터"
 Private Const API_RESOLVE_TIMEOUT_MS As Long = 5000
 Private Const API_CONNECT_TIMEOUT_MS As Long = 10000
 Private Const API_SEND_TIMEOUT_MS As Long = 15000
@@ -113,6 +115,10 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A40").Value = "SampleDesign_RunAllocation"
     ws.Range("A41").Value = "SampleDesign_CreateProgressTracker"
     ws.Range("A42").Value = "SampleDesign_ListifyPopulationTable"
+    ws.Range("A43").Value = "Database_MergeSheetsByHeaders"
+    ws.Range("A44").Value = "Database_SplitMergedSheetBySource"
+    ws.Range("A45").Value = "NaverLocal_CreateLegalDongMasterTemplate"
+    ws.Range("A46").Value = "Address_CombineDongAndRoad"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1261,6 +1267,126 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
            "변환표가 있으면 지번/도로명 양방향 매칭 정확도가 높아집니다.", vbInformation, "주소 체계 분리"
 End Sub
 
+Public Sub Address_CombineDongAndRoad()
+    Dim dongRange As Range
+    If Not Toolkit_GetRangeFromUserForm("주소 통합 - 동 기준 주소", _
+        "통합할 동 기준 주소 범위를 선택하세요. 주소 체계 분리 결과의 '동 기준 주소' 열을 선택하면 됩니다.", _
+        dongRange) Then Exit Sub
+
+    Dim roadRange As Range
+    If Not Toolkit_GetRangeFromUserForm("주소 통합 - 도로명주소", _
+        "통합할 도로명주소 범위를 선택하세요. 주소 체계 분리 결과의 '도로명주소' 열을 선택하면 됩니다.", _
+        roadRange) Then Exit Sub
+
+    Dim preference As String
+    preference = Toolkit_ButtonMenu( _
+        "주소 통합 - 우선순위", _
+        "두 주소가 모두 있을 때 어떤 주소를 통합주소로 사용할지 선택하세요.", _
+        "road" & vbTab & "도로명주소 우선" & vbLf & _
+        "dong" & vbTab & "동 기준 주소 우선", _
+        "road")
+    If Len(Trim$(preference)) = 0 Then Exit Sub
+
+    Address_CombineRangeDongAndRoad dongRange, roadRange, preference
+End Sub
+
+Private Sub Address_CombineRangeDongAndRoad(ByVal dongRange As Range, ByVal roadRange As Range, ByVal preference As String)
+    If dongRange.Areas.Count > 1 Or roadRange.Areas.Count > 1 Then
+        MsgBox "주소 통합은 각 주소 범위를 한 덩어리의 연속 범위로 선택해야 합니다.", vbExclamation, "주소 통합"
+        Exit Sub
+    End If
+
+    If dongRange.Columns.Count > 1 Then Set dongRange = dongRange.Columns(1)
+    If roadRange.Columns.Count > 1 Then Set roadRange = roadRange.Columns(1)
+
+    If Not dongRange.Worksheet Is roadRange.Worksheet Then
+        MsgBox "동 기준 주소와 도로명주소 범위는 같은 시트에 있어야 합니다.", vbExclamation, "주소 통합"
+        Exit Sub
+    End If
+
+    If dongRange.Row <> roadRange.Row Or dongRange.Rows.Count <> roadRange.Rows.Count Then
+        MsgBox "동 기준 주소와 도로명주소 범위의 시작 행 또는 행 수가 다릅니다.", vbExclamation, "주소 통합"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = dongRange.Worksheet
+
+    Dim firstRow As Long, lastRow As Long, dataStartRow As Long, headerRow As Long
+    firstRow = dongRange.Row
+    lastRow = dongRange.Row + dongRange.Rows.Count - 1
+    If Address_LooksLikeHeader(CStr(dongRange.Cells(1, 1).Value)) Or Address_LooksLikeHeader(CStr(roadRange.Cells(1, 1).Value)) Then
+        headerRow = firstRow
+        dataStartRow = firstRow + 1
+    Else
+        dataStartRow = firstRow
+        If firstRow > 1 Then headerRow = firstRow - 1
+    End If
+
+    If dataStartRow > lastRow Then
+        MsgBox "헤더를 제외하면 통합할 주소 데이터가 없습니다.", vbInformation, "주소 통합"
+        Exit Sub
+    End If
+
+    Dim outputCol As Long
+    outputCol = Application.Max(dongRange.Column + dongRange.Columns.Count, roadRange.Column + roadRange.Columns.Count)
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "주소 통합") Then Exit Sub
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        ws.Cells(headerRow, outputCol).Value = "통합주소"
+        ws.Cells(headerRow, outputCol).Font.Bold = True
+    End If
+    ws.Columns(outputCol).NumberFormat = "@"
+
+    Dim r As Long
+    Dim roadSelectedCount As Long
+    Dim dongSelectedCount As Long
+    Dim blankCount As Long
+    For r = dataStartRow To lastRow
+        Dim dongAddress As String
+        Dim roadAddress As String
+        Dim combined As String
+        dongAddress = Trim$(CStr(ws.Cells(r, dongRange.Column).Value))
+        roadAddress = Trim$(CStr(ws.Cells(r, roadRange.Column).Value))
+        combined = Address_ChooseCombinedAddress(dongAddress, roadAddress, preference)
+        ws.Cells(r, outputCol).Value = combined
+
+        If Len(combined) = 0 Then
+            blankCount = blankCount + 1
+        ElseIf StrComp(combined, roadAddress, vbTextCompare) = 0 Then
+            roadSelectedCount = roadSelectedCount + 1
+        Else
+            dongSelectedCount = dongSelectedCount + 1
+        End If
+    Next r
+
+    ws.Columns(outputCol).AutoFit
+    Application.ScreenUpdating = True
+
+    MsgBox "분할 주소 통합을 완료했습니다." & vbCrLf & _
+           "도로명주소 사용: " & roadSelectedCount & "건" & vbCrLf & _
+           "동 기준 주소 사용: " & dongSelectedCount & "건" & vbCrLf & _
+           "빈값: " & blankCount & "건", vbInformation, "주소 통합"
+End Sub
+
+Private Function Address_ChooseCombinedAddress(ByVal dongAddress As String, ByVal roadAddress As String, ByVal preference As String) As String
+    If LCase$(Trim$(preference)) = "dong" Then
+        If Len(Trim$(dongAddress)) > 0 Then
+            Address_ChooseCombinedAddress = Trim$(dongAddress)
+        Else
+            Address_ChooseCombinedAddress = Trim$(roadAddress)
+        End If
+    Else
+        If Len(Trim$(roadAddress)) > 0 Then
+            Address_ChooseCombinedAddress = Trim$(roadAddress)
+        Else
+            Address_ChooseCombinedAddress = Trim$(dongAddress)
+        End If
+    End If
+End Function
+
 Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal mapRange As Range)
     If addressRange.Areas.Count > 1 Then
         MsgBox "주소 변환은 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "도로명주소 변환"
@@ -2369,16 +2495,19 @@ Public Sub NaverLocal_BuildListByDong()
     Set options = NaverLocal_GetBuildOptions()
     If options Is Nothing Then Exit Sub
 
+    Dim basisLabel As String
+    basisLabel = NaverLocal_DongBasisLabel(options)
+
     Dim dongNames As Collection
     Set dongNames = NaverLocal_GetDongNamesForSearch(ActiveWorkbook, options)
     If dongNames.Count = 0 Then
-        MsgBox "사용할 행정동 마스터를 찾지 못했거나 필터 조건에 맞는 행정동이 없습니다." & vbCrLf & _
-               "[행정동 양식] 버튼으로 마스터 시트를 만든 뒤 다시 실행하세요.", vbExclamation, "네이버 지역검색"
+        MsgBox "사용할 " & basisLabel & " 마스터를 찾지 못했거나 필터 조건에 맞는 " & basisLabel & "이 없습니다." & vbCrLf & _
+               "[" & basisLabel & " 양식] 버튼으로 마스터 시트를 만든 뒤 다시 실행하세요.", vbExclamation, "네이버 지역검색"
         Exit Sub
     End If
 
     If dongNames.Count > 300 Then
-        If MsgBox("검색 대상 행정동이 " & dongNames.Count & "개입니다." & vbCrLf & _
+        If MsgBox("검색 대상 " & basisLabel & "이 " & dongNames.Count & "개입니다." & vbCrLf & _
                   "네이버 API 요청이 많이 발생할 수 있습니다. 계속할까요?", _
                   vbQuestion + vbYesNo, "네이버 지역검색") <> vbYes Then Exit Sub
     End If
@@ -2392,7 +2521,7 @@ Public Sub NaverLocal_BuildListByDong()
     wsOut.Name = SPSS_UniqueSheetName(wb, "네이버_신규리스트")
 
     Dim headers As Variant
-    headers = Array("업종", "행정동", "검색어", "검색순위", "업체명", "업체유형", "지번주소", "도로명주소", "URL", "검색일시")
+    headers = Array("업종", basisLabel, "검색어", "검색순위", "업체명", "업체유형", "지번주소", "도로명주소", "URL", "검색일시")
     Dim i As Long
     For i = LBound(headers) To UBound(headers)
         wsOut.Cells(1, i + 1).Value = headers(i)
@@ -2455,7 +2584,7 @@ Public Sub NaverLocal_BuildListByDong()
     Application.ScreenUpdating = True
 
     MsgBox "네이버 지역검색 신규 리스트 생성을 완료했습니다." & vbCrLf & _
-           "요청 행정동: " & requestCount & "건" & vbCrLf & _
+           "요청 " & basisLabel & ": " & requestCount & "건" & vbCrLf & _
            "생성 결과: " & resultCount & "건" & vbCrLf & _
            "조회 오류: " & failCount & "건", vbInformation, "네이버 지역검색"
     Exit Sub
@@ -2506,6 +2635,48 @@ Public Sub NaverLocal_CreateDongMasterTemplate()
     MsgBox "'" & NAVER_USER_DONG_MASTER_SHEET & "' 시트를 만들었습니다." & vbCrLf & _
            "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 신규 리스트 생성에 반영됩니다.", _
            vbInformation, "행정동 마스터 양식"
+End Sub
+
+Public Sub NaverLocal_CreateLegalDongMasterTemplate()
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    Dim existing As Worksheet
+    On Error Resume Next
+    Set existing = wb.Worksheets(NAVER_USER_LEGAL_DONG_MASTER_SHEET)
+    On Error GoTo 0
+
+    If Not existing Is Nothing Then
+        If MsgBox("현재 통합문서에 '" & NAVER_USER_LEGAL_DONG_MASTER_SHEET & "' 시트가 이미 있습니다." & vbCrLf & _
+                  "기존 시트를 지우고 내장 법정동 마스터 양식으로 다시 만들까요?", _
+                  vbQuestion + vbYesNo, "법정동 마스터 양식") <> vbYes Then Exit Sub
+        Application.DisplayAlerts = False
+        existing.Delete
+        Application.DisplayAlerts = True
+    End If
+
+    Dim sourceWs As Worksheet
+    Set sourceWs = NaverLocal_GetEmbeddedLegalDongMasterSheet()
+    If sourceWs Is Nothing Then
+        MsgBox "추가기능 내부 법정동 마스터를 찾지 못했습니다.", vbExclamation, "법정동 마스터 양식"
+        Exit Sub
+    End If
+
+    Dim outWs As Worksheet
+    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    outWs.Name = NAVER_USER_LEGAL_DONG_MASTER_SHEET
+
+    sourceWs.UsedRange.Copy Destination:=outWs.Range("A1")
+    Application.CutCopyMode = False
+    outWs.Columns("A:F").AutoFit
+    outWs.Range("A1:F1").Font.Bold = True
+    outWs.Activate
+
+    MsgBox "'" & NAVER_USER_LEGAL_DONG_MASTER_SHEET & "' 시트를 만들었습니다." & vbCrLf & _
+           "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 법정동 기준 신규 리스트 생성에 반영됩니다.", _
+           vbInformation, "법정동 마스터 양식"
 End Sub
 
 Public Sub NaverLocal_VerifyExistingData()
@@ -2693,6 +2864,7 @@ Private Function NaverLocal_GetBuildOptions() As Object
     options("sortMode") = CStr(form.SortMode)
     options("sidoFilter") = CStr(form.SidoFilter)
     options("sigunguFilter") = CStr(form.SigunguFilter)
+    options("dongBasis") = CStr(form.DongBasis)
     Unload form
     Set NaverLocal_GetBuildOptions = options
     Exit Function
@@ -2708,14 +2880,20 @@ Fallback:
     options("sortMode") = "comment"
     options("sidoFilter") = ""
     options("sigunguFilter") = ""
+    options("dongBasis") = "admin"
     Set NaverLocal_GetBuildOptions = options
 End Function
 
 Private Function NaverLocal_GetDongNamesForSearch(ByVal wb As Workbook, ByVal options As Object) As Collection
     Dim result As New Collection
     Dim ws As Worksheet
-    Set ws = NaverLocal_GetUserDongMasterSheet(wb)
-    If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedDongMasterSheet()
+    If NaverLocal_DongBasis(options) = "legal" Then
+        Set ws = NaverLocal_GetUserLegalDongMasterSheet(wb)
+        If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedLegalDongMasterSheet()
+    Else
+        Set ws = NaverLocal_GetUserDongMasterSheet(wb)
+        If ws Is Nothing Then Set ws = NaverLocal_GetEmbeddedDongMasterSheet()
+    End If
     If ws Is Nothing Then
         Set NaverLocal_GetDongNamesForSearch = result
         Exit Function
@@ -2724,10 +2902,13 @@ Private Function NaverLocal_GetDongNamesForSearch(ByVal wb As Workbook, ByVal op
     Dim headerRow As Long: headerRow = 1
     Dim sidoCol As Long, sigunguCol As Long, searchCol As Long, useCol As Long
     sidoCol = NaverLocal_FindHeaderColumn(ws, headerRow, "광역시도")
+    If sidoCol = 0 Then sidoCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시도명")
     sigunguCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시군구")
+    If sigunguCol = 0 Then sigunguCol = NaverLocal_FindHeaderColumn(ws, headerRow, "시군구명")
     searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "검색주소")
     If searchCol = 0 Then searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "원본")
     If searchCol = 0 Then searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "행정동전체명")
+    If searchCol = 0 Then searchCol = NaverLocal_FindHeaderColumn(ws, headerRow, "검색어")
     useCol = NaverLocal_FindHeaderColumn(ws, headerRow, "사용여부")
 
     If searchCol = 0 Then
@@ -2795,6 +2976,19 @@ End Function
 Private Function NaverLocal_GetEmbeddedDongMasterSheet() As Worksheet
     On Error Resume Next
     Set NaverLocal_GetEmbeddedDongMasterSheet = ThisWorkbook.Worksheets(NAVER_DONG_MASTER_SHEET)
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_GetUserLegalDongMasterSheet(ByVal wb As Workbook) As Worksheet
+    If wb Is Nothing Then Exit Function
+    On Error Resume Next
+    Set NaverLocal_GetUserLegalDongMasterSheet = wb.Worksheets(NAVER_USER_LEGAL_DONG_MASTER_SHEET)
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_GetEmbeddedLegalDongMasterSheet() As Worksheet
+    On Error Resume Next
+    Set NaverLocal_GetEmbeddedLegalDongMasterSheet = ThisWorkbook.Worksheets(NAVER_LEGAL_DONG_MASTER_SHEET)
     On Error GoTo 0
 End Function
 
@@ -2887,6 +3081,21 @@ Private Function NaverLocal_Search(ByVal queryText As String, ByVal displayCount
 
     Set NaverLocal_Search = NaverLocal_ExtractItems(CStr(http.responseText))
     searchCache.Add cacheKey, NaverLocal_Search
+End Function
+
+Private Function NaverLocal_DongBasis(ByVal options As Object) As String
+    On Error Resume Next
+    NaverLocal_DongBasis = LCase$(Trim$(CStr(options("dongBasis"))))
+    On Error GoTo 0
+    If NaverLocal_DongBasis <> "legal" Then NaverLocal_DongBasis = "admin"
+End Function
+
+Private Function NaverLocal_DongBasisLabel(ByVal options As Object) As String
+    If NaverLocal_DongBasis(options) = "legal" Then
+        NaverLocal_DongBasisLabel = "법정동"
+    Else
+        NaverLocal_DongBasisLabel = "행정동"
+    End If
 End Function
 
 Private Function NaverLocal_ExtractItems(ByVal jsonText As String) As Collection
@@ -7757,6 +7966,671 @@ Private Sub SampleDesign_ApplyProgressFormatting(ByVal ws As Worksheet, ByVal fi
     On Error GoTo 0
 End Sub
 
+Public Sub Database_MergeSheetsByHeaders()
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb.Worksheets.Count < 1 Then Exit Sub
+
+    Dim selectedSheetNames As String
+    Dim keyHeader As String
+    Dim outputHeadersCsv As String
+    Dim outputSheetName As String
+    Dim outputPosition As String
+
+    keyHeader = "ID"
+    outputHeadersCsv = DBMerge_DefaultHeaderCsv(wb)
+    outputSheetName = "통합데이터"
+    outputPosition = "맨 뒤"
+
+    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition) Then Exit Sub
+
+    keyHeader = Trim$(keyHeader)
+    outputSheetName = DBMerge_CleanSheetName(outputSheetName, "통합데이터")
+    If Len(keyHeader) = 0 Then
+        MsgBox "메인 KEY 헤더를 입력해야 합니다.", vbExclamation, "시트 데이터 통합"
+        Exit Sub
+    End If
+
+    If DBMerge_NameIsSelected(selectedSheetNames, outputSheetName) Then
+        MsgBox "결과 시트 이름이 통합 대상 시트와 같습니다." & vbCrLf & _
+               "원본 시트를 덮어쓰지 않도록 다른 결과 시트명을 입력하세요.", vbExclamation, "시트 데이터 통합"
+        Exit Sub
+    End If
+
+    Dim sheets As Collection
+    Set sheets = DBMerge_SelectedWorksheets(wb, selectedSheetNames)
+    If sheets.Count = 0 Then
+        MsgBox "통합할 시트를 하나 이상 선택하세요.", vbExclamation, "시트 데이터 통합"
+        Exit Sub
+    End If
+
+    Dim outputHeaders As Collection
+    Set outputHeaders = DBMerge_ParseHeaderList(outputHeadersCsv, keyHeader)
+    If outputHeaders.Count = 0 Then
+        MsgBox "통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
+        Exit Sub
+    End If
+
+    Dim plan As Object
+    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders)
+    If plan Is Nothing Then Exit Sub
+
+    If Not DBMerge_ShowReviewForm(plan) Then Exit Sub
+
+    Dim outWs As Worksheet
+    Set outWs = DBMerge_PrepareOutputSheet(wb, outputSheetName, outputPosition)
+    If outWs Is Nothing Then Exit Sub
+
+    Dim writtenRows As Long
+    writtenRows = DBMerge_WriteMergedSheet(plan, outWs)
+    outWs.Activate
+    MsgBox sheets.Count & "개 시트를 통합했습니다." & vbCrLf & _
+           "생성 행 수: " & writtenRows & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "시트 데이터 통합"
+End Sub
+
+Public Sub Database_SplitMergedSheetBySource()
+    If ActiveWorkbook Is Nothing Or TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
+
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+
+    Dim lastCol As Long
+    lastCol = DBMerge_LastUsedCol(ws)
+    Dim lastRow As Long
+    lastRow = DBMerge_LastUsedRow(ws)
+    If lastRow < 3 Or lastCol < 1 Then
+        MsgBox "분리할 통합 데이터가 없습니다.", vbExclamation, "통합 시트 분리"
+        Exit Sub
+    End If
+
+    Dim sourceCol As Long
+    sourceCol = DBMerge_FindManagementColumn(ws, "__DBMERGE_SOURCE_SHEET", lastCol)
+    If sourceCol = 0 Then
+        MsgBox "통합용 관리코드 행을 찾지 못했습니다." & vbCrLf & _
+               "시트 데이터 통합 기능으로 생성한 시트에서 실행하세요.", vbExclamation, "통합 시트 분리"
+        Exit Sub
+    End If
+
+    If MsgBox("현재 시트를 원본시트 값 기준으로 다시 분리합니다." & vbCrLf & _
+              "관리코드 1행과 헤더 2행도 각 분리 시트에 복사됩니다." & vbCrLf & vbCrLf & _
+              "계속할까요?", vbQuestion + vbYesNo, "통합 시트 분리") = vbNo Then Exit Sub
+
+    Dim groups As Object
+    Set groups = CreateObject("Scripting.Dictionary")
+
+    Dim r As Long
+    For r = 3 To lastRow
+        Dim sourceName As String
+        sourceName = Trim$(CStr(ws.Cells(r, sourceCol).Value))
+        If Len(sourceName) = 0 Then sourceName = "미지정"
+        If Not groups.Exists(sourceName) Then
+            Dim rowList As Collection
+            Set rowList = New Collection
+            groups.Add sourceName, rowList
+        End If
+        groups(sourceName).Add r
+    Next r
+
+    If groups.Count = 0 Then
+        MsgBox "분리할 데이터 행이 없습니다.", vbInformation, "통합 시트 분리"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    Dim key As Variant
+    For Each key In groups.Keys
+        Dim outWs As Worksheet
+        Set outWs = ws.Parent.Worksheets.Add(After:=ws.Parent.Worksheets(ws.Parent.Worksheets.Count))
+        outWs.Name = DBMerge_UniqueSheetName(ws.Parent, "분리_" & CStr(key))
+
+        ws.Range(ws.Cells(1, 1), ws.Cells(2, lastCol)).Copy Destination:=outWs.Cells(1, 1)
+
+        Dim outRow As Long
+        outRow = 3
+        Dim rowsForSheet As Collection
+        Set rowsForSheet = groups(key)
+        Dim i As Long
+        For i = 1 To rowsForSheet.Count
+            ws.Range(ws.Cells(CLng(rowsForSheet(i)), 1), ws.Cells(CLng(rowsForSheet(i)), lastCol)).Copy Destination:=outWs.Cells(outRow, 1)
+            outRow = outRow + 1
+        Next i
+        outWs.Columns.AutoFit
+    Next key
+    Application.ScreenUpdating = True
+
+    MsgBox groups.Count & "개 시트로 분리했습니다.", vbInformation, "통합 시트 분리"
+End Sub
+
+Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheetNames As String, _
+                                       ByRef keyHeader As String, ByRef outputHeadersCsv As String, _
+                                       ByRef outputSheetName As String, ByRef outputPosition As String) As Boolean
+    On Error GoTo ErrHandler
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmDatabaseMergeSetup")
+    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition
+    form.Show
+
+    If CBool(form.Cancelled) Then
+        Unload form
+        Exit Function
+    End If
+
+    selectedSheetNames = CStr(form.SelectedSheets)
+    keyHeader = CStr(form.KeyHeader)
+    outputHeadersCsv = CStr(form.OutputHeaders)
+    outputSheetName = CStr(form.OutputSheetName)
+    outputPosition = CStr(form.OutputPosition)
+    Unload form
+    DBMerge_ShowSetupForm = True
+    Exit Function
+
+ErrHandler:
+    On Error Resume Next
+    If Not form Is Nothing Then Unload form
+    On Error GoTo 0
+    MsgBox "시트 통합 설정 창을 열지 못했습니다." & vbCrLf & Err.Description, vbExclamation, "시트 데이터 통합"
+End Function
+
+Private Function DBMerge_ShowReviewForm(ByVal plan As Object) As Boolean
+    On Error GoTo ErrHandler
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmDatabaseMergeReview")
+    form.Configure DBMerge_PlanSummary(plan), DBMerge_MappingSummary(plan)
+    form.Show
+
+    If Not CBool(form.Cancelled) Then DBMerge_ShowReviewForm = True
+    Unload form
+    Exit Function
+
+ErrHandler:
+    On Error Resume Next
+    If Not form Is Nothing Then Unload form
+    On Error GoTo 0
+    MsgBox "시트 통합 검증 창을 열지 못했습니다." & vbCrLf & Err.Description, vbExclamation, "시트 데이터 통합"
+End Function
+
+Private Function DBMerge_WorksheetNamesText(ByVal wb As Workbook) As String
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If Len(DBMerge_WorksheetNamesText) > 0 Then DBMerge_WorksheetNamesText = DBMerge_WorksheetNamesText & vbLf
+        DBMerge_WorksheetNamesText = DBMerge_WorksheetNamesText & ws.Name
+    Next ws
+End Function
+
+Private Function DBMerge_DefaultHeaderCsv(ByVal wb As Workbook) As String
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        Dim headerRow As Long
+        headerRow = DBMerge_DetectHeaderRow(ws)
+        If headerRow > 0 Then
+            Dim lastCol As Long
+            lastCol = DBMerge_LastUsedCol(ws)
+            Dim c As Long
+            For c = 1 To lastCol
+                Dim headerText As String
+                headerText = Trim$(CStr(ws.Cells(headerRow, c).Value))
+                If Len(headerText) > 0 Then
+                    Dim norm As String
+                    norm = DBMerge_NormalizeHeader(headerText)
+                    If Len(norm) > 0 And Not seen.Exists(norm) Then seen.Add norm, headerText
+                End If
+            Next c
+        End If
+    Next ws
+
+    Dim key As Variant
+    For Each key In seen.Keys
+        If Len(DBMerge_DefaultHeaderCsv) > 0 Then DBMerge_DefaultHeaderCsv = DBMerge_DefaultHeaderCsv & ", "
+        DBMerge_DefaultHeaderCsv = DBMerge_DefaultHeaderCsv & CStr(seen(key))
+    Next key
+End Function
+
+Private Function DBMerge_SelectedWorksheets(ByVal wb As Workbook, ByVal selectedSheetNames As String) As Collection
+    Dim sheets As Collection
+    Set sheets = New Collection
+
+    Dim lines As Variant
+    lines = Split(Replace(selectedSheetNames, vbCr, vbLf), vbLf)
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim sheetName As String
+        sheetName = Trim$(CStr(lines(i)))
+        If Len(sheetName) > 0 Then
+            On Error Resume Next
+            Dim ws As Worksheet
+            Set ws = wb.Worksheets(sheetName)
+            On Error GoTo 0
+            If Not ws Is Nothing Then sheets.Add ws
+            Set ws = Nothing
+        End If
+    Next i
+
+    Set DBMerge_SelectedWorksheets = sheets
+End Function
+
+Private Function DBMerge_ParseHeaderList(ByVal headerText As String, ByVal keyHeader As String) As Collection
+    Dim headers As Collection
+    Set headers = New Collection
+
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    DBMerge_AddHeader headers, seen, keyHeader
+
+    Dim normalizedText As String
+    normalizedText = Replace(headerText, vbCrLf, ",")
+    normalizedText = Replace(normalizedText, vbCr, ",")
+    normalizedText = Replace(normalizedText, vbLf, ",")
+    normalizedText = Replace(normalizedText, ";", ",")
+
+    Dim parts As Variant
+    parts = Split(normalizedText, ",")
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        DBMerge_AddHeader headers, seen, CStr(parts(i))
+    Next i
+
+    Set DBMerge_ParseHeaderList = headers
+End Function
+
+Private Sub DBMerge_AddHeader(ByVal headers As Collection, ByVal seen As Object, ByVal headerText As String)
+    Dim cleaned As String
+    cleaned = Trim$(headerText)
+    If Len(cleaned) = 0 Then Exit Sub
+
+    Dim norm As String
+    norm = DBMerge_NormalizeHeader(cleaned)
+    If Len(norm) = 0 Or seen.Exists(norm) Then Exit Sub
+    seen.Add norm, True
+    headers.Add cleaned
+End Sub
+
+Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader As String, ByVal outputHeaders As Collection) As Object
+    Dim plan As Object
+    Set plan = CreateObject("Scripting.Dictionary")
+    plan.Add "keyHeader", keyHeader
+    plan.Add "headers", outputHeaders
+
+    Dim sheetPlans As Collection
+    Set sheetPlans = New Collection
+
+    Dim i As Long
+    For i = 1 To sheets.Count
+        Dim ws As Worksheet
+        Set ws = sheets(i)
+
+        Dim headerRow As Long
+        headerRow = DBMerge_DetectHeaderRow(ws)
+        If headerRow = 0 Then
+            MsgBox ws.Name & " 시트에서 헤더 행을 찾지 못했습니다.", vbExclamation, "시트 데이터 통합"
+            Exit Function
+        End If
+
+        Dim headerMap As Object
+        Set headerMap = DBMerge_HeaderMap(ws, headerRow)
+
+        Dim sheetPlan As Object
+        Set sheetPlan = CreateObject("Scripting.Dictionary")
+        sheetPlan.Add "sheetName", ws.Name
+        sheetPlan.Add "worksheet", ws
+        sheetPlan.Add "headerRow", headerRow
+        sheetPlan.Add "lastRow", DBMerge_LastDataRow(ws, headerRow, headerMap, outputHeaders)
+        sheetPlan.Add "headerMap", headerMap
+        sheetPlans.Add sheetPlan
+    Next i
+
+    plan.Add "sheets", sheetPlans
+    Set DBMerge_BuildPlan = plan
+End Function
+
+Private Function DBMerge_DetectHeaderRow(ByVal ws As Worksheet) As Long
+    Dim lastRow As Long
+    lastRow = DBMerge_LastUsedRow(ws)
+    If lastRow = 0 Then Exit Function
+
+    Dim scanLimit As Long
+    scanLimit = lastRow
+    If scanLimit > 30 Then scanLimit = 30
+
+    Dim r As Long
+    For r = 1 To scanLimit
+        If DBMerge_RowTextCount(ws, r, DBMerge_LastUsedCol(ws)) >= 2 Then
+            DBMerge_DetectHeaderRow = r
+            Exit Function
+        End If
+    Next r
+End Function
+
+Private Function DBMerge_RowTextCount(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = 1 To lastCol
+        If Len(Trim$(CStr(ws.Cells(rowNo, c).Value))) > 0 Then DBMerge_RowTextCount = DBMerge_RowTextCount + 1
+    Next c
+End Function
+
+Private Function DBMerge_HeaderMap(ByVal ws As Worksheet, ByVal headerRow As Long) As Object
+    Dim map As Object
+    Set map = CreateObject("Scripting.Dictionary")
+
+    Dim lastCol As Long
+    lastCol = DBMerge_LastUsedCol(ws)
+    Dim c As Long
+    For c = 1 To lastCol
+        Dim headerText As String
+        headerText = Trim$(CStr(ws.Cells(headerRow, c).Value))
+        If Len(headerText) > 0 Then
+            Dim norm As String
+            norm = DBMerge_NormalizeHeader(headerText)
+            If Len(norm) > 0 And Not map.Exists(norm) Then map.Add norm, c
+        End If
+    Next c
+
+    Set DBMerge_HeaderMap = map
+End Function
+
+Private Function DBMerge_LastDataRow(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerMap As Object, ByVal outputHeaders As Collection) As Long
+    Dim lastRow As Long
+    lastRow = headerRow
+
+    Dim i As Long
+    For i = 1 To outputHeaders.Count
+        Dim norm As String
+        norm = DBMerge_NormalizeHeader(CStr(outputHeaders(i)))
+        If headerMap.Exists(norm) Then
+            Dim colNo As Long
+            colNo = CLng(headerMap(norm))
+            Dim rowNo As Long
+            rowNo = ws.Cells(ws.Rows.Count, colNo).End(xlUp).Row
+            If rowNo > lastRow Then lastRow = rowNo
+        End If
+    Next i
+
+    If lastRow = headerRow Then lastRow = DBMerge_LastUsedRow(ws)
+    DBMerge_LastDataRow = lastRow
+End Function
+
+Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
+    Dim result As String
+    result = "메인 KEY: " & CStr(plan("keyHeader")) & vbCrLf & _
+             "통합 헤더 수: " & CStr(plan("headers").Count) & vbCrLf & _
+             "대상 시트 수: " & CStr(plan("sheets").Count) & vbCrLf & vbCrLf
+
+    Dim i As Long
+    For i = 1 To plan("sheets").Count
+        Dim sheetPlan As Object
+        Set sheetPlan = plan("sheets")(i)
+        result = result & i & ". " & CStr(sheetPlan("sheetName")) & _
+                 " / 헤더 행: " & CStr(sheetPlan("headerRow")) & _
+                 " / 마지막 행: " & CStr(sheetPlan("lastRow")) & vbCrLf
+    Next i
+    DBMerge_PlanSummary = result
+End Function
+
+Private Function DBMerge_MappingSummary(ByVal plan As Object) As String
+    Dim result As String
+    result = "통합 헤더" & vbTab & "시트별 매칭 결과" & vbCrLf
+
+    Dim h As Long
+    For h = 1 To plan("headers").Count
+        Dim headerText As String
+        headerText = CStr(plan("headers")(h))
+        result = result & headerText & vbTab
+
+        Dim parts As String
+        Dim i As Long
+        For i = 1 To plan("sheets").Count
+            Dim sheetPlan As Object
+            Set sheetPlan = plan("sheets")(i)
+            If Len(parts) > 0 Then parts = parts & " / "
+
+            Dim norm As String
+            norm = DBMerge_NormalizeHeader(headerText)
+            If sheetPlan("headerMap").Exists(norm) Then
+                parts = parts & CStr(sheetPlan("sheetName")) & ":" & DBMerge_ColumnLetter(CLng(sheetPlan("headerMap")(norm)))
+            Else
+                parts = parts & CStr(sheetPlan("sheetName")) & ":없음"
+            End If
+        Next i
+        result = result & parts & vbCrLf
+    Next h
+    DBMerge_MappingSummary = result
+End Function
+
+Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As Worksheet) As Long
+    outWs.Cells.Clear
+
+    Dim dataHeaders As Collection
+    Set dataHeaders = DBMerge_DataHeaders(plan("headers"), CStr(plan("keyHeader")))
+
+    outWs.Cells(1, 1).Value = "__DBMERGE_SOURCE_SHEET"
+    outWs.Cells(1, 2).Value = "__DBMERGE_SOURCE_ROW"
+    outWs.Cells(1, 3).Value = "__DBMERGE_KEY"
+    outWs.Cells(2, 1).Value = "원본시트"
+    outWs.Cells(2, 2).Value = "원본행"
+    outWs.Cells(2, 3).Value = CStr(plan("keyHeader"))
+
+    Dim c As Long
+    For c = 1 To dataHeaders.Count
+        outWs.Cells(1, c + 3).Value = "__FIELD:" & CStr(dataHeaders(c))
+        outWs.Cells(2, c + 3).Value = CStr(dataHeaders(c))
+    Next c
+
+    Dim outRow As Long
+    outRow = 3
+
+    Dim i As Long
+    For i = 1 To plan("sheets").Count
+        Dim sheetPlan As Object
+        Set sheetPlan = plan("sheets")(i)
+        Dim ws As Worksheet
+        Set ws = sheetPlan("worksheet")
+        Dim headerMap As Object
+        Set headerMap = sheetPlan("headerMap")
+
+        Dim r As Long
+        For r = CLng(sheetPlan("headerRow")) + 1 To CLng(sheetPlan("lastRow"))
+            If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers")) Then
+                outWs.Cells(outRow, 1).Value = ws.Name
+                outWs.Cells(outRow, 2).Value = r
+                outWs.Cells(outRow, 3).Value = DBMerge_CellByHeader(ws, r, headerMap, CStr(plan("keyHeader")))
+
+                For c = 1 To dataHeaders.Count
+                    outWs.Cells(outRow, c + 3).Value = DBMerge_CellByHeader(ws, r, headerMap, CStr(dataHeaders(c)))
+                Next c
+
+                outRow = outRow + 1
+            End If
+        Next r
+    Next i
+
+    Dim lastCol As Long
+    lastCol = dataHeaders.Count + 3
+    outWs.Rows(1).Font.Color = RGB(120, 120, 120)
+    outWs.Rows(1).Interior.Color = RGB(235, 235, 235)
+    outWs.Rows(2).Font.Bold = True
+    outWs.Rows(2).Interior.Color = RGB(220, 235, 250)
+    With outWs.Range(outWs.Cells(1, 1), outWs.Cells(Application.Max(2, outRow - 1), lastCol))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+
+    DBMerge_WriteMergedSheet = outRow - 3
+End Function
+
+Private Function DBMerge_DataHeaders(ByVal headers As Collection, ByVal keyHeader As String) As Collection
+    Dim result As Collection
+    Set result = New Collection
+
+    Dim keyNorm As String
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
+
+    Dim i As Long
+    For i = 1 To headers.Count
+        If DBMerge_NormalizeHeader(CStr(headers(i))) <> keyNorm Then result.Add CStr(headers(i))
+    Next i
+    Set DBMerge_DataHeaders = result
+End Function
+
+Private Function DBMerge_RowHasSelectedData(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal headerMap As Object, ByVal headers As Collection) As Boolean
+    Dim i As Long
+    For i = 1 To headers.Count
+        Dim norm As String
+        norm = DBMerge_NormalizeHeader(CStr(headers(i)))
+        If headerMap.Exists(norm) Then
+            If Len(Trim$(CStr(ws.Cells(rowNo, CLng(headerMap(norm))).Value))) > 0 Then
+                DBMerge_RowHasSelectedData = True
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+Private Function DBMerge_CellByHeader(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal headerMap As Object, ByVal headerText As String) As Variant
+    Dim norm As String
+    norm = DBMerge_NormalizeHeader(headerText)
+    If headerMap.Exists(norm) Then DBMerge_CellByHeader = ws.Cells(rowNo, CLng(headerMap(norm))).Value
+End Function
+
+Private Function DBMerge_PrepareOutputSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal outputPosition As String) As Worksheet
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = wb.Worksheets(sheetName)
+    On Error GoTo 0
+
+    If Not ws Is Nothing Then
+        If MsgBox(sheetName & " 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?", vbQuestion + vbYesNo, "시트 데이터 통합") = vbNo Then Exit Function
+        ws.Cells.Clear
+        Set DBMerge_PrepareOutputSheet = ws
+        Exit Function
+    End If
+
+    Select Case outputPosition
+        Case "맨 앞"
+            Set ws = wb.Worksheets.Add(Before:=wb.Worksheets(1))
+        Case "현재 시트 뒤"
+            Set ws = wb.Worksheets.Add(After:=ActiveSheet)
+        Case Else
+            Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    End Select
+    ws.Name = sheetName
+    Set DBMerge_PrepareOutputSheet = ws
+End Function
+
+Private Function DBMerge_NameIsSelected(ByVal selectedSheetNames As String, ByVal sheetName As String) As Boolean
+    Dim lines As Variant
+    lines = Split(Replace(selectedSheetNames, vbCr, vbLf), vbLf)
+
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        If StrComp(Trim$(CStr(lines(i))), sheetName, vbTextCompare) = 0 Then
+            DBMerge_NameIsSelected = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function DBMerge_FindManagementColumn(ByVal ws As Worksheet, ByVal codeText As String, ByVal lastCol As Long) As Long
+    Dim c As Long
+    For c = 1 To lastCol
+        If StrComp(Trim$(CStr(ws.Cells(1, c).Value)), codeText, vbTextCompare) = 0 Then
+            DBMerge_FindManagementColumn = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function DBMerge_UniqueSheetName(ByVal wb As Workbook, ByVal baseName As String) As String
+    Dim cleanBase As String
+    cleanBase = DBMerge_CleanSheetName(baseName, "분리시트")
+    If Len(cleanBase) > 25 Then cleanBase = Left$(cleanBase, 25)
+
+    Dim candidate As String
+    candidate = cleanBase
+    Dim idx As Long
+    idx = 1
+    Do While DBMerge_SheetExists(wb, candidate)
+        idx = idx + 1
+        candidate = Left$(cleanBase, 25) & "_" & CStr(idx)
+    Loop
+    DBMerge_UniqueSheetName = candidate
+End Function
+
+Private Function DBMerge_SheetExists(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = wb.Worksheets(sheetName)
+    On Error GoTo 0
+    DBMerge_SheetExists = Not ws Is Nothing
+End Function
+
+Private Function DBMerge_CleanSheetName(ByVal sheetName As String, ByVal defaultName As String) As String
+    Dim result As String
+    result = Trim$(sheetName)
+    If Len(result) = 0 Then result = defaultName
+
+    result = Replace(result, "\", "_")
+    result = Replace(result, "/", "_")
+    result = Replace(result, "?", "_")
+    result = Replace(result, "*", "_")
+    result = Replace(result, "[", "_")
+    result = Replace(result, "]", "_")
+    result = Replace(result, ":", "_")
+
+    If Len(result) > 31 Then result = Left$(result, 31)
+    If Len(result) = 0 Then result = defaultName
+    DBMerge_CleanSheetName = result
+End Function
+
+Private Function DBMerge_NormalizeHeader(ByVal headerText As String) As String
+    Dim result As String
+    result = LCase$(Trim$(CStr(headerText)))
+    result = Replace(result, " ", "")
+    result = Replace(result, vbTab, "")
+    result = Replace(result, ChrW(160), "")
+    result = Replace(result, "_", "")
+    result = Replace(result, "-", "")
+    result = Replace(result, ".", "")
+    DBMerge_NormalizeHeader = result
+End Function
+
+Private Function DBMerge_ColumnLetter(ByVal colNo As Long) As String
+    Dim n As Long
+    Dim result As String
+    n = colNo
+
+    Do While n > 0
+        result = Chr$(((n - 1) Mod 26) + 65) & result
+        n = (n - 1) \ 26
+    Loop
+    DBMerge_ColumnLetter = result
+End Function
+
+Private Function DBMerge_LastUsedRow(ByVal ws As Worksheet) As Long
+    On Error GoTo SafeExit
+    Dim foundCell As Range
+    Set foundCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, _
+                                  SearchOrder:=xlByRows, SearchDirection:=xlPrevious)
+    If Not foundCell Is Nothing Then DBMerge_LastUsedRow = foundCell.Row
+SafeExit:
+End Function
+
+Private Function DBMerge_LastUsedCol(ByVal ws As Worksheet) As Long
+    On Error GoTo SafeExit
+    Dim foundCell As Range
+    Set foundCell = ws.Cells.Find(What:="*", After:=ws.Cells(1, 1), LookIn:=xlFormulas, _
+                                  SearchOrder:=xlByColumns, SearchDirection:=xlPrevious)
+    If Not foundCell Is Nothing Then DBMerge_LastUsedCol = foundCell.Column
+SafeExit:
+End Function
+
 ' ============================================================
 ' 통합 실행 런처
 ' 설  명  : 리본 버튼 수가 많아지는 문제를 줄이기 위해 유사 기능을
@@ -7796,23 +8670,27 @@ Public Sub Toolkit_LaunchAddressSearch()
         "실행할 주소/검색 기능을 선택하세요." & vbCrLf & vbCrLf & _
         "1. 주소 유형 판별" & vbCrLf & _
         "2. 주소 체계 분리" & vbCrLf & _
-        "3. 행정구역 분해" & vbCrLf & _
-        "4. 네이버 주소 검증" & vbCrLf & _
-        "5. 네이버 신규 리스트 생성" & vbCrLf & _
-        "6. 네이버 인증키 설정" & vbCrLf & _
-        "7. 행정동 마스터 양식 생성", _
+        "3. 주소 통합" & vbCrLf & _
+        "4. 행정구역 분해" & vbCrLf & _
+        "5. 네이버 주소 검증" & vbCrLf & _
+        "6. 네이버 신규 리스트 생성" & vbCrLf & _
+        "7. 네이버 인증키 설정" & vbCrLf & _
+        "8. 행정동 마스터 양식 생성" & vbCrLf & _
+        "9. 법정동 마스터 양식 생성", _
         "1")
 
     Select Case choice
         Case "1": Address_ClassifyAddressType
         Case "2": Address_SplitDongAndRoad
-        Case "3": Address_SplitAdministrativeParts
-        Case "4": NaverLocal_VerifyExistingData
-        Case "5": NaverLocal_BuildListByDong
-        Case "6": NaverLocal_SetApiCredentials
-        Case "7": NaverLocal_CreateDongMasterTemplate
+        Case "3": Address_CombineDongAndRoad
+        Case "4": Address_SplitAdministrativeParts
+        Case "5": NaverLocal_VerifyExistingData
+        Case "6": NaverLocal_BuildListByDong
+        Case "7": NaverLocal_SetApiCredentials
+        Case "8": NaverLocal_CreateDongMasterTemplate
+        Case "9": NaverLocal_CreateLegalDongMasterTemplate
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~7 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~9 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -8093,6 +8971,10 @@ Public Sub Ribbon_AddressSplitDongAndRoad(control As IRibbonControl)
     Address_SplitDongAndRoad
 End Sub
 
+Public Sub Ribbon_AddressCombineDongAndRoad(control As IRibbonControl)
+    Address_CombineDongAndRoad
+End Sub
+
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)
     BizNo_SetApiKey
 End Sub
@@ -8123,6 +9005,10 @@ End Sub
 
 Public Sub Ribbon_NaverLocalCreateDongMasterTemplate(control As IRibbonControl)
     NaverLocal_CreateDongMasterTemplate
+End Sub
+
+Public Sub Ribbon_NaverLocalCreateLegalDongMasterTemplate(control As IRibbonControl)
+    NaverLocal_CreateLegalDongMasterTemplate
 End Sub
 
 Public Sub Ribbon_OutlierDetectSetup(control As IRibbonControl)
@@ -8189,8 +9075,10 @@ Public Sub Ribbon_SampleDesignCreateProgressTracker(control As IRibbonControl)
     SampleDesign_CreateProgressTracker
 End Sub
 
+Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)
+    Database_MergeSheetsByHeaders
+End Sub
 
-
-
-
-
+Public Sub Ribbon_DatabaseSplitMergedSheet(control As IRibbonControl)
+    Database_SplitMergedSheetBySource
+End Sub

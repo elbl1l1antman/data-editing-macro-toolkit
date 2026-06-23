@@ -449,6 +449,358 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-DatabaseMergeSetupUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmDatabaseMergeSetup"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "시트 데이터 통합 설정"
+    $form.Properties.Item("Width").Value = 760
+    $form.Properties.Item("Height").Value = 560
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Caption = "통합할 시트, KEY 헤더, 가져올 헤더, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
+    $lblGuide.Left = 12
+    $lblGuide.Top = 10
+    $lblGuide.Width = 720
+    $lblGuide.Height = 30
+    $lblGuide.WordWrap = $true
+
+    $lblSheets = $designer.Controls.Add("Forms.Label.1", "lblSheets", $true)
+    $lblSheets.Caption = "통합할 시트"
+    $lblSheets.Left = 12
+    $lblSheets.Top = 52
+    $lblSheets.Width = 180
+    $lblSheets.Height = 18
+
+    $lstSheets = $designer.Controls.Add("Forms.ListBox.1", "lstSheets", $true)
+    $lstSheets.Left = 12
+    $lstSheets.Top = 74
+    $lstSheets.Width = 250
+    $lstSheets.Height = 352
+    $lstSheets.MultiSelect = 2
+
+    $cmdAll = $designer.Controls.Add("Forms.CommandButton.1", "cmdAll", $true)
+    $cmdAll.Caption = "전체 선택"
+    $cmdAll.Left = 12
+    $cmdAll.Top = 438
+    $cmdAll.Width = 92
+    $cmdAll.Height = 26
+
+    $cmdNone = $designer.Controls.Add("Forms.CommandButton.1", "cmdNone", $true)
+    $cmdNone.Caption = "전체 해제"
+    $cmdNone.Left = 114
+    $cmdNone.Top = 438
+    $cmdNone.Width = 92
+    $cmdNone.Height = 26
+
+    $lblKey = $designer.Controls.Add("Forms.Label.1", "lblKey", $true)
+    $lblKey.Caption = "메인 KEY 헤더"
+    $lblKey.Left = 286
+    $lblKey.Top = 54
+    $lblKey.Width = 120
+    $lblKey.Height = 18
+
+    $txtKeyHeader = $designer.Controls.Add("Forms.TextBox.1", "txtKeyHeader", $true)
+    $txtKeyHeader.Left = 410
+    $txtKeyHeader.Top = 50
+    $txtKeyHeader.Width = 300
+    $txtKeyHeader.Height = 22
+
+    $lblOutputName = $designer.Controls.Add("Forms.Label.1", "lblOutputName", $true)
+    $lblOutputName.Caption = "결과 시트 이름"
+    $lblOutputName.Left = 286
+    $lblOutputName.Top = 88
+    $lblOutputName.Width = 120
+    $lblOutputName.Height = 18
+
+    $txtOutputSheetName = $designer.Controls.Add("Forms.TextBox.1", "txtOutputSheetName", $true)
+    $txtOutputSheetName.Left = 410
+    $txtOutputSheetName.Top = 84
+    $txtOutputSheetName.Width = 180
+    $txtOutputSheetName.Height = 22
+
+    $lblPosition = $designer.Controls.Add("Forms.Label.1", "lblPosition", $true)
+    $lblPosition.Caption = "생성 위치"
+    $lblPosition.Left = 600
+    $lblPosition.Top = 88
+    $lblPosition.Width = 64
+    $lblPosition.Height = 18
+
+    $cmbPosition = $designer.Controls.Add("Forms.ComboBox.1", "cmbPosition", $true)
+    $cmbPosition.Left = 660
+    $cmbPosition.Top = 84
+    $cmbPosition.Width = 72
+    $cmbPosition.Height = 22
+    $cmbPosition.Style = 2
+
+    $lblHeaders = $designer.Controls.Add("Forms.Label.1", "lblHeaders", $true)
+    $lblHeaders.Caption = "통합할 헤더 목록"
+    $lblHeaders.Left = 286
+    $lblHeaders.Top = 126
+    $lblHeaders.Width = 180
+    $lblHeaders.Height = 18
+
+    $lblHeadersHelp = $designer.Controls.Add("Forms.Label.1", "lblHeadersHelp", $true)
+    $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. KEY 헤더는 자동으로 첫 열에 포함됩니다."
+    $lblHeadersHelp.Left = 286
+    $lblHeadersHelp.Top = 146
+    $lblHeadersHelp.Width = 430
+    $lblHeadersHelp.Height = 18
+
+    $txtOutputHeaders = $designer.Controls.Add("Forms.TextBox.1", "txtOutputHeaders", $true)
+    $txtOutputHeaders.Left = 286
+    $txtOutputHeaders.Top = 170
+    $txtOutputHeaders.Width = 446
+    $txtOutputHeaders.Height = 256
+    $txtOutputHeaders.MultiLine = $true
+    $txtOutputHeaders.ScrollBars = 2
+    $txtOutputHeaders.EnterKeyBehavior = $true
+    $txtOutputHeaders.WordWrap = $false
+
+    $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOK.Caption = "매칭 확인"
+    $cmdOK.Left = 544
+    $cmdOK.Top = 486
+    $cmdOK.Width = 90
+    $cmdOK.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 646
+    $cmdCancel.Top = 486
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As String, _
+                     ByVal defaultOutputHeaders As String, ByVal defaultOutputSheetName As String, _
+                     ByVal defaultOutputPosition As String)
+    Cancelled = True
+    lstSheets.Clear
+
+    Dim lines As Variant
+    lines = Split(Replace(sheetNamesText, vbCr, vbLf), vbLf)
+
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim sheetName As String
+        sheetName = Trim$(CStr(lines(i)))
+        If Len(sheetName) > 0 Then
+            lstSheets.AddItem sheetName
+            lstSheets.Selected(lstSheets.ListCount - 1) = True
+        End If
+    Next i
+
+    txtKeyHeader.Text = defaultKeyHeader
+    txtOutputHeaders.Text = HeadersForDisplay(defaultOutputHeaders)
+    txtOutputSheetName.Text = defaultOutputSheetName
+
+    cmbPosition.Clear
+    cmbPosition.AddItem "맨 뒤"
+    cmbPosition.AddItem "맨 앞"
+    cmbPosition.AddItem "현재 시트 뒤"
+    If Len(defaultOutputPosition) > 0 Then
+        cmbPosition.Value = defaultOutputPosition
+    Else
+        cmbPosition.Value = "맨 뒤"
+    End If
+End Sub
+
+Public Property Get SelectedSheets() As String
+    Dim result As String
+    Dim i As Long
+    For i = 0 To lstSheets.ListCount - 1
+        If lstSheets.Selected(i) Then
+            If Len(result) > 0 Then result = result & vbLf
+            result = result & CStr(lstSheets.List(i))
+        End If
+    Next i
+    SelectedSheets = result
+End Property
+
+Public Property Get KeyHeader() As String
+    KeyHeader = Trim$(txtKeyHeader.Text)
+End Property
+
+Public Property Get OutputHeaders() As String
+    OutputHeaders = Trim$(txtOutputHeaders.Text)
+End Property
+
+Public Property Get OutputSheetName() As String
+    OutputSheetName = Trim$(txtOutputSheetName.Text)
+End Property
+
+Public Property Get OutputPosition() As String
+    OutputPosition = CStr(cmbPosition.Value)
+End Property
+
+Private Function HeadersForDisplay(ByVal headerText As String) As String
+    Dim t As String
+    t = Replace(headerText, vbCrLf, vbLf)
+    t = Replace(t, vbCr, vbLf)
+    t = Replace(t, ",", vbLf)
+    t = Replace(t, ";", vbLf)
+    HeadersForDisplay = Replace(t, vbLf, vbCrLf)
+End Function
+
+Private Function SelectedSheetCount() As Long
+    Dim i As Long
+    For i = 0 To lstSheets.ListCount - 1
+        If lstSheets.Selected(i) Then SelectedSheetCount = SelectedSheetCount + 1
+    Next i
+End Function
+
+Private Sub cmdAll_Click()
+    Dim i As Long
+    For i = 0 To lstSheets.ListCount - 1
+        lstSheets.Selected(i) = True
+    Next i
+End Sub
+
+Private Sub cmdNone_Click()
+    Dim i As Long
+    For i = 0 To lstSheets.ListCount - 1
+        lstSheets.Selected(i) = False
+    Next i
+End Sub
+
+Private Sub cmdOK_Click()
+    If SelectedSheetCount() = 0 Then
+        MsgBox "통합할 시트를 하나 이상 선택하세요.", vbExclamation, "시트 데이터 통합"
+        lstSheets.SetFocus
+        Exit Sub
+    End If
+    If Len(Trim$(txtKeyHeader.Text)) = 0 Then
+        MsgBox "메인 KEY 헤더를 입력하세요.", vbExclamation, "시트 데이터 통합"
+        txtKeyHeader.SetFocus
+        Exit Sub
+    End If
+    If Len(Trim$(txtOutputHeaders.Text)) = 0 Then
+        MsgBox "통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
+        txtOutputHeaders.SetFocus
+        Exit Sub
+    End If
+    If Len(Trim$(txtOutputSheetName.Text)) = 0 Then
+        MsgBox "결과 시트 이름을 입력하세요.", vbExclamation, "시트 데이터 통합"
+        txtOutputSheetName.SetFocus
+        Exit Sub
+    End If
+
+    Cancelled = False
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then Cancelled = True
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
+function Add-DatabaseMergeReviewUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmDatabaseMergeReview"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "시트 데이터 통합 매칭 확인"
+    $form.Properties.Item("Width").Value = 760
+    $form.Properties.Item("Height").Value = 560
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Caption = "자동 탐지된 헤더 행, 마지막 행, 시트별 컬럼 매칭을 확인하세요. '없음'으로 표시된 헤더는 해당 시트에서 빈값으로 생성됩니다."
+    $lblGuide.Left = 12
+    $lblGuide.Top = 10
+    $lblGuide.Width = 720
+    $lblGuide.Height = 30
+    $lblGuide.WordWrap = $true
+
+    $lblSummary = $designer.Controls.Add("Forms.Label.1", "lblSummary", $true)
+    $lblSummary.Caption = "통합 계획"
+    $lblSummary.Left = 12
+    $lblSummary.Top = 52
+    $lblSummary.Width = 180
+    $lblSummary.Height = 18
+
+    $txtSummary = $designer.Controls.Add("Forms.TextBox.1", "txtSummary", $true)
+    $txtSummary.Left = 12
+    $txtSummary.Top = 74
+    $txtSummary.Width = 720
+    $txtSummary.Height = 150
+    $txtSummary.MultiLine = $true
+    $txtSummary.ScrollBars = 2
+    $txtSummary.Locked = $true
+
+    $lblMapping = $designer.Controls.Add("Forms.Label.1", "lblMapping", $true)
+    $lblMapping.Caption = "헤더 매칭 검토"
+    $lblMapping.Left = 12
+    $lblMapping.Top = 238
+    $lblMapping.Width = 180
+    $lblMapping.Height = 18
+
+    $txtMapping = $designer.Controls.Add("Forms.TextBox.1", "txtMapping", $true)
+    $txtMapping.Left = 12
+    $txtMapping.Top = 260
+    $txtMapping.Width = 720
+    $txtMapping.Height = 206
+    $txtMapping.MultiLine = $true
+    $txtMapping.ScrollBars = 3
+    $txtMapping.Locked = $true
+    $txtMapping.WordWrap = $false
+
+    $cmdRun = $designer.Controls.Add("Forms.CommandButton.1", "cmdRun", $true)
+    $cmdRun.Caption = "통합 실행"
+    $cmdRun.Left = 544
+    $cmdRun.Top = 486
+    $cmdRun.Width = 90
+    $cmdRun.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 646
+    $cmdCancel.Top = 486
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+
+Public Cancelled As Boolean
+
+Public Sub Configure(ByVal summaryText As String, ByVal mappingText As String)
+    Cancelled = True
+    txtSummary.Text = summaryText
+    txtMapping.Text = mappingText
+End Sub
+
+Private Sub cmdRun_Click()
+    Cancelled = False
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then Cancelled = True
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-SpssRebuildUserForm {
     param($Workbook)
 
@@ -1143,7 +1495,7 @@ function Add-NaverLocalBuildOptionsUserForm {
     $form.Properties.Item("Height").Value = 300
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "선택한 행정동마다 업종을 검색해 신규 업체 리스트를 만듭니다."
+    $lblTitle.Caption = "선택한 행정동/법정동마다 업종을 검색해 신규 업체 리스트를 만듭니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 12
     $lblTitle.Width = 420
@@ -1204,6 +1556,19 @@ function Add-NaverLocalBuildOptionsUserForm {
     $cmbSort.Width = 140
     $cmbSort.Height = 22
 
+    $lblDongBasis = $designer.Controls.Add("Forms.Label.1", "lblDongBasis", $true)
+    $lblDongBasis.Caption = "동 기준"
+    $lblDongBasis.Left = 280
+    $lblDongBasis.Top = 120
+    $lblDongBasis.Width = 58
+    $lblDongBasis.Height = 18
+
+    $cmbDongBasis = $designer.Controls.Add("Forms.ComboBox.1", "cmbDongBasis", $true)
+    $cmbDongBasis.Left = 344
+    $cmbDongBasis.Top = 116
+    $cmbDongBasis.Width = 74
+    $cmbDongBasis.Height = 22
+
     $lblSido = $designer.Controls.Add("Forms.Label.1", "lblSido", $true)
     $lblSido.Caption = "광역시도 필터"
     $lblSido.Left = 12
@@ -1231,7 +1596,7 @@ function Add-NaverLocalBuildOptionsUserForm {
     $txtSigungu.Height = 22
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "내장 행정동 마스터 또는 현재 통합문서의 행정동_마스터 시트를 사용합니다. 필터를 비우면 전체 행정동을 대상으로 합니다."
+    $lblTip.Caption = "내장 행정동/법정동 마스터 또는 현재 통합문서의 사용자 마스터 시트를 사용합니다. 필터를 비우면 선택 기준 전체를 대상으로 합니다."
     $lblTip.Left = 12
     $lblTip.Top = 188
     $lblTip.Width = 420
@@ -1261,6 +1626,9 @@ Private Sub UserForm_Initialize()
     cmbSort.AddItem "comment"
     cmbSort.AddItem "random"
     cmbSort.Value = "comment"
+    cmbDongBasis.AddItem "행정동"
+    cmbDongBasis.AddItem "법정동"
+    cmbDongBasis.Value = "행정동"
 End Sub
 
 Public Property Get IndustryText() As String
@@ -1281,6 +1649,14 @@ End Property
 Public Property Get SortMode() As String
     SortMode = CStr(cmbSort.Value)
     If SortMode <> "random" Then SortMode = "comment"
+End Property
+
+Public Property Get DongBasis() As String
+    If CStr(cmbDongBasis.Value) = "법정동" Then
+        DongBasis = "legal"
+    Else
+        DongBasis = "admin"
+    End If
 End Property
 
 Public Property Get SidoFilter() As String
@@ -1643,6 +2019,46 @@ function Add-AdminDongMasterWorksheet {
     $ws.Visible = 2
 }
 
+function Add-LegalDongMasterWorksheet {
+    param(
+        $Workbook,
+        [string]$CsvPath
+    )
+
+    if (-not (Test-Path -LiteralPath $CsvPath)) {
+        throw "Legal dong master CSV not found: $CsvPath"
+    }
+
+    foreach ($sheet in @($Workbook.Worksheets)) {
+        if ($sheet.Name -eq "_NaverLocalLegalDongMaster") {
+            $sheet.Delete()
+            break
+        }
+    }
+
+    $ws = $Workbook.Worksheets.Add()
+    $ws.Name = "_NaverLocalLegalDongMaster"
+
+    $query = $ws.QueryTables.Add("TEXT;$CsvPath", $ws.Range("A1"))
+    $query.TextFileParseType = 1
+    $query.TextFileCommaDelimiter = $true
+    $query.TextFilePlatform = 65001
+    $query.Refresh($false) | Out-Null
+    $query.Delete()
+
+    $lastRow = $ws.Cells.Item($ws.Rows.Count, 1).End(-4162).Row
+    $lastCol = $ws.Cells.Item(1, $ws.Columns.Count).End(-4159).Column
+    $useCol = $lastCol + 1
+    $ws.Cells.Item(1, $useCol).Value2 = "사용여부"
+    if ($lastRow -ge 2) {
+        $ws.Range($ws.Cells.Item(2, $useCol), $ws.Cells.Item($lastRow, $useCol)).Value2 = "Y"
+    }
+
+    $ws.Range($ws.Cells.Item(1, 1), $ws.Cells.Item(1, $useCol)).Font.Bold = $true
+    $ws.Columns.AutoFit() | Out-Null
+    $ws.Visible = 2
+}
+
 function Add-ProgressStatusUserForm {
     param($Workbook)
 
@@ -1749,7 +2165,7 @@ function Add-RibbonCustomUi {
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
         <group id="grpToolkitLaunchers" label="통합 실행">
           <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업명 정리를 하나의 선택 창에서 실행합니다." />
-          <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리/통합, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSampleDesign" label="표본설계" size="large" imageMso="PivotTableInsert" onAction="Ribbon_LaunchSampleDesign" screentip="표본설계 통합 실행" supertip="표본설계 시트 생성, 단순 비례/제곱근 비례/멱배분 할당 계산, 진행률 관리표 생성을 하나의 선택 창에서 실행합니다." />
@@ -1762,6 +2178,7 @@ function Add-RibbonCustomUi {
           <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
+          <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
@@ -1771,9 +2188,14 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpNaverLocalTools" label="네이버 지역검색">
           <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
-          <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동 기준 업체 리스트 생성" supertip="행정동 목록 범위와 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
+          <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동/법정동 기준 업체 리스트 생성" supertip="검색 기준을 행정동 또는 법정동으로 선택하고 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
           <button id="btnNaverVerifyAddress" label="주소 검증" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_NaverLocalVerifyExistingData" screentip="업체명/주소 검증" supertip="업체명 범위와 주소 범위를 선택하면 네이버 지역검색 결과, 유사도, 검증등급 열을 추가합니다." />
           <button id="btnNaverDongMaster" label="행정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateDongMasterTemplate" screentip="행정동 마스터 양식 생성" supertip="현재 통합문서에 내장 행정동 마스터와 같은 양식의 행정동_마스터 시트를 생성합니다. 이 시트를 수정하면 신규 리스트 생성에 우선 사용됩니다." />
+          <button id="btnNaverLegalDongMaster" label="법정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateLegalDongMasterTemplate" screentip="법정동 마스터 양식 생성" supertip="현재 통합문서에 내장 법정동 마스터와 같은 양식의 법정동_마스터 시트를 생성합니다. 이 시트를 수정하면 법정동 기준 신규 리스트 생성에 우선 사용됩니다." />
+        </group>
+        <group id="grpDatabaseTools" label="데이터 통합">
+          <button id="btnDatabaseMergeSheets" label="시트 통합" size="large" imageMso="TableInsert" onAction="Ribbon_DatabaseMergeSheets" screentip="여러 시트 데이터 통합" supertip="KEY와 통합 헤더를 지정하고 시트별 헤더 매핑을 검증한 뒤 여러 시트의 데이터를 하나의 통합 시트로 쌓습니다." />
+          <button id="btnDatabaseSplitMergedSheet" label="통합 시트 분리" imageMso="TableSelect" onAction="Ribbon_DatabaseSplitMergedSheet" screentip="통합 데이터 원본별 분리" supertip="통합 시트 1행의 관리코드를 기준으로 원본시트별 분리 시트를 다시 생성합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
@@ -1841,6 +2263,7 @@ if (-not $ProjectRoot) { $ProjectRoot = Split-Path -Parent $ScriptDir }
 
 $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
 $AdminDongMasterCsv = Join-Path $ProjectRoot "resources\admin_dong_master.csv"
+$LegalDongMasterCsv = Join-Path $ProjectRoot "resources\legal_dong_master.csv"
 $DevWorkbook = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
 
@@ -1901,7 +2324,7 @@ try {
     try {
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmPopulationListifyPreview"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -1910,6 +2333,8 @@ try {
         Add-ToolkitButtonMenuUserForm -Workbook $workbook
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
         Add-PopulationListifyPreviewUserForm -Workbook $workbook
+        Add-DatabaseMergeSetupUserForm -Workbook $workbook
+        Add-DatabaseMergeReviewUserForm -Workbook $workbook
         Add-SpssRebuildUserForm -Workbook $workbook
         Add-CompanyNameOptionsUserForm -Workbook $workbook
         Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
@@ -1917,6 +2342,7 @@ try {
         Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
         Add-ProgressStatusUserForm -Workbook $workbook
         Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
+        Add-LegalDongMasterWorksheet -Workbook $workbook -CsvPath $LegalDongMasterCsv
     }
     catch {
         throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
