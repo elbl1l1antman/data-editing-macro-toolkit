@@ -2596,87 +2596,50 @@ ErrHandler:
 End Sub
 
 Public Sub NaverLocal_CreateDongMasterTemplate()
-    If ActiveWorkbook Is Nothing Then Exit Sub
-
-    Dim wb As Workbook
-    Set wb = ActiveWorkbook
-
-    Dim existing As Worksheet
-    On Error Resume Next
-    Set existing = wb.Worksheets(NAVER_USER_DONG_MASTER_SHEET)
-    On Error GoTo 0
-
-    If Not existing Is Nothing Then
-        If MsgBox("현재 통합문서에 '" & NAVER_USER_DONG_MASTER_SHEET & "' 시트가 이미 있습니다." & vbCrLf & _
-                  "기존 시트를 지우고 내장 행정동 마스터 양식으로 다시 만들까요?", _
-                  vbQuestion + vbYesNo, "행정동 마스터 양식") <> vbYes Then Exit Sub
-        Application.DisplayAlerts = False
-        existing.Delete
-        Application.DisplayAlerts = True
-    End If
-
-    Dim sourceWs As Worksheet
-    Set sourceWs = NaverLocal_GetEmbeddedDongMasterSheet()
-    If sourceWs Is Nothing Then
-        MsgBox "추가기능 내부 행정동 마스터를 찾지 못했습니다.", vbExclamation, "행정동 마스터 양식"
-        Exit Sub
-    End If
-
-    Dim outWs As Worksheet
-    Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-    outWs.Name = NAVER_USER_DONG_MASTER_SHEET
-
-    sourceWs.UsedRange.Copy Destination:=outWs.Range("A1")
-    Application.CutCopyMode = False
-    outWs.Columns("A:E").AutoFit
-    outWs.Range("A1:E1").Font.Bold = True
-    outWs.Activate
-
-    MsgBox "'" & NAVER_USER_DONG_MASTER_SHEET & "' 시트를 만들었습니다." & vbCrLf & _
-           "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 신규 리스트 생성에 반영됩니다.", _
-           vbInformation, "행정동 마스터 양식"
+    NaverLocal_CreateMasterTemplate NAVER_USER_DONG_MASTER_SHEET, NaverLocal_GetEmbeddedDongMasterSheet(), "행정동"
 End Sub
 
 Public Sub NaverLocal_CreateLegalDongMasterTemplate()
+    NaverLocal_CreateMasterTemplate NAVER_USER_LEGAL_DONG_MASTER_SHEET, NaverLocal_GetEmbeddedLegalDongMasterSheet(), "법정동"
+End Sub
+
+Private Sub NaverLocal_CreateMasterTemplate(ByVal targetSheetName As String, ByVal sourceWs As Worksheet, ByVal basisLabel As String)
     If ActiveWorkbook Is Nothing Then Exit Sub
+    If sourceWs Is Nothing Then
+        MsgBox "추가기능 내부 " & basisLabel & " 마스터를 찾지 못했습니다.", vbExclamation, basisLabel & " 마스터 양식"
+        Exit Sub
+    End If
 
     Dim wb As Workbook
     Set wb = ActiveWorkbook
 
     Dim existing As Worksheet
     On Error Resume Next
-    Set existing = wb.Worksheets(NAVER_USER_LEGAL_DONG_MASTER_SHEET)
+    Set existing = wb.Worksheets(targetSheetName)
     On Error GoTo 0
 
     If Not existing Is Nothing Then
-        If MsgBox("현재 통합문서에 '" & NAVER_USER_LEGAL_DONG_MASTER_SHEET & "' 시트가 이미 있습니다." & vbCrLf & _
-                  "기존 시트를 지우고 내장 법정동 마스터 양식으로 다시 만들까요?", _
-                  vbQuestion + vbYesNo, "법정동 마스터 양식") <> vbYes Then Exit Sub
+        If MsgBox("현재 통합문서에 '" & targetSheetName & "' 시트가 이미 있습니다." & vbCrLf & _
+                  "기존 시트를 지우고 내장 " & basisLabel & " 마스터 양식으로 다시 만들까요?", _
+                  vbQuestion + vbYesNo, basisLabel & " 마스터 양식") <> vbYes Then Exit Sub
         Application.DisplayAlerts = False
         existing.Delete
         Application.DisplayAlerts = True
     End If
 
-    Dim sourceWs As Worksheet
-    Set sourceWs = NaverLocal_GetEmbeddedLegalDongMasterSheet()
-    If sourceWs Is Nothing Then
-        MsgBox "추가기능 내부 법정동 마스터를 찾지 못했습니다.", vbExclamation, "법정동 마스터 양식"
-        Exit Sub
-    End If
-
     Dim outWs As Worksheet
     Set outWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-    outWs.Name = NAVER_USER_LEGAL_DONG_MASTER_SHEET
+    outWs.Name = targetSheetName
 
     sourceWs.UsedRange.Copy Destination:=outWs.Range("A1")
     Application.CutCopyMode = False
-    outWs.Columns("A:F").AutoFit
-    outWs.Range("A1:F1").Font.Bold = True
+    outWs.UsedRange.Columns.AutoFit
+    outWs.Rows(1).Font.Bold = True
     outWs.Activate
 
-    MsgBox "'" & NAVER_USER_LEGAL_DONG_MASTER_SHEET & "' 시트를 만들었습니다." & vbCrLf & _
-           "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 법정동 기준 신규 리스트 생성에 반영됩니다.", _
-           vbInformation, "법정동 마스터 양식"
+    MsgBox "'" & targetSheetName & "' 시트를 만들었습니다." & vbCrLf & _
+           "컬럼 구조를 유지한 채 행을 추가/삭제하거나 사용여부를 Y/N으로 바꾸면 " & basisLabel & " 기준 신규 리스트 생성에 반영됩니다.", _
+           vbInformation, basisLabel & " 마스터 양식"
 End Sub
 
 Public Sub NaverLocal_VerifyExistingData()
