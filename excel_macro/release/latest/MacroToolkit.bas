@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.9"
+Public Const TOOLKIT_VERSION As String = "1.1.10"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -8029,20 +8029,26 @@ Public Sub Database_MergeSheetsByHeaders()
     Dim outputHeadersCsv As String
     Dim outputSheetName As String
     Dim outputPosition As String
+    Dim headerRowSetting As String
+    Dim headerMode As String
 
     keyHeader = "ID"
     outputHeadersCsv = DBMerge_DefaultHeaderCsv(wb)
     outputSheetName = "통합데이터"
     outputPosition = "맨 뒤"
+    headerRowSetting = "자동"
+    headerMode = "single"
 
-    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition) Then Exit Sub
+    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode) Then Exit Sub
 
     keyHeader = Trim$(keyHeader)
+    headerRowSetting = Trim$(headerRowSetting)
     outputSheetName = DBMerge_CleanSheetName(outputSheetName, "통합데이터")
     If Len(keyHeader) = 0 Then
         MsgBox "메인 KEY 헤더를 입력해야 합니다.", vbExclamation, "시트 데이터 통합"
         Exit Sub
     End If
+    If Len(headerRowSetting) = 0 Then headerRowSetting = "자동"
 
     If DBMerge_NameIsSelected(selectedSheetNames, outputSheetName) Then
         MsgBox "결과 시트 이름이 통합 대상 시트와 같습니다." & vbCrLf & _
@@ -8065,7 +8071,7 @@ Public Sub Database_MergeSheetsByHeaders()
     End If
 
     Dim plan As Object
-    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders)
+    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders, headerRowSetting, headerMode)
     If plan Is Nothing Then Exit Sub
 
     If Not DBMerge_ShowReviewForm(plan) Then Exit Sub
@@ -8157,12 +8163,13 @@ End Sub
 
 Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheetNames As String, _
                                        ByRef keyHeader As String, ByRef outputHeadersCsv As String, _
-                                       ByRef outputSheetName As String, ByRef outputPosition As String) As Boolean
+                                       ByRef outputSheetName As String, ByRef outputPosition As String, _
+                                       ByRef headerRowSetting As String, ByRef headerMode As String) As Boolean
     On Error GoTo ErrHandler
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmDatabaseMergeSetup")
-    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition
+    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode
     form.Show
 
     If CBool(form.Cancelled) Then
@@ -8175,6 +8182,8 @@ Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheet
     outputHeadersCsv = CStr(form.OutputHeaders)
     outputSheetName = CStr(form.OutputSheetName)
     outputPosition = CStr(form.OutputPosition)
+    headerRowSetting = CStr(form.HeaderRowSetting)
+    headerMode = CStr(form.HeaderMode)
     Unload form
     DBMerge_ShowSetupForm = True
     Exit Function
@@ -8304,11 +8313,14 @@ Private Sub DBMerge_AddHeader(ByVal headers As Collection, ByVal seen As Object,
     headers.Add cleaned
 End Sub
 
-Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader As String, ByVal outputHeaders As Collection) As Object
+Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader As String, ByVal outputHeaders As Collection, _
+                                   ByVal headerRowSetting As String, ByVal headerMode As String) As Object
     Dim plan As Object
     Set plan = CreateObject("Scripting.Dictionary")
     plan.Add "keyHeader", keyHeader
     plan.Add "headers", outputHeaders
+    plan.Add "headerRowSetting", headerRowSetting
+    plan.Add "headerMode", headerMode
 
     Dim sheetPlans As Collection
     Set sheetPlans = New Collection
@@ -8319,27 +8331,75 @@ Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader A
         Set ws = sheets(i)
 
         Dim headerRow As Long
-        headerRow = DBMerge_DetectHeaderRow(ws)
+        headerRow = DBMerge_HeaderRowForSheet(ws, headerRowSetting)
         If headerRow = 0 Then
             MsgBox ws.Name & " 시트에서 헤더 행을 찾지 못했습니다.", vbExclamation, "시트 데이터 통합"
             Exit Function
         End If
+        If Not DBMerge_HeaderModeIsUsable(ws, headerRow, headerMode) Then
+            MsgBox ws.Name & " 시트에서 선택한 헤더 구조를 적용할 수 없습니다." & vbCrLf & _
+                   "헤더 행 번호와 헤더 구조를 다시 확인하세요.", vbExclamation, "시트 데이터 통합"
+            Exit Function
+        End If
+
+        Dim dataStartRow As Long
+        dataStartRow = DBMerge_DataStartRow(headerRow, headerMode)
 
         Dim headerMap As Object
-        Set headerMap = DBMerge_HeaderMap(ws, headerRow)
+        Set headerMap = DBMerge_HeaderMap(ws, headerRow, headerMode)
 
         Dim sheetPlan As Object
         Set sheetPlan = CreateObject("Scripting.Dictionary")
         sheetPlan.Add "sheetName", ws.Name
         sheetPlan.Add "worksheet", ws
         sheetPlan.Add "headerRow", headerRow
-        sheetPlan.Add "lastRow", DBMerge_LastDataRow(ws, headerRow, headerMap, outputHeaders)
+        sheetPlan.Add "dataStartRow", dataStartRow
+        sheetPlan.Add "lastRow", DBMerge_LastDataRow(ws, dataStartRow, headerMap, outputHeaders)
         sheetPlan.Add "headerMap", headerMap
         sheetPlans.Add sheetPlan
     Next i
 
     plan.Add "sheets", sheetPlans
     Set DBMerge_BuildPlan = plan
+End Function
+
+Private Function DBMerge_HeaderRowForSheet(ByVal ws As Worksheet, ByVal headerRowSetting As String) As Long
+    Dim settingText As String
+    settingText = LCase$(Trim$(headerRowSetting))
+    If Len(settingText) = 0 Or settingText = "자동" Or settingText = "auto" Or settingText = "0" Then
+        DBMerge_HeaderRowForSheet = DBMerge_DetectHeaderRow(ws)
+        Exit Function
+    End If
+
+    If Not IsNumeric(settingText) Then Exit Function
+
+    Dim rowNo As Long
+    rowNo = CLng(settingText)
+    If rowNo < 1 Or rowNo > DBMerge_LastUsedRow(ws) Then Exit Function
+    DBMerge_HeaderRowForSheet = rowNo
+End Function
+
+Private Function DBMerge_HeaderModeIsUsable(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerMode As String) As Boolean
+    Dim lastRow As Long
+    lastRow = DBMerge_LastUsedRow(ws)
+
+    Select Case headerMode
+        Case "display_next_key"
+            DBMerge_HeaderModeIsUsable = (headerRow + 1 <= lastRow)
+        Case "key_prev_display"
+            DBMerge_HeaderModeIsUsable = (headerRow > 1)
+        Case Else
+            DBMerge_HeaderModeIsUsable = (headerRow <= lastRow)
+    End Select
+End Function
+
+Private Function DBMerge_DataStartRow(ByVal headerRow As Long, ByVal headerMode As String) As Long
+    Select Case headerMode
+        Case "display_next_key"
+            DBMerge_DataStartRow = headerRow + 2
+        Case Else
+            DBMerge_DataStartRow = headerRow + 1
+    End Select
 End Function
 
 Private Function DBMerge_DetectHeaderRow(ByVal ws As Worksheet) As Long
@@ -8367,9 +8427,26 @@ Private Function DBMerge_RowTextCount(ByVal ws As Worksheet, ByVal rowNo As Long
     Next c
 End Function
 
-Private Function DBMerge_HeaderMap(ByVal ws As Worksheet, ByVal headerRow As Long) As Object
+Private Function DBMerge_HeaderMap(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerMode As String) As Object
     Dim map As Object
     Set map = CreateObject("Scripting.Dictionary")
+
+    Select Case headerMode
+        Case "display_next_key"
+            DBMerge_AddHeaderMapRow ws, map, headerRow + 1
+            DBMerge_AddHeaderMapRow ws, map, headerRow
+        Case "key_prev_display"
+            DBMerge_AddHeaderMapRow ws, map, headerRow
+            DBMerge_AddHeaderMapRow ws, map, headerRow - 1
+        Case Else
+            DBMerge_AddHeaderMapRow ws, map, headerRow
+    End Select
+
+    Set DBMerge_HeaderMap = map
+End Function
+
+Private Sub DBMerge_AddHeaderMapRow(ByVal ws As Worksheet, ByVal map As Object, ByVal headerRow As Long)
+    If headerRow < 1 Then Exit Sub
 
     Dim lastCol As Long
     lastCol = DBMerge_LastUsedCol(ws)
@@ -8383,13 +8460,11 @@ Private Function DBMerge_HeaderMap(ByVal ws As Worksheet, ByVal headerRow As Lon
             If Len(norm) > 0 And Not map.Exists(norm) Then map.Add norm, c
         End If
     Next c
+End Sub
 
-    Set DBMerge_HeaderMap = map
-End Function
-
-Private Function DBMerge_LastDataRow(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerMap As Object, ByVal outputHeaders As Collection) As Long
+Private Function DBMerge_LastDataRow(ByVal ws As Worksheet, ByVal dataStartRow As Long, ByVal headerMap As Object, ByVal outputHeaders As Collection) As Long
     Dim lastRow As Long
-    lastRow = headerRow
+    lastRow = dataStartRow - 1
 
     Dim i As Long
     For i = 1 To outputHeaders.Count
@@ -8404,13 +8479,15 @@ Private Function DBMerge_LastDataRow(ByVal ws As Worksheet, ByVal headerRow As L
         End If
     Next i
 
-    If lastRow = headerRow Then lastRow = DBMerge_LastUsedRow(ws)
+    If lastRow < dataStartRow Then lastRow = DBMerge_LastUsedRow(ws)
     DBMerge_LastDataRow = lastRow
 End Function
 
 Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
     Dim result As String
     result = "메인 KEY: " & CStr(plan("keyHeader")) & vbCrLf & _
+             "헤더 구조: " & DBMerge_HeaderModeLabel(CStr(plan("headerMode"))) & vbCrLf & _
+             "헤더 행 설정: " & CStr(plan("headerRowSetting")) & vbCrLf & _
              "통합 헤더 수: " & CStr(plan("headers").Count) & vbCrLf & _
              "대상 시트 수: " & CStr(plan("sheets").Count) & vbCrLf & vbCrLf
 
@@ -8420,9 +8497,21 @@ Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
         Set sheetPlan = plan("sheets")(i)
         result = result & i & ". " & CStr(sheetPlan("sheetName")) & _
                  " / 헤더 행: " & CStr(sheetPlan("headerRow")) & _
+                 " / 데이터 시작: " & CStr(sheetPlan("dataStartRow")) & _
                  " / 마지막 행: " & CStr(sheetPlan("lastRow")) & vbCrLf
     Next i
     DBMerge_PlanSummary = result
+End Function
+
+Private Function DBMerge_HeaderModeLabel(ByVal headerMode As String) As String
+    Select Case headerMode
+        Case "display_next_key"
+            DBMerge_HeaderModeLabel = "선택 행=헤더변수명, 다음 행=실제 헤더변수"
+        Case "key_prev_display"
+            DBMerge_HeaderModeLabel = "선택 행=실제 헤더변수, 이전 행=헤더변수명"
+        Case Else
+            DBMerge_HeaderModeLabel = "선택 행 1줄"
+    End Select
 End Function
 
 Private Function DBMerge_MappingSummary(ByVal plan As Object) As String
@@ -8487,7 +8576,7 @@ Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As W
         Set headerMap = sheetPlan("headerMap")
 
         Dim r As Long
-        For r = CLng(sheetPlan("headerRow")) + 1 To CLng(sheetPlan("lastRow"))
+        For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
             If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers")) Then
                 outWs.Cells(outRow, 1).Value = ws.Name
                 outWs.Cells(outRow, 2).Value = r

@@ -23,7 +23,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.9`
+`1.1.10`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -61,6 +61,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 네이버 주소 검증 옵션창에서 업체명만/주소만/업체명+주소 분석 여부와 범위를 한 번에 지정
 - 네이버 지역검색/주소 검증/사업자등록 상태조회 API 작업 중 진행률 창과 Excel 상태표시줄 표시
 - 여러 시트의 데이터를 KEY와 지정 헤더 기준으로 하나의 통합 시트에 적재
+- 시트 통합 시 헤더 행 번호 지정, 자동 탐지, 2행 헤더 구조(헤더변수명/실제 헤더변수) 매칭 지원
 - 통합 전 시트별 헤더 행, 마지막 데이터 행, 컬럼 매칭 결과를 UserForm에서 확인
 - 통합 시트 1행에 원본시트/원본행/필드 관리코드를 추가해 원본시트별 재분리 지원
 - 모든 워크시트의 화면 위치를 A1 기준 최상단으로 정렬
@@ -106,10 +107,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.9/DataEditingMacroToolkit_v1.1.9.xlam`
-- `release/v1.1.9/DataEditingMacroToolkit_v1.1.9.xlsm`
-- `release/v1.1.9/MacroToolkit.bas`
-- `release/v1.1.9/manifest.json`
+- `release/v1.1.10/DataEditingMacroToolkit_v1.1.10.xlam`
+- `release/v1.1.10/DataEditingMacroToolkit_v1.1.10.xlsm`
+- `release/v1.1.10/MacroToolkit.bas`
+- `release/v1.1.10/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

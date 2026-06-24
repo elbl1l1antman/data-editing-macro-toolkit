@@ -457,10 +457,10 @@ function Add-DatabaseMergeSetupUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "시트 데이터 통합 설정"
     $form.Properties.Item("Width").Value = 760
-    $form.Properties.Item("Height").Value = 560
+    $form.Properties.Item("Height").Value = 620
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
-    $lblGuide.Caption = "통합할 시트, KEY 헤더, 가져올 헤더, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
+    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, KEY 헤더, 가져올 헤더, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
     $lblGuide.Left = 12
     $lblGuide.Top = 10
     $lblGuide.Width = 720
@@ -478,20 +478,20 @@ function Add-DatabaseMergeSetupUserForm {
     $lstSheets.Left = 12
     $lstSheets.Top = 74
     $lstSheets.Width = 250
-    $lstSheets.Height = 352
+    $lstSheets.Height = 410
     $lstSheets.MultiSelect = 2
 
     $cmdAll = $designer.Controls.Add("Forms.CommandButton.1", "cmdAll", $true)
     $cmdAll.Caption = "전체 선택"
     $cmdAll.Left = 12
-    $cmdAll.Top = 438
+    $cmdAll.Top = 500
     $cmdAll.Width = 92
     $cmdAll.Height = 26
 
     $cmdNone = $designer.Controls.Add("Forms.CommandButton.1", "cmdNone", $true)
     $cmdNone.Caption = "전체 해제"
     $cmdNone.Left = 114
-    $cmdNone.Top = 438
+    $cmdNone.Top = 500
     $cmdNone.Width = 92
     $cmdNone.Height = 26
 
@@ -535,25 +535,53 @@ function Add-DatabaseMergeSetupUserForm {
     $cmbPosition.Height = 22
     $cmbPosition.Style = 2
 
+    $lblHeaderRow = $designer.Controls.Add("Forms.Label.1", "lblHeaderRow", $true)
+    $lblHeaderRow.Caption = "헤더 행"
+    $lblHeaderRow.Left = 286
+    $lblHeaderRow.Top = 122
+    $lblHeaderRow.Width = 120
+    $lblHeaderRow.Height = 18
+
+    $txtHeaderRow = $designer.Controls.Add("Forms.TextBox.1", "txtHeaderRow", $true)
+    $txtHeaderRow.Left = 410
+    $txtHeaderRow.Top = 118
+    $txtHeaderRow.Width = 72
+    $txtHeaderRow.Height = 22
+    $txtHeaderRow.Text = "자동"
+
+    $lblHeaderMode = $designer.Controls.Add("Forms.Label.1", "lblHeaderMode", $true)
+    $lblHeaderMode.Caption = "헤더 구조"
+    $lblHeaderMode.Left = 494
+    $lblHeaderMode.Top = 122
+    $lblHeaderMode.Width = 76
+    $lblHeaderMode.Height = 18
+
+    $cmbHeaderMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbHeaderMode", $true)
+    $cmbHeaderMode.Left = 576
+    $cmbHeaderMode.Top = 118
+    $cmbHeaderMode.Width = 156
+    $cmbHeaderMode.Height = 22
+    $cmbHeaderMode.Style = 2
+
     $lblHeaders = $designer.Controls.Add("Forms.Label.1", "lblHeaders", $true)
     $lblHeaders.Caption = "통합할 헤더 목록"
     $lblHeaders.Left = 286
-    $lblHeaders.Top = 126
+    $lblHeaders.Top = 164
     $lblHeaders.Width = 180
     $lblHeaders.Height = 18
 
     $lblHeadersHelp = $designer.Controls.Add("Forms.Label.1", "lblHeadersHelp", $true)
-    $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. KEY 헤더는 자동으로 첫 열에 포함됩니다."
+    $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. KEY 헤더는 자동으로 첫 열에 포함됩니다. 2행 헤더 구조에서는 표시명 또는 실제 변수명 모두 매칭됩니다."
     $lblHeadersHelp.Left = 286
-    $lblHeadersHelp.Top = 146
+    $lblHeadersHelp.Top = 184
     $lblHeadersHelp.Width = 430
     $lblHeadersHelp.Height = 18
 
     $txtOutputHeaders = $designer.Controls.Add("Forms.TextBox.1", "txtOutputHeaders", $true)
     $txtOutputHeaders.Left = 286
-    $txtOutputHeaders.Top = 170
+    $txtOutputHeaders.Top = 208
     $txtOutputHeaders.Width = 446
-    $txtOutputHeaders.Height = 256
+    $txtOutputHeaders.Height = 290
     $txtOutputHeaders.MultiLine = $true
     $txtOutputHeaders.ScrollBars = 2
     $txtOutputHeaders.EnterKeyBehavior = $true
@@ -562,14 +590,14 @@ function Add-DatabaseMergeSetupUserForm {
     $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOK.Caption = "매칭 확인"
     $cmdOK.Left = 544
-    $cmdOK.Top = 486
+    $cmdOK.Top = 548
     $cmdOK.Width = 90
     $cmdOK.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 646
-    $cmdCancel.Top = 486
+    $cmdCancel.Top = 548
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -580,7 +608,8 @@ Public Cancelled As Boolean
 
 Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As String, _
                      ByVal defaultOutputHeaders As String, ByVal defaultOutputSheetName As String, _
-                     ByVal defaultOutputPosition As String)
+                     ByVal defaultOutputPosition As String, ByVal defaultHeaderRowSetting As String, _
+                     ByVal defaultHeaderMode As String)
     Cancelled = True
     lstSheets.Clear
 
@@ -600,6 +629,7 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
     txtKeyHeader.Text = defaultKeyHeader
     txtOutputHeaders.Text = HeadersForDisplay(defaultOutputHeaders)
     txtOutputSheetName.Text = defaultOutputSheetName
+    txtHeaderRow.Text = IIf(Len(Trim$(defaultHeaderRowSetting)) > 0, defaultHeaderRowSetting, "자동")
 
     cmbPosition.Clear
     cmbPosition.AddItem "맨 뒤"
@@ -610,6 +640,20 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
     Else
         cmbPosition.Value = "맨 뒤"
     End If
+
+    cmbHeaderMode.Clear
+    cmbHeaderMode.AddItem "1줄 헤더"
+    cmbHeaderMode.AddItem "위=표시명, 아래=변수"
+    cmbHeaderMode.AddItem "이전=표시명, 선택=변수"
+
+    Select Case defaultHeaderMode
+        Case "display_next_key"
+            cmbHeaderMode.Value = "위=표시명, 아래=변수"
+        Case "key_prev_display"
+            cmbHeaderMode.Value = "이전=표시명, 선택=변수"
+        Case Else
+            cmbHeaderMode.Value = "1줄 헤더"
+    End Select
 End Sub
 
 Public Property Get SelectedSheets() As String
@@ -638,6 +682,22 @@ End Property
 
 Public Property Get OutputPosition() As String
     OutputPosition = CStr(cmbPosition.Value)
+End Property
+
+Public Property Get HeaderRowSetting() As String
+    HeaderRowSetting = Trim$(txtHeaderRow.Text)
+    If Len(HeaderRowSetting) = 0 Then HeaderRowSetting = "자동"
+End Property
+
+Public Property Get HeaderMode() As String
+    Select Case CStr(cmbHeaderMode.Value)
+        Case "위=표시명, 아래=변수"
+            HeaderMode = "display_next_key"
+        Case "이전=표시명, 선택=변수"
+            HeaderMode = "key_prev_display"
+        Case Else
+            HeaderMode = "single"
+    End Select
 End Property
 
 Private Function HeadersForDisplay(ByVal headerText As String) As String
@@ -681,6 +741,11 @@ Private Sub cmdOK_Click()
         txtKeyHeader.SetFocus
         Exit Sub
     End If
+    If Not HeaderRowSettingIsValid() Then
+        MsgBox "헤더 행은 '자동', '0', 또는 1 이상의 행 번호로 입력하세요.", vbExclamation, "시트 데이터 통합"
+        txtHeaderRow.SetFocus
+        Exit Sub
+    End If
     If Len(Trim$(txtOutputHeaders.Text)) = 0 Then
         MsgBox "통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtOutputHeaders.SetFocus
@@ -695,6 +760,18 @@ Private Sub cmdOK_Click()
     Cancelled = False
     Hide
 End Sub
+
+Private Function HeaderRowSettingIsValid() As Boolean
+    Dim t As String
+    t = LCase$(Trim$(txtHeaderRow.Text))
+    If Len(t) = 0 Or t = "자동" Or t = "auto" Or t = "0" Then
+        HeaderRowSettingIsValid = True
+        Exit Function
+    End If
+
+    If Not IsNumeric(t) Then Exit Function
+    HeaderRowSettingIsValid = (CLng(t) > 0)
+End Function
 
 Private Sub cmdCancel_Click()
     Cancelled = True
@@ -719,7 +796,7 @@ function Add-DatabaseMergeReviewUserForm {
     $form.Properties.Item("Height").Value = 560
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
-    $lblGuide.Caption = "자동 탐지된 헤더 행, 마지막 행, 시트별 컬럼 매칭을 확인하세요. '없음'으로 표시된 헤더는 해당 시트에서 빈값으로 생성됩니다."
+    $lblGuide.Caption = "설정된 헤더 행/구조, 마지막 행, 시트별 컬럼 매칭을 확인하세요. '없음'으로 표시된 헤더는 해당 시트에서 빈값으로 생성됩니다."
     $lblGuide.Left = 12
     $lblGuide.Top = 10
     $lblGuide.Width = 720
