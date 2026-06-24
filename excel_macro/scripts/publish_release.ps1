@@ -457,7 +457,7 @@ function Add-DatabaseMergeSetupUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "시트 데이터 통합 설정"
     $form.Properties.Item("Width").Value = 760
-    $form.Properties.Item("Height").Value = 620
+    $form.Properties.Item("Height").Value = 660
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
     $lblGuide.Caption = "통합할 시트, 헤더 행/구조, KEY 헤더, 가져올 헤더, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
@@ -886,7 +886,7 @@ function Add-SpssRebuildUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "SPSS 표/배너 재구성"
     $form.Properties.Item("Width").Value = 760
-    $form.Properties.Item("Height").Value = 500
+    $form.Properties.Item("Height").Value = 540
 
     $lblHelp = $designer.Controls.Add("Forms.Label.1", "lblHelp", $true)
     $lblHelp.Caption = "표는 선택 후 버튼이나 드래그로 순서를 바꾸고, [삭제/복원]으로 삭제 여부를 표시하세요. Shift+클릭/Ctrl+클릭 다중 선택을 지원합니다."
@@ -1278,14 +1278,14 @@ function Add-CompanyNameOptionsUserForm {
     $form.Name = "frmCompanyNameOptions"
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "기업체명/사업체명 정리 옵션"
-    $form.Properties.Item("Width").Value = 500
-    $form.Properties.Item("Height").Value = 430
+    $form.Properties.Item("Width").Value = 580
+    $form.Properties.Item("Height").Value = 450
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
     $lblTitle.Left = 12
     $lblTitle.Top = 10
-    $lblTitle.Width = 460
+    $lblTitle.Width = 540
     $lblTitle.Height = 18
 
     $labels = @(
@@ -1308,7 +1308,7 @@ function Add-CompanyNameOptionsUserForm {
         $chk.Caption = $item[1]
         $chk.Left = [int]$item[2]
         $chk.Top = [int]$item[3]
-        $chk.Width = 280
+        $chk.Width = 300
         $chk.Height = 20
         $chk.Value = [bool]$item[4]
     }
@@ -1317,20 +1317,20 @@ function Add-CompanyNameOptionsUserForm {
     $lblTip.Caption = "기본값은 제공된 기업이름정리.xlsm의 체크 상태를 따릅니다. 결과는 원본 오른쪽 복사본 열에 생성됩니다."
     $lblTip.Left = 12
     $lblTip.Top = 214
-    $lblTip.Width = 520
+    $lblTip.Width = 540
     $lblTip.Height = 42
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
-    $cmdOk.Left = 346
-    $cmdOk.Top = 330
+    $cmdOk.Left = 374
+    $cmdOk.Top = 346
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
-    $cmdCancel.Left = 446
-    $cmdCancel.Top = 330
+    $cmdCancel.Left = 474
+    $cmdCancel.Top = 346
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
