@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.12"
+Public Const TOOLKIT_VERSION As String = "1.1.13"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -766,7 +766,11 @@ Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle 
         If cell.HasFormula Then
             skippedFormulaCount = skippedFormulaCount + 1
         Else
-            digits = DigitsOnly(CStr(cell.Value))
+            If InStr(1, resultTitle, "전화번호", vbTextCompare) > 0 Then
+                digits = Phone_DigitsForKoreanRules(CStr(cell.Value))
+            Else
+                digits = DigitsOnly(CStr(cell.Value))
+            End If
             If Len(digits) > 0 And CStr(cell.Value) <> digits Then
                 cell.NumberFormat = "@"
                 cell.Value = digits
@@ -1926,12 +1930,13 @@ End Function
 ' ============================================================
 ' 함  수 : NormalizeKoreanPhone (내부 전용)
 ' 설  명  : 입력 문자열에서 숫자만 추출한 뒤
-'           한국 전화번호 규칙에 따라 표준 형식(XXX-XXXX-XXXX)으로
+'           한국 전화번호 규칙에 따라 표준 형식(XXX-XXXX-XXXX 또는 XXXX-XXXX-XXXX)으로
 '           정규화하여 valueOut에 저장하고 True를 반환한다.
 '           지원 형식:
 '             - 서울 지역번호 (02): 02-XXX-XXXX / 02-XXXX-XXXX
 '             - 휴대전화 (01X): 01X-XXX-XXXX / 01X-XXXX-XXXX
 '             - 기타 지역번호 (0XX): 0XX-XXX-XXXX / 0XX-XXXX-XXXX
+'             - 안심번호 (050X): 050X-XXX-XXXX / 050X-XXXX-XXXX
 '             - 국제번호 +82 또는 0082 → 0으로 치환 후 처리
 ' 파라미터 : valueIn  - 원본 전화번호 문자열
 '            valueOut - 정규화된 전화번호 (ByRef, 호출자에게 반환)
@@ -1948,14 +1953,22 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
     ' 예: 02)123-4567, (031)1234-5678, +82-10-1234-5678
     source = Replace(source, "(", "")
     source = Replace(source, ")", "")
-    digits = DigitsOnly(source)
+    digits = Phone_DigitsForKoreanRules(source)
     If Len(digits) = 0 Then Exit Function
 
-    ' 국제전화 접두어(0082 또는 82)를 국내 형식(0)으로 변환
-    If Left$(digits, 4) = "0082" Then digits = "0" & Mid$(digits, 5)
-    If Left$(digits, 2) = "82" Then digits = "0" & Mid$(digits, 3)
-
-    If Left$(digits, 2) = "02" Then
+    If Phone_IsSafeNumberDigits(digits) Then
+        ' ── 안심번호 (0507 등 050X 계열) ─────────────────────
+        ' 11자리: 050X-XXX-XXXX
+        ' 12자리: 050X-XXXX-XXXX
+        Select Case Len(digits)
+            Case 11
+                valueOut = Left$(digits, 4) & "-" & Mid$(digits, 5, 3) & "-" & Right$(digits, 4)
+            Case 12
+                valueOut = Left$(digits, 4) & "-" & Mid$(digits, 5, 4) & "-" & Right$(digits, 4)
+            Case Else
+                Exit Function
+        End Select
+    ElseIf Left$(digits, 2) = "02" Then
         ' ── 서울 지역번호 (02) ──────────────────────────────
         ' 02 포함 9자리: 02-XXX-XXXX
         ' 02 포함 10자리: 02-XXXX-XXXX
@@ -2022,6 +2035,26 @@ Private Function DigitsOnly(ByVal source As String) As String
         ch = Mid$(source, i, 1)
         If ch >= "0" And ch <= "9" Then DigitsOnly = DigitsOnly & ch
     Next i
+End Function
+
+Private Function Phone_DigitsForKoreanRules(ByVal source As String) As String
+    Dim digits As String
+    digits = DigitsOnly(source)
+    If Len(digits) = 0 Then Exit Function
+
+    ' 국제전화 접두어(0082 또는 82)를 국내 형식(0)으로 변환
+    If Left$(digits, 4) = "0082" Then digits = "0" & Mid$(digits, 5)
+    If Left$(digits, 2) = "82" Then digits = "0" & Mid$(digits, 3)
+
+    ' Excel이 0507 안심번호의 선행 0을 제거한 경우 복원
+    If Left$(digits, 3) = "507" And (Len(digits) = 10 Or Len(digits) = 11) Then digits = "0" & digits
+
+    Phone_DigitsForKoreanRules = digits
+End Function
+
+Private Function Phone_IsSafeNumberDigits(ByVal digits As String) As Boolean
+    If Len(digits) < 4 Then Exit Function
+    Phone_IsSafeNumberDigits = (Left$(digits, 4) Like "050#")
 End Function
 
 ' ============================================================
@@ -6492,8 +6525,8 @@ Private Function Roster_DuplicateScore(ws As Worksheet, ByVal r1 As Long, ByVal 
     End If
     If phoneCol > 0 Then
         Dim p1 As String, p2 As String
-        p1 = DigitsOnly(Roster_CellText(ws, r1, dataRange, phoneCol))
-        p2 = DigitsOnly(Roster_CellText(ws, r2, dataRange, phoneCol))
+        p1 = Phone_DigitsForKoreanRules(Roster_CellText(ws, r1, dataRange, phoneCol))
+        p2 = Phone_DigitsForKoreanRules(Roster_CellText(ws, r2, dataRange, phoneCol))
         If Len(p1) >= 8 And p1 = p2 Then score = score + 35: reason = reason & "전화번호 일치; "
     End If
     If nameCol > 0 Then
@@ -6668,8 +6701,8 @@ Private Function Roster_DuplicateScoreManual(ws As Worksheet, ByVal r1 As Long, 
     End If
 
     If Not phoneRange Is Nothing Then
-        p1 = DigitsOnly(Roster_RangeTextAtRow(phoneRange, r1))
-        p2 = DigitsOnly(Roster_RangeTextAtRow(phoneRange, r2))
+        p1 = Phone_DigitsForKoreanRules(Roster_RangeTextAtRow(phoneRange, r1))
+        p2 = Phone_DigitsForKoreanRules(Roster_RangeTextAtRow(phoneRange, r2))
         If Len(p1) >= 7 And p1 = p2 Then score = score + 45: reason = reason & "전화번호 일치; "
     End If
 
@@ -6837,9 +6870,11 @@ Private Function Address_ParseAdministrativeParts(ByVal addressText As String) A
 End Function
 
 Private Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
-    Dim digits As String: digits = DigitsOnly(phoneText)
+    Dim digits As String: digits = Phone_DigitsForKoreanRules(phoneText)
     If Len(digits) = 0 Then
         Phone_ClassifyOne = Array("빈값", "확인 필요")
+    ElseIf Phone_IsSafeNumberDigits(digits) Then
+        If Len(digits) = 11 Or Len(digits) = 12 Then Phone_ClassifyOne = Array("안심번호", "정상") Else Phone_ClassifyOne = Array("안심번호", "확인 필요")
     ElseIf Left$(digits, 3) = "010" And Len(digits) = 11 Then
         Phone_ClassifyOne = Array("휴대폰", "정상")
     ElseIf Left$(digits, 2) = "02" And (Len(digits) = 9 Or Len(digits) = 10) Then
