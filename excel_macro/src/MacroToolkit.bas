@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.11"
+Public Const TOOLKIT_VERSION As String = "1.1.12"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -6361,16 +6361,18 @@ Public Sub Roster_MatchCompanyNames()
     ws.Cells(firstRow, outCol + 1).Value = "유사그룹"
 
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
-    Dim r As Long, key As String, groupNo As Long
+    Dim r As Long, key As String, groupNo As Long, groupLabel As String
     For r = dataStart To lastRow
         key = Roster_NormalizeCompanyName(CStr(ws.Cells(r, workRange.Column).Value))
         ws.Cells(r, outCol).Value = key
         If Len(key) > 0 Then
-            If Not dict.Exists(key) Then
+            groupLabel = Roster_FindCompanyGroupLabel(dict, key)
+            If Len(groupLabel) = 0 Then
                 groupNo = groupNo + 1
-                dict(key) = "G" & Format(groupNo, "0000")
+                groupLabel = "G" & Format(groupNo, "0000")
             End If
-            ws.Cells(r, outCol + 1).Value = dict(key)
+            If Not dict.Exists(key) Then dict(key) = groupLabel
+            ws.Cells(r, outCol + 1).Value = groupLabel
         End If
     Next r
     ws.Columns(outCol).Resize(, 2).AutoFit
@@ -6495,9 +6497,17 @@ Private Function Roster_DuplicateScore(ws As Worksheet, ByVal r1 As Long, ByVal 
         If Len(p1) >= 8 And p1 = p2 Then score = score + 35: reason = reason & "전화번호 일치; "
     End If
     If nameCol > 0 Then
-        Dim ns As Double
-        ns = NaverLocal_Similarity(Roster_CellText(ws, r1, dataRange, nameCol), Roster_CellText(ws, r2, dataRange, nameCol))
-        If ns >= 85 Then score = score + 35: reason = reason & "업체명 유사; "
+        Dim ns As Double, nameReason As String
+        Dim name1 As String, name2 As String
+        name1 = Roster_CellText(ws, r1, dataRange, nameCol)
+        name2 = Roster_CellText(ws, r2, dataRange, nameCol)
+        If Roster_StrongCompanyNameMatch(name1, name2, nameReason) Then
+            score = score + 60
+            reason = reason & nameReason & "; "
+        Else
+            ns = NaverLocal_Similarity(name1, name2)
+            If ns >= 85 Then score = score + 35: reason = reason & "업체명 유사; "
+        End If
     End If
     If addressCol > 0 Then
         Dim ads As Double
@@ -6664,9 +6674,18 @@ Private Function Roster_DuplicateScoreManual(ws As Worksheet, ByVal r1 As Long, 
     End If
 
     If Not nameRange Is Nothing Then
-        ns = NaverLocal_Similarity(Roster_RangeTextAtRow(nameRange, r1), Roster_RangeTextAtRow(nameRange, r2))
-        score = score + ns * 0.35
-        If ns >= 85 Then reason = reason & "업체명 유사; "
+        Dim nameReason As String
+        Dim name1 As String, name2 As String
+        name1 = Roster_RangeTextAtRow(nameRange, r1)
+        name2 = Roster_RangeTextAtRow(nameRange, r2)
+        If Roster_StrongCompanyNameMatch(name1, name2, nameReason) Then
+            score = score + 60
+            reason = reason & nameReason & "; "
+        Else
+            ns = NaverLocal_Similarity(name1, name2)
+            score = score + ns * 0.35
+            If ns >= 85 Then reason = reason & "업체명 유사; "
+        End If
     End If
 
     If Not addressRange Is Nothing Then
@@ -6726,6 +6745,74 @@ Private Function Roster_NormalizeCompanyName(ByVal textValue As String) As Strin
     Dim options As Object
     Set options = CompanyName_DefaultOptions()
     Roster_NormalizeCompanyName = CompanyName_CleanOne(textValue, options)
+End Function
+
+Private Function Roster_FindCompanyGroupLabel(ByVal groups As Object, ByVal companyKey As String) As String
+    Dim existingKey As Variant
+    Dim unusedReason As String
+    For Each existingKey In groups.Keys
+        If Roster_StrongCompanyNameMatch(CStr(existingKey), companyKey, unusedReason) Then
+            Roster_FindCompanyGroupLabel = CStr(groups(existingKey))
+            Exit Function
+        End If
+    Next existingKey
+End Function
+
+Private Function Roster_StrongCompanyNameMatch(ByVal leftName As String, ByVal rightName As String, ByRef matchReason As String) As Boolean
+    Dim leftKey As String, rightKey As String
+    leftKey = Roster_CompanyMatchKey(leftName)
+    rightKey = Roster_CompanyMatchKey(rightName)
+
+    If Len(leftKey) < 3 Or Len(rightKey) < 3 Then Exit Function
+
+    If leftKey = rightKey Then
+        matchReason = "업체명 표준화 일치"
+        Roster_StrongCompanyNameMatch = True
+    ElseIf InStr(1, leftKey, rightKey, vbTextCompare) > 0 Or InStr(1, rightKey, leftKey, vbTextCompare) > 0 Then
+        matchReason = "업체명 포함 관계"
+        Roster_StrongCompanyNameMatch = True
+    ElseIf Roster_CommonPrefixLength(leftKey, rightKey) >= 3 Then
+        matchReason = "업체명 3자 이상 접두어 일치"
+        Roster_StrongCompanyNameMatch = True
+    End If
+End Function
+
+Private Function Roster_CompanyMatchKey(ByVal textValue As String) As String
+    Dim key As String
+    key = UCase$(Roster_NormalizeCompanyName(textValue))
+    key = Replace(key, "유한회사", "")
+    key = Replace(key, "합자회사", "")
+    key = Replace(key, "합명회사", "")
+    key = Replace(key, "사단법인", "")
+    key = Replace(key, "재단법인", "")
+    key = Replace(key, " ", "")
+    key = Replace(key, ChrW(160), "")
+    key = Replace(key, vbTab, "")
+    key = Replace(key, "-", "")
+    key = Replace(key, "_", "")
+    key = Replace(key, ".", "")
+    key = Replace(key, ",", "")
+    key = Replace(key, "/", "")
+    key = Replace(key, "\", "")
+    key = Replace(key, "(", "")
+    key = Replace(key, ")", "")
+    key = Replace(key, "[", "")
+    key = Replace(key, "]", "")
+    key = Replace(key, "·", "")
+    key = Replace(key, "ㆍ", "")
+    key = Replace(key, "㈜", "")
+    Roster_CompanyMatchKey = Trim$(key)
+End Function
+
+Private Function Roster_CommonPrefixLength(ByVal leftKey As String, ByVal rightKey As String) As Long
+    Dim limitLen As Long
+    limitLen = Application.Min(Len(leftKey), Len(rightKey))
+
+    Dim i As Long
+    For i = 1 To limitLen
+        If Mid$(leftKey, i, 1) <> Mid$(rightKey, i, 1) Then Exit Function
+        Roster_CommonPrefixLength = i
+    Next i
 End Function
 
 Private Function Address_ParseAdministrativeParts(ByVal addressText As String) As Variant
