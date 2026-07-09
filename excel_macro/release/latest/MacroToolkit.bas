@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.13"
+Public Const TOOLKIT_VERSION As String = "1.1.14"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -126,6 +126,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A44").Value = "Database_SplitMergedSheetBySource"
     ws.Range("A45").Value = "NaverLocal_CreateLegalDongMasterTemplate"
     ws.Range("A46").Value = "Address_CombineDongAndRoad"
+    ws.Range("A47").Value = "SampleDesign_PivotPopulationList"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -6924,25 +6925,43 @@ Public Sub SampleDesign_CreateTemplate()
         Exit Sub
     End If
 
+    Dim templateMode As String
+    templateMode = SampleDesign_SelectInputTemplateMode()
+    If Len(templateMode) = 0 Then Exit Sub
+
     Dim inputWs As Worksheet
+    Dim tableWs As Worksheet
     Dim resultWs As Worksheet
     Dim reviewWs As Worksheet
     Set inputWs = SampleDesign_PrepareSheet(wb, "표본설계_입력", "표본설계 입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
     If inputWs Is Nothing Then Exit Sub
+    If templateMode = "table" Then
+        Set tableWs = SampleDesign_PrepareSheet(wb, "표본설계_집계표입력", "표본설계 집계표입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
+        If tableWs Is Nothing Then Exit Sub
+    End If
     Set resultWs = SampleDesign_PrepareSheet(wb, "표본설계_할당결과", "표본설계 할당결과 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
     If resultWs Is Nothing Then Exit Sub
     Set reviewWs = SampleDesign_PrepareSheet(wb, "표본설계_검토", "표본설계 검토 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
     If reviewWs Is Nothing Then Exit Sub
 
     SampleDesign_WriteInputTemplate inputWs
+    If templateMode = "table" Then SampleDesign_WriteTableInputTemplate tableWs
     SampleDesign_WriteEmptyResult resultWs
     SampleDesign_WriteEmptyReview reviewWs
 
-    inputWs.Activate
-    inputWs.Range("B4").Select
-    MsgBox "표본설계 입력/결과/검토 시트를 만들었습니다." & vbCrLf & _
-           "목표 표본 수와 모집단 표를 입력한 뒤 [할당 계산]을 실행하세요.", _
-           vbInformation, "표본설계"
+    If templateMode = "table" Then
+        tableWs.Activate
+        tableWs.Range("A8").Select
+        MsgBox "집계표 입력용 시트와 계산용 리스트 입력 시트를 만들었습니다." & vbCrLf & _
+               "집계표를 표본설계_집계표입력 시트에 붙여넣으면 [할당 계산] 실행 시 계산용 리스트로 자동 변환을 시도합니다.", _
+               vbInformation, "표본설계"
+    Else
+        inputWs.Activate
+        inputWs.Range("B4").Select
+        MsgBox "표본설계 입력/결과/검토 시트를 만들었습니다." & vbCrLf & _
+               "목표 표본 그룹표와 모집단 표를 입력한 뒤 [할당 계산]을 실행하세요.", _
+               vbInformation, "표본설계"
+    End If
 End Sub
 
 Public Sub SampleDesign_RunAllocation()
@@ -6961,13 +6980,6 @@ Public Sub SampleDesign_RunAllocation()
         Exit Sub
     End If
 
-    Dim targetN As Long
-    targetN = CLng(Val(inputWs.Range("B4").Value))
-    If targetN <= 0 Then
-        MsgBox "목표 표본 수(B4)를 1 이상의 숫자로 입력하세요.", vbExclamation, "표본설계"
-        Exit Sub
-    End If
-
     Dim minN As Long
     Dim maxN As Long
     Dim alpha As Double
@@ -6980,15 +6992,41 @@ Public Sub SampleDesign_RunAllocation()
 
     If Not SampleDesign_SelectMethod(methodName, alpha) Then Exit Sub
 
-    Dim records As Collection
     Dim issues As Collection
-    Set records = New Collection
     Set issues = New Collection
-    SampleDesign_ReadPopulation inputWs, records, issues
+
+    If SampleDesign_PopulationDataRowCount(inputWs) = 0 Then
+        Dim tableWs As Worksheet
+        Set tableWs = SampleDesign_FindSheet(wb, "표본설계_집계표입력")
+        If Not tableWs Is Nothing Then SampleDesign_ImportTableInputToPopulation inputWs, tableWs, issues
+    End If
+
+    Dim schema As Object
+    Set schema = SampleDesign_ReadInputSchema(inputWs)
+    If schema Is Nothing Then
+        MsgBox "표본설계_입력 시트에서 '모집단수' 헤더를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim defaultTargetN As Long
+    defaultTargetN = CLng(Val(inputWs.Range("B4").Value))
+
+    Dim targetGroups As Collection
+    Set targetGroups = SampleDesign_ReadTargetGroups(inputWs, schema, defaultTargetN, issues)
+    If targetGroups.Count = 0 Then
+        MsgBox "목표 표본 수를 찾지 못했습니다." & vbCrLf & _
+               "B4에 전체 목표 표본 수를 입력하거나 목표표본 그룹표에 그룹별 목표 표본 수를 입력하세요.", _
+               vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim records As Collection
+    Set records = New Collection
+    SampleDesign_ReadPopulation inputWs, schema, targetGroups, records, issues
 
     If records.Count = 0 Then
         MsgBox "계산할 모집단 행을 찾지 못했습니다." & vbCrLf & _
-               "표본설계_입력 시트의 14행부터 모집단 정보를 입력하세요.", _
+               "표본설계_입력 시트의 모집단 표에 1 이상의 모집단수를 입력하세요.", _
                vbExclamation, "표본설계"
         Exit Sub
     End If
@@ -6999,11 +7037,14 @@ Public Sub SampleDesign_RunAllocation()
     Set reviewWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_검토")
 
     Dim allocation As Collection
-    Set allocation = SampleDesign_Allocate(records, targetN, methodName, alpha, minN, maxN, issues)
+    Set allocation = SampleDesign_Allocate(records, targetGroups, methodName, alpha, minN, maxN, issues)
+
+    Dim targetN As Long
+    targetN = SampleDesign_TotalTargetN(targetGroups)
 
     Application.ScreenUpdating = False
-    SampleDesign_WriteAllocationResult resultWs, allocation, targetN, methodName
-    SampleDesign_WriteReviewReport reviewWs, allocation, issues, targetN, methodName, alpha
+    SampleDesign_WriteAllocationResult resultWs, allocation, targetN, methodName, alpha, schema("quotaHeaders")
+    SampleDesign_WriteReviewReport reviewWs, allocation, targetGroups, issues, targetN, methodName, alpha
     Application.ScreenUpdating = True
 
     resultWs.Activate
@@ -7031,11 +7072,36 @@ Public Sub SampleDesign_CreateProgressTracker()
     outWs.Range("A1").Value = "표본설계 진행관리"
     outWs.Range("A1").Font.Bold = True
     outWs.Range("A1").Font.Size = 14
-    SampleDesign_WriteArray outWs, 3, 1, Array("쿼터ID", "지역", "업종", "종사자규모", "성별", "연령", "최종할당", "회수", "부족", "초과", "달성률", "상태")
+    Dim headerRow As Long
+    headerRow = SampleDesign_FindHeaderRow(resultWs, "최종할당", 20)
+    If headerRow = 0 Then
+        MsgBox "할당결과 시트에서 최종할당 헤더를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim idCol As Long, popCol As Long, finalCol As Long
+    idCol = SampleDesign_FindHeaderColumnInRow(resultWs, headerRow, "쿼터ID")
+    popCol = SampleDesign_FindHeaderColumnInRow(resultWs, headerRow, "모집단수")
+    finalCol = SampleDesign_FindHeaderColumnInRow(resultWs, headerRow, "최종할당")
+    If idCol = 0 Or popCol = 0 Or finalCol = 0 Then
+        MsgBox "진행관리표 생성을 위한 필수 헤더를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim outCol As Long
+    outCol = 1
+    outWs.Cells(3, outCol).Value = "쿼터ID": outCol = outCol + 1
+    Dim c As Long
+    For c = idCol + 1 To popCol - 1
+        outWs.Cells(3, outCol).Value = resultWs.Cells(headerRow, c).Value
+        outCol = outCol + 1
+    Next c
+    Dim finalOutCol As Long: finalOutCol = outCol
+    SampleDesign_WriteArray outWs, 3, outCol, Array("최종할당", "회수", "부족", "초과", "달성률", "상태")
 
     Dim lastRow As Long
-    lastRow = resultWs.Cells(resultWs.Rows.Count, 1).End(xlUp).Row
-    If lastRow < 4 Then
+    lastRow = resultWs.Cells(resultWs.Rows.Count, idCol).End(xlUp).Row
+    If lastRow <= headerRow Then
         MsgBox "할당결과 시트에 진행관리로 옮길 데이터가 없습니다.", vbExclamation, "표본설계"
         Exit Sub
     End If
@@ -7043,27 +7109,32 @@ Public Sub SampleDesign_CreateProgressTracker()
     Dim r As Long
     Dim outRow As Long
     outRow = 4
-    For r = 4 To lastRow
-        If Trim$(CStr(resultWs.Cells(r, 1).Value)) <> "총계" And Len(Trim$(CStr(resultWs.Cells(r, 1).Value))) > 0 Then
-            outWs.Cells(outRow, 1).Resize(1, 6).Value = resultWs.Cells(r, 1).Resize(1, 6).Value
-            outWs.Cells(outRow, 7).Value = resultWs.Cells(r, 11).Value
-            outWs.Cells(outRow, 8).Value = 0
-            outWs.Cells(outRow, 9).FormulaR1C1 = "=MAX(RC[-2]-RC[-1],0)"
-            outWs.Cells(outRow, 10).FormulaR1C1 = "=MAX(RC[-2]-RC[-3],0)"
-            outWs.Cells(outRow, 11).FormulaR1C1 = "=IF(RC[-4]=0,0,RC[-3]/RC[-4])"
-            outWs.Cells(outRow, 12).FormulaR1C1 = "=IF(RC[-5]=0,""할당없음"",IF(RC[-4]=0,""미착수"",IF(RC[-2]>0,""초과"",IF(RC[-3]>0,""미달"",""충족""))))"
+    For r = headerRow + 1 To lastRow
+        If Trim$(CStr(resultWs.Cells(r, idCol).Value)) <> "총계" And Len(Trim$(CStr(resultWs.Cells(r, idCol).Value))) > 0 Then
+            outWs.Cells(outRow, 1).Value = resultWs.Cells(r, idCol).Value
+            outCol = 2
+            For c = idCol + 1 To popCol - 1
+                outWs.Cells(outRow, outCol).Value = resultWs.Cells(r, c).Value
+                outCol = outCol + 1
+            Next c
+            outWs.Cells(outRow, finalOutCol).Value = resultWs.Cells(r, finalCol).Value
+            outWs.Cells(outRow, finalOutCol + 1).Value = 0
+            outWs.Cells(outRow, finalOutCol + 2).FormulaR1C1 = "=MAX(RC[-2]-RC[-1],0)"
+            outWs.Cells(outRow, finalOutCol + 3).FormulaR1C1 = "=MAX(RC[-2]-RC[-3],0)"
+            outWs.Cells(outRow, finalOutCol + 4).FormulaR1C1 = "=IF(RC[-4]=0,0,RC[-3]/RC[-4])"
+            outWs.Cells(outRow, finalOutCol + 5).FormulaR1C1 = "=IF(RC[-5]=0,""할당없음"",IF(RC[-4]=0,""미착수"",IF(RC[-2]>0,""초과"",IF(RC[-3]>0,""미달"",""충족""))))"
             outRow = outRow + 1
         End If
     Next r
 
-    With outWs.Range(outWs.Cells(3, 1), outWs.Cells(Application.Max(3, outRow - 1), 12))
+    With outWs.Range(outWs.Cells(3, 1), outWs.Cells(Application.Max(3, outRow - 1), finalOutCol + 5))
         .Borders.LineStyle = xlContinuous
         .Columns.AutoFit
     End With
-    outWs.Range("A3:L3").Font.Bold = True
-    outWs.Range("A3:L3").Interior.Color = RGB(220, 235, 250)
-    outWs.Range("K:K").NumberFormat = "0.0%"
-    SampleDesign_ApplyProgressFormatting outWs, 4, outRow - 1
+    outWs.Range(outWs.Cells(3, 1), outWs.Cells(3, finalOutCol + 5)).Font.Bold = True
+    outWs.Range(outWs.Cells(3, 1), outWs.Cells(3, finalOutCol + 5)).Interior.Color = RGB(220, 235, 250)
+    outWs.Columns(finalOutCol + 4).NumberFormat = "0.0%"
+    SampleDesign_ApplyProgressFormatting outWs, 4, outRow - 1, finalOutCol + 5
     outWs.Activate
     MsgBox "표본설계 진행관리 시트를 생성했습니다.", vbInformation, "표본설계"
 End Sub
@@ -7114,6 +7185,43 @@ Public Sub SampleDesign_ListifyPopulationTable()
 
     MsgBox blocks.Count & "개 집계표에서 " & writtenRows & "개 리스트 행을 생성했습니다." & vbCrLf & _
            "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
+End Sub
+
+Public Sub SampleDesign_PivotPopulationList()
+    Dim sourceRange As Range
+    If Not Toolkit_GetRangeFromUserForm("리스트→집계표", _
+        "집계표 형태로 되돌릴 리스트 범위를 선택하세요." & vbCrLf & _
+        "구성표 리스트화 결과 또는 표본설계 할당결과 범위를 사용할 수 있습니다.", _
+        sourceRange) Then Exit Sub
+    If sourceRange Is Nothing Then Exit Sub
+    Set sourceRange = sourceRange.Areas(1)
+
+    Dim schema As Object
+    Set schema = SampleDesign_PivotDetectSchema(sourceRange)
+    If schema Is Nothing Then
+        MsgBox "선택 범위에서 집계표로 변환할 리스트 구조를 찾지 못했습니다." & vbCrLf & _
+               "표제목/행축값/가로구분/값 또는 쿼터/최종할당 구조가 포함되도록 범위를 다시 선택하세요.", _
+               vbExclamation, "리스트→집계표"
+        Exit Sub
+    End If
+
+    Dim summary As String
+    summary = "탐지된 구조" & vbCrLf & _
+              "- 표 구분: " & CStr(schema("blockLabel")) & vbCrLf & _
+              "- 행축: " & SampleDesign_JoinCollection(schema("rowAxisLabels"), ", ") & vbCrLf & _
+              "- 열축: " & CStr(schema("columnAxisLabel")) & vbCrLf & _
+              "- 값: " & CStr(schema("valueLabel")) & vbCrLf & vbCrLf & _
+              "이 구조로 집계표를 생성할까요?"
+    If MsgBox(summary, vbQuestion + vbYesNo, "리스트→집계표") <> vbYes Then Exit Sub
+
+    Dim outWs As Worksheet
+    Set outWs = SampleDesign_PrepareOutputSheet(sourceRange.Worksheet.Parent, "표본설계_집계표")
+    Dim blockCount As Long
+    blockCount = SampleDesign_PivotWriteOutput(sourceRange, schema, outWs)
+    outWs.Activate
+
+    MsgBox blockCount & "개 집계표 블록을 생성했습니다." & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "리스트→집계표"
 End Sub
 
 Private Function PopList_DetectBlocks(ByVal sourceRange As Range) As Collection
@@ -7616,6 +7724,285 @@ Private Function PopList_CleanSheetName(ByVal sheetName As String, ByVal default
     PopList_CleanSheetName = result
 End Function
 
+Private Function SampleDesign_PivotDetectSchema(ByVal sourceRange As Range) As Object
+    Dim headerRelRow As Long
+    headerRelRow = SampleDesign_PivotFindHeaderRelRow(sourceRange)
+    If headerRelRow = 0 Then Exit Function
+
+    Dim valueCol As Long
+    valueCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "값")
+    If valueCol = 0 Then valueCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "최종할당")
+    If valueCol = 0 Then valueCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "모집단수")
+    If valueCol = 0 Then Exit Function
+
+    Dim columnCol As Long
+    columnCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "가로구분")
+    If columnCol = 0 Then columnCol = SampleDesign_PivotFallbackColumnAxisCol(sourceRange, headerRelRow, valueCol)
+    If columnCol = 0 Then Exit Function
+
+    Dim rowAxisCols As Collection
+    Dim rowAxisLabels As Collection
+    Set rowAxisCols = New Collection
+    Set rowAxisLabels = New Collection
+
+    Dim n As Long, relCol As Long
+    For n = 1 To 20
+        relCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "행축" & n & "값")
+        If relCol > 0 Then
+            rowAxisCols.Add relCol
+            rowAxisLabels.Add SampleDesign_PivotAxisLabel(sourceRange, headerRelRow, n, relCol)
+        End If
+    Next n
+
+    If rowAxisCols.Count = 0 Then
+        Dim idCol As Long, popCol As Long
+        idCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "쿼터ID")
+        popCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "모집단수")
+        If idCol > 0 And popCol > idCol + 1 Then
+            For relCol = idCol + 1 To popCol - 1
+                If relCol <> columnCol Then
+                    rowAxisCols.Add relCol
+                    rowAxisLabels.Add PopList_CellText(sourceRange.Cells(headerRelRow, relCol))
+                End If
+            Next relCol
+        End If
+    End If
+    If rowAxisCols.Count = 0 Then Exit Function
+
+    Dim schema As Object
+    Set schema = CreateObject("Scripting.Dictionary")
+    schema.Add "headerRelRow", headerRelRow
+    schema.Add "dataStartRelRow", headerRelRow + 1
+    schema.Add "blockCol", SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "표제목")
+    schema.Add "blockLabel", IIf(SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "표제목") > 0, "표제목", "단일 표")
+    schema.Add "rowAxisCols", rowAxisCols
+    schema.Add "rowAxisLabels", rowAxisLabels
+    schema.Add "columnCol", columnCol
+    schema.Add "columnAxisLabel", PopList_CellText(sourceRange.Cells(headerRelRow, columnCol))
+    schema.Add "valueCol", valueCol
+    schema.Add "valueLabel", PopList_CellText(sourceRange.Cells(headerRelRow, valueCol))
+    Set SampleDesign_PivotDetectSchema = schema
+End Function
+
+Private Function SampleDesign_PivotFindHeaderRelRow(ByVal sourceRange As Range) As Long
+    Dim scanRows As Long
+    scanRows = sourceRange.Rows.Count
+    If scanRows > 30 Then scanRows = 30
+    Dim relRow As Long
+    For relRow = 1 To scanRows
+        If SampleDesign_PivotHeaderCol(sourceRange, relRow, "값") > 0 _
+           Or SampleDesign_PivotHeaderCol(sourceRange, relRow, "최종할당") > 0 _
+           Or SampleDesign_PivotHeaderCol(sourceRange, relRow, "모집단수") > 0 Then
+            SampleDesign_PivotFindHeaderRelRow = relRow
+            Exit Function
+        End If
+    Next relRow
+End Function
+
+Private Function SampleDesign_PivotHeaderCol(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal headerText As String) As Long
+    Dim relCol As Long
+    For relCol = 1 To sourceRange.Columns.Count
+        If Trim$(CStr(sourceRange.Cells(headerRelRow, relCol).Value)) = headerText Then
+            SampleDesign_PivotHeaderCol = relCol
+            Exit Function
+        End If
+    Next relCol
+End Function
+
+Private Function SampleDesign_PivotFallbackColumnAxisCol(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal valueCol As Long) As Long
+    Dim idCol As Long, popCol As Long, relCol As Long
+    idCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "쿼터ID")
+    popCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "모집단수")
+    If idCol > 0 And popCol > idCol + 1 Then
+        For relCol = popCol - 1 To idCol + 1 Step -1
+            If Len(PopList_CellText(sourceRange.Cells(headerRelRow, relCol))) > 0 Then
+                SampleDesign_PivotFallbackColumnAxisCol = relCol
+                Exit Function
+            End If
+        Next relCol
+    End If
+End Function
+
+Private Function SampleDesign_PivotAxisLabel(ByVal sourceRange As Range, ByVal headerRelRow As Long, ByVal axisIndex As Long, ByVal valueCol As Long) As String
+    Dim nameCol As Long
+    nameCol = SampleDesign_PivotHeaderCol(sourceRange, headerRelRow, "행축" & axisIndex & "명")
+    If nameCol > 0 Then
+        Dim relRow As Long, lastRelRow As Long
+        lastRelRow = sourceRange.Rows.Count
+        If lastRelRow > headerRelRow + 100 Then lastRelRow = headerRelRow + 100
+        For relRow = headerRelRow + 1 To lastRelRow
+            SampleDesign_PivotAxisLabel = PopList_CellText(sourceRange.Cells(relRow, nameCol))
+            If Len(SampleDesign_PivotAxisLabel) > 0 Then Exit Function
+        Next relRow
+    End If
+    SampleDesign_PivotAxisLabel = PopList_CellText(sourceRange.Cells(headerRelRow, valueCol))
+    If Len(SampleDesign_PivotAxisLabel) = 0 Then SampleDesign_PivotAxisLabel = "행축" & axisIndex
+End Function
+
+Private Function SampleDesign_PivotWriteOutput(ByVal sourceRange As Range, ByVal schema As Object, ByVal outWs As Worksheet) As Long
+    outWs.Cells.Clear
+    outWs.Range("A1").Value = "리스트→집계표"
+    outWs.Range("A1").Font.Bold = True
+    outWs.Range("A1").Font.Size = 14
+
+    Dim blocks As Object
+    Dim blockOrder As Collection
+    Set blocks = CreateObject("Scripting.Dictionary")
+    Set blockOrder = New Collection
+
+    Dim relRow As Long
+    For relRow = CLng(schema("dataStartRelRow")) To sourceRange.Rows.Count
+        Dim valueData As Double
+        valueData = SampleDesign_CellNumber(sourceRange.Cells(relRow, CLng(schema("valueCol"))).Value)
+        If valueData <> 0 Or Len(Trim$(CStr(sourceRange.Cells(relRow, CLng(schema("valueCol"))).Value))) > 0 Then
+            Dim blockKey As String
+            blockKey = "집계표"
+            If CLng(schema("blockCol")) > 0 Then blockKey = PopList_CellText(sourceRange.Cells(relRow, CLng(schema("blockCol"))))
+            If Len(blockKey) = 0 Then blockKey = "집계표"
+
+            Dim block As Object
+            Set block = SampleDesign_PivotEnsureBlock(blocks, blockOrder, blockKey)
+
+            Dim rowKey As String
+            rowKey = SampleDesign_PivotRowKey(sourceRange, schema, relRow)
+            If Len(rowKey) > 0 Then
+                Dim colKey As String
+                colKey = PopList_CellText(sourceRange.Cells(relRow, CLng(schema("columnCol"))))
+                If Len(colKey) = 0 Then colKey = "(빈값)"
+
+                If Not block("rows").Exists(rowKey) Then block("rows").Add rowKey, rowKey
+                SampleDesign_AddUniqueCollection block("columns"), colKey
+
+                Dim dataKey As String
+                dataKey = rowKey & Chr$(31) & colKey
+                If block("data").Exists(dataKey) Then
+                    block("data")(dataKey) = CDbl(block("data")(dataKey)) + valueData
+                Else
+                    block("data").Add dataKey, valueData
+                End If
+            End If
+        End If
+    Next relRow
+
+    Dim outRow As Long
+    outRow = 3
+    Dim blockName As Variant
+    For Each blockName In blockOrder
+        Dim currentBlock As Object
+        Set currentBlock = blocks(CStr(blockName))
+        outRow = SampleDesign_PivotWriteBlock(outWs, outRow, CStr(blockName), schema, currentBlock)
+        outRow = outRow + 2
+    Next blockName
+
+    outWs.Columns.AutoFit
+    SampleDesign_PivotWriteOutput = blockOrder.Count
+End Function
+
+Private Function SampleDesign_PivotEnsureBlock(ByVal blocks As Object, ByVal blockOrder As Collection, ByVal blockKey As String) As Object
+    If Not blocks.Exists(blockKey) Then
+        Dim block As Object
+        Set block = CreateObject("Scripting.Dictionary")
+        Dim rows As Object
+        Set rows = CreateObject("Scripting.Dictionary")
+        Dim cols As Collection
+        Set cols = New Collection
+        Dim data As Object
+        Set data = CreateObject("Scripting.Dictionary")
+        block.Add "rows", rows
+        block.Add "columns", cols
+        block.Add "data", data
+        blocks.Add blockKey, block
+        blockOrder.Add blockKey
+    End If
+    Set SampleDesign_PivotEnsureBlock = blocks(blockKey)
+End Function
+
+Private Function SampleDesign_PivotRowKey(ByVal sourceRange As Range, ByVal schema As Object, ByVal relRow As Long) As String
+    Dim i As Long
+    For i = 1 To schema("rowAxisCols").Count
+        If i > 1 Then SampleDesign_PivotRowKey = SampleDesign_PivotRowKey & Chr$(30)
+        SampleDesign_PivotRowKey = SampleDesign_PivotRowKey & PopList_CellText(sourceRange.Cells(relRow, CLng(schema("rowAxisCols")(i))))
+    Next i
+End Function
+
+Private Sub SampleDesign_AddUniqueCollection(ByVal items As Collection, ByVal itemText As String)
+    Dim item As Variant
+    For Each item In items
+        If StrComp(CStr(item), itemText, vbTextCompare) = 0 Then Exit Sub
+    Next item
+    items.Add itemText
+End Sub
+
+Private Function SampleDesign_PivotWriteBlock(ByVal ws As Worksheet, ByVal startRow As Long, ByVal blockTitle As String, ByVal schema As Object, ByVal block As Object) As Long
+    ws.Cells(startRow, 1).Value = blockTitle
+    ws.Cells(startRow, 1).Font.Bold = True
+
+    Dim headerRow As Long
+    headerRow = startRow + 1
+    Dim col As Long, i As Long
+    col = 1
+    For i = 1 To schema("rowAxisLabels").Count
+        ws.Cells(headerRow, col).Value = schema("rowAxisLabels")(i)
+        col = col + 1
+    Next i
+
+    Dim firstValueCol As Long
+    firstValueCol = col
+    For i = 1 To block("columns").Count
+        ws.Cells(headerRow, col).Value = block("columns")(i)
+        col = col + 1
+    Next i
+    ws.Cells(headerRow, col).Value = "합계"
+    Dim totalCol As Long
+    totalCol = col
+
+    Dim outRow As Long
+    outRow = headerRow + 1
+    Dim rowKey As Variant
+    For Each rowKey In block("rows").Keys
+        Dim parts As Variant
+        parts = Split(CStr(rowKey), Chr$(30))
+        For i = LBound(parts) To UBound(parts)
+            ws.Cells(outRow, 1 + i).Value = parts(i)
+        Next i
+
+        Dim rowTotal As Double
+        For i = 1 To block("columns").Count
+            Dim dataKey As String
+            dataKey = CStr(rowKey) & Chr$(31) & CStr(block("columns")(i))
+            If block("data").Exists(dataKey) Then
+                ws.Cells(outRow, firstValueCol + i - 1).Value = CDbl(block("data")(dataKey))
+                rowTotal = rowTotal + CDbl(block("data")(dataKey))
+            End If
+        Next i
+        ws.Cells(outRow, totalCol).Value = rowTotal
+        outRow = outRow + 1
+    Next rowKey
+
+    ws.Cells(outRow, 1).Value = "합계"
+    For i = firstValueCol To totalCol
+        ws.Cells(outRow, i).Formula = "=SUM(" & ws.Range(ws.Cells(headerRow + 1, i), ws.Cells(outRow - 1, i)).Address(False, False) & ")"
+    Next i
+
+    With ws.Range(ws.Cells(headerRow, 1), ws.Cells(outRow, totalCol))
+        .Borders.LineStyle = xlContinuous
+    End With
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, totalCol)).Font.Bold = True
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, totalCol)).Interior.Color = RGB(220, 235, 250)
+    ws.Range(ws.Cells(outRow, 1), ws.Cells(outRow, totalCol)).Font.Bold = True
+    ws.Range(ws.Cells(headerRow + 1, firstValueCol), ws.Cells(outRow, totalCol)).NumberFormat = "#,##0"
+
+    SampleDesign_PivotWriteBlock = outRow + 1
+End Function
+
+Private Function SampleDesign_JoinCollection(ByVal items As Collection, ByVal delimiter As String) As String
+    Dim i As Long
+    For i = 1 To items.Count
+        If i > 1 Then SampleDesign_JoinCollection = SampleDesign_JoinCollection & delimiter
+        SampleDesign_JoinCollection = SampleDesign_JoinCollection & CStr(items(i))
+    Next i
+End Function
+
 Private Function SampleDesign_PrepareSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal overwritePrompt As String) As Worksheet
     Dim ws As Worksheet
     Set ws = SampleDesign_FindSheet(wb, sheetName)
@@ -7655,7 +8042,991 @@ Private Function SampleDesign_FindSheet(ByVal wb As Workbook, ByVal sheetName As
     On Error GoTo 0
 End Function
 
+Private Function SampleDesign_DefaultQuotaHeaders() As Variant
+    SampleDesign_DefaultQuotaHeaders = Array("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")
+End Function
+
+Private Function SampleDesign_SelectInputTemplateMode() As String
+    Dim choice As String
+    choice = Toolkit_ButtonMenu( _
+        "표본설계 입력 형태", _
+        "생성할 표본설계 입력 형태를 선택하세요.", _
+        "1" & vbTab & "리스트형 입력" & vbLf & _
+        "2" & vbTab & "집계표형 입력", _
+        "1")
+
+    Select Case choice
+        Case "2": SampleDesign_SelectInputTemplateMode = "table"
+        Case "1": SampleDesign_SelectInputTemplateMode = "list"
+        Case Else: SampleDesign_SelectInputTemplateMode = ""
+    End Select
+End Function
+
 Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 입력"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+
+    ws.Range("A3").Value = "기본 설정"
+    ws.Range("A3").Font.Bold = True
+    ws.Range("A4").Value = "전체 목표 표본수"
+    ws.Range("B4").Value = 800
+    ws.Range("A5").Value = "배분 방식"
+    ws.Range("B5").Value = "단순 비례"
+    ws.Range("A6").Value = "멱배분 alpha"
+    ws.Range("B6").Value = 0.5
+    ws.Range("A7").Value = "기본 최소표본"
+    ws.Range("B7").Value = 0
+    ws.Range("A8").Value = "기본 최대표본"
+    ws.Range("B8").Value = 0
+    ws.Range("D4").Value = "목표표본 그룹표가 비어 있으면 B4 전체 목표 표본수로 배분합니다."
+    ws.Range("D5").Value = "그룹표가 있으면 조건이 비어 있지 않은 쿼터값을 AND 조건으로 매칭합니다."
+    ws.Range("D6").Value = "빈 조건은 wildcard입니다. 완전 빈 조건 행은 catch-all 그룹으로 쓸 수 있습니다."
+
+    Dim defaults As Variant
+    defaults = SampleDesign_DefaultQuotaHeaders()
+
+    Dim i As Long
+    ws.Range("A11").Value = "목표표본 그룹표"
+    ws.Range("A11").Font.Bold = True
+    ws.Cells(12, 1).Value = "목표그룹ID"
+    ws.Cells(12, 2).Value = "목표표본수"
+    For i = LBound(defaults) To UBound(defaults)
+        ws.Cells(12, 3 + i - LBound(defaults)).Value = defaults(i)
+    Next i
+    ws.Cells(12, 3 + UBound(defaults) - LBound(defaults) + 1).Value = "비고"
+    SampleDesign_WriteArray ws, 13, 1, Array("G001", "", "SW", "", "수도권", "", "", "", "", "", "예: 산업=SW, 지역=수도권")
+    SampleDesign_WriteArray ws, 14, 1, Array("G002", "", "SW", "", "비수도권", "", "", "", "", "", "예: 산업=SW, 지역=비수도권")
+    SampleDesign_WriteArray ws, 15, 1, Array("G999", "", "", "", "", "", "", "", "", "", "빈 조건 catch-all 예시")
+
+    ws.Range("A18").Value = "모집단 표"
+    ws.Range("A18").Font.Bold = True
+    ws.Cells(19, 1).Value = "사용여부"
+    For i = LBound(defaults) To UBound(defaults)
+        ws.Cells(19, 2 + i - LBound(defaults)).Value = "사용"
+    Next i
+
+    Dim headerRow As Long
+    headerRow = 20
+    ws.Cells(headerRow, 1).Value = "쿼터ID"
+    For i = LBound(defaults) To UBound(defaults)
+        ws.Cells(headerRow, 2 + i - LBound(defaults)).Value = defaults(i)
+    Next i
+
+    Dim optionStartCol As Long
+    optionStartCol = 2 + UBound(defaults) - LBound(defaults) + 1
+    ws.Cells(headerRow, optionStartCol).Value = "모집단수"
+    ws.Cells(headerRow, optionStartCol + 1).Value = "우선배정여부"
+    ws.Cells(headerRow, optionStartCol + 2).Value = "최소표본"
+    ws.Cells(headerRow, optionStartCol + 3).Value = "최대표본"
+    ws.Cells(headerRow, optionStartCol + 4).Value = "사용자가중치"
+    ws.Cells(headerRow, optionStartCol + 5).Value = "비고"
+
+    SampleDesign_WriteArray ws, 21, 1, Array("Q001", "SW", "패키지SW", "수도권", "", "", "", "", "", "", "", "", "", "예시 행: 모집단수를 입력하면 계산 대상이 됩니다.")
+    SampleDesign_WriteArray ws, 22, 1, Array("Q002", "SW", "IT서비스", "비수도권", "", "", "", "", "", "", "", "", "", "")
+    SampleDesign_WriteArray ws, 23, 1, Array("Q003", "Non-SW", "제조", "수도권", "", "", "", "", "", "", "", "", "", "")
+
+    With ws.Range(ws.Cells(12, 1), ws.Cells(15, optionStartCol + 1))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    With ws.Range(ws.Cells(headerRow, 1), ws.Cells(23, optionStartCol + 5))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    ws.Range(ws.Cells(12, 1), ws.Cells(12, optionStartCol + 1)).Font.Bold = True
+    ws.Range(ws.Cells(12, 1), ws.Cells(12, optionStartCol + 1)).Interior.Color = RGB(220, 235, 250)
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, optionStartCol + 5)).Font.Bold = True
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, optionStartCol + 5)).Interior.Color = RGB(220, 235, 250)
+    ws.Columns.AutoFit
+End Sub
+
+Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 집계표입력"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+    ws.Range("A3").Value = "사용 방법"
+    ws.Range("A4").Value = "1. 이 시트에 모집단 구성표를 원본 형태로 붙여넣습니다."
+    ws.Range("A5").Value = "2. [구성표 리스트화]로 확인하거나 [할당 계산]을 실행하면 표본설계_입력으로 자동 변환합니다."
+    ws.Range("A6").Value = "3. 가로축/세로축 이름은 표 구조에서 탐지되며, 필요하면 표본설계_입력의 쿼터 헤더를 수정합니다."
+    ws.Range("A8").Value = "예시"
+    SampleDesign_WriteArray ws, 10, 1, Array("구분", "10인 미만", "10~50인 미만", "50인 이상", "합계")
+    SampleDesign_WriteArray ws, 11, 1, Array("패키지SW", 42081, 4213, 82, 46376)
+    SampleDesign_WriteArray ws, 12, 1, Array("IT서비스", 20775, 1826, 58, 22659)
+    SampleDesign_WriteArray ws, 13, 1, Array("인터넷SW", 7509, 474, 26, 8009)
+    With ws.Range("A10:E13")
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    ws.Range("A10:E10").Font.Bold = True
+    ws.Range("A10:E10").Interior.Color = RGB(220, 235, 250)
+End Sub
+
+Private Sub SampleDesign_WriteEmptyResult(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 할당결과"
+    ws.Range("A3").Value = "할당 계산을 실행하면 동적 쿼터 구조의 결과가 생성됩니다."
+    ws.Columns("A:C").AutoFit
+End Sub
+
+Private Function SampleDesign_FindHeaderRow(ByVal ws As Worksheet, ByVal headerText As String, ByVal maxRows As Long) As Long
+    Dim lastCol As Long
+    lastCol = ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+    If lastCol < 1 Then lastCol = 1
+    Dim r As Long, c As Long
+    For r = 1 To maxRows
+        For c = 1 To lastCol + 20
+            If Trim$(CStr(ws.Cells(r, c).Value)) = headerText Then
+                SampleDesign_FindHeaderRow = r
+                Exit Function
+            End If
+        Next c
+    Next r
+End Function
+
+Private Function SampleDesign_FindHeaderColumnInRow(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerText As String) As Long
+    Dim lastCol As Long
+    lastCol = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
+    Dim c As Long
+    For c = 1 To lastCol
+        If Trim$(CStr(ws.Cells(headerRow, c).Value)) = headerText Then
+            SampleDesign_FindHeaderColumnInRow = c
+            Exit Function
+        End If
+    Next c
+End Function
+
+Private Function SampleDesign_ReadInputSchema(ByVal ws As Worksheet) As Object
+    Dim headerRow As Long
+    headerRow = SampleDesign_FindHeaderRow(ws, "모집단수", 160)
+    If headerRow = 0 Then Exit Function
+
+    Dim popCol As Long, idCol As Long
+    popCol = SampleDesign_FindHeaderColumnInRow(ws, headerRow, "모집단수")
+    idCol = SampleDesign_FindHeaderColumnInRow(ws, headerRow, "쿼터ID")
+    If idCol = 0 Then idCol = 1
+    If popCol <= idCol + 1 Then Exit Function
+
+    Dim quotaCols As Collection
+    Dim quotaHeaders As Collection
+    Set quotaCols = New Collection
+    Set quotaHeaders = New Collection
+
+    Dim c As Long, headerText As String
+    For c = idCol + 1 To popCol - 1
+        headerText = Trim$(CStr(ws.Cells(headerRow, c).Value))
+        If Len(headerText) > 0 And SampleDesign_QuotaColumnEnabledDynamic(ws, headerRow, c) Then
+            quotaCols.Add c
+            quotaHeaders.Add headerText
+        End If
+    Next c
+    If quotaCols.Count = 0 Then Exit Function
+
+    Dim schema As Object
+    Set schema = CreateObject("Scripting.Dictionary")
+    schema.Add "headerRow", headerRow
+    schema.Add "dataStartRow", headerRow + 1
+    schema.Add "idCol", idCol
+    schema.Add "popCol", popCol
+    schema.Add "priorityCol", SampleDesign_FindHeaderColumnInRow(ws, headerRow, "우선배정여부")
+    schema.Add "minCol", SampleDesign_FindHeaderColumnInRow(ws, headerRow, "최소표본")
+    schema.Add "maxCol", SampleDesign_FindHeaderColumnInRow(ws, headerRow, "최대표본")
+    schema.Add "userWeightCol", SampleDesign_FindHeaderColumnInRow(ws, headerRow, "사용자가중치")
+    schema.Add "noteCol", SampleDesign_FindHeaderColumnInRow(ws, headerRow, "비고")
+    schema.Add "quotaCols", quotaCols
+    schema.Add "quotaHeaders", quotaHeaders
+    Set SampleDesign_ReadInputSchema = schema
+End Function
+
+Private Function SampleDesign_QuotaColumnEnabledDynamic(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal colIndex As Long) As Boolean
+    Dim flagText As String
+    flagText = UCase$(Replace(Trim$(CStr(ws.Cells(headerRow - 1, colIndex).Value)), " ", ""))
+    SampleDesign_QuotaColumnEnabledDynamic = Not (flagText = "미사용" Or flagText = "N" Or flagText = "NO" Or flagText = "FALSE" Or flagText = "0" Or flagText = "사용안함")
+End Function
+
+Private Function SampleDesign_PopulationDataRowCount(ByVal ws As Worksheet) As Long
+    Dim schema As Object
+    Set schema = SampleDesign_ReadInputSchema(ws)
+    If schema Is Nothing Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, CLng(schema("popCol"))).End(xlUp).Row
+    Dim r As Long
+    For r = CLng(schema("dataStartRow")) To lastRow
+        If SampleDesign_CellNumber(ws.Cells(r, CLng(schema("popCol"))).Value) > 0 Then SampleDesign_PopulationDataRowCount = SampleDesign_PopulationDataRowCount + 1
+    Next r
+End Function
+
+Private Function SampleDesign_CellNumber(ByVal valueData As Variant) As Double
+    Dim textValue As String
+    textValue = Replace(Trim$(CStr(valueData)), ",", "")
+    If IsNumeric(textValue) Then SampleDesign_CellNumber = CDbl(textValue)
+End Function
+
+Private Sub SampleDesign_ImportTableInputToPopulation(ByVal inputWs As Worksheet, ByVal tableWs As Worksheet, ByRef issues As Collection)
+    Dim usedRange As Range
+    Set usedRange = tableWs.UsedRange
+    If usedRange.Rows.Count < 3 Or usedRange.Columns.Count < 3 Then Exit Sub
+
+    Dim blocks As Collection
+    Set blocks = PopList_DetectBlocks(usedRange)
+    If blocks.Count = 0 Then
+        issues.Add Array("집계표입력", 0, "표본설계_집계표입력 시트에서 리스트화 가능한 집계표를 찾지 못했습니다.")
+        Exit Sub
+    End If
+
+    Dim quotaLabels As Collection
+    Set quotaLabels = New Collection
+    SampleDesign_AddUniqueQuotaLabel quotaLabels, "표제목"
+
+    Dim i As Long, axisIndex As Long
+    For i = 1 To blocks.Count
+        Dim block As Object
+        Set block = blocks(i)
+        For axisIndex = 1 To block("rowAxisHeaders").Count
+            SampleDesign_AddUniqueQuotaLabel quotaLabels, PopList_CollectionText(block("rowAxisHeaders"), axisIndex)
+        Next axisIndex
+    Next i
+    SampleDesign_AddUniqueQuotaLabel quotaLabels, "가로구분"
+
+    Dim headerRow As Long
+    headerRow = SampleDesign_FindHeaderRow(inputWs, "모집단수", 160)
+    If headerRow = 0 Then Exit Sub
+
+    Dim popCol As Long
+    popCol = SampleDesign_FindHeaderColumnInRow(inputWs, headerRow, "모집단수")
+    If popCol = 0 Then Exit Sub
+
+    Dim q As Long
+    For q = 1 To popCol - 2
+        If q <= quotaLabels.Count Then
+            inputWs.Cells(headerRow - 1, 1 + q).Value = "사용"
+            inputWs.Cells(headerRow, 1 + q).Value = quotaLabels(q)
+        Else
+            inputWs.Cells(headerRow - 1, 1 + q).Value = "미사용"
+            inputWs.Cells(headerRow, 1 + q).Value = "쿼터" & q
+        End If
+    Next q
+
+    inputWs.Range(inputWs.Cells(headerRow + 1, 1), inputWs.Cells(inputWs.Rows.Count, popCol + 5)).ClearContents
+
+    Dim outRow As Long
+    outRow = headerRow + 1
+    For i = 1 To blocks.Count
+        Set block = blocks(i)
+        Dim lastSeen() As String
+        ReDim lastSeen(1 To CLng(block("rowAxisCount")))
+
+        Dim relRow As Long
+        For relRow = CLng(block("dataStartRelRow")) To CLng(block("dataEndRelRow"))
+            If Not PopList_RowIsTotalByCurrentCells(usedRange, relRow, CLng(block("rowAxisCount"))) Then
+                PopList_UpdateLastSeen usedRange, relRow, CLng(block("rowAxisCount")), lastSeen
+
+                Dim valueCols As Collection
+                Set valueCols = block("valueCols")
+                Dim valueIndex As Long
+                For valueIndex = 1 To valueCols.Count
+                    Dim relCol As Long
+                    relCol = CLng(valueCols(valueIndex))
+                    If PopList_IsNumberLike(usedRange.Cells(relRow, relCol).Value) Then
+                        inputWs.Cells(outRow, 1).Value = "P" & Format$(outRow - headerRow, "0000")
+                        inputWs.Cells(outRow, 2).Value = CStr(block("title"))
+                        Dim columnAxisTargetCol As Long
+                        columnAxisTargetCol = 1 + quotaLabels.Count
+                        If columnAxisTargetCol > popCol - 1 Then columnAxisTargetCol = popCol - 1
+                        For axisIndex = 1 To CLng(block("rowAxisCount"))
+                            If 2 + axisIndex < columnAxisTargetCol Then inputWs.Cells(outRow, 2 + axisIndex).Value = lastSeen(axisIndex)
+                        Next axisIndex
+                        If columnAxisTargetCol >= 2 Then inputWs.Cells(outRow, columnAxisTargetCol).Value = PopList_CellText(usedRange.Cells(CLng(block("headerRelRow")), relCol))
+                        inputWs.Cells(outRow, popCol).Value = PopList_ToNumber(usedRange.Cells(relRow, relCol).Value)
+                        outRow = outRow + 1
+                    End If
+                Next valueIndex
+            End If
+        Next relRow
+    Next i
+
+    issues.Add Array("집계표입력", 0, blocks.Count & "개 집계표를 표본설계_입력 모집단 표로 자동 변환했습니다.")
+End Sub
+
+Private Sub SampleDesign_AddUniqueQuotaLabel(ByVal labels As Collection, ByVal labelText As String)
+    labelText = Trim$(labelText)
+    If Len(labelText) = 0 Then Exit Sub
+    Dim item As Variant
+    For Each item In labels
+        If StrComp(CStr(item), labelText, vbTextCompare) = 0 Then Exit Sub
+    Next item
+    If labels.Count < 8 Then labels.Add labelText
+End Sub
+
+Private Function SampleDesign_ReadTargetGroups(ByVal ws As Worksheet, ByVal schema As Object, ByVal defaultTargetN As Long, ByRef issues As Collection) As Collection
+    Dim groups As New Collection
+    Dim groupHeaderRow As Long
+    groupHeaderRow = SampleDesign_FindHeaderRow(ws, "목표그룹ID", CLng(schema("headerRow")) - 1)
+
+    If groupHeaderRow > 0 Then
+        Dim idCol As Long, targetCol As Long
+        idCol = SampleDesign_FindHeaderColumnInRow(ws, groupHeaderRow, "목표그룹ID")
+        targetCol = SampleDesign_FindHeaderColumnInRow(ws, groupHeaderRow, "목표표본수")
+        If idCol > 0 And targetCol > 0 Then
+            Dim r As Long, lastRow As Long
+            lastRow = CLng(schema("headerRow")) - 2
+            For r = groupHeaderRow + 1 To lastRow
+                Dim targetN As Long
+                targetN = CLng(SampleDesign_CellNumber(ws.Cells(r, targetCol).Value))
+                If targetN > 0 Then
+                    Dim group As Object
+                    Set group = CreateObject("Scripting.Dictionary")
+                    group.Add "id", Trim$(CStr(ws.Cells(r, idCol).Value))
+                    If Len(group("id")) = 0 Then group("id") = "G" & Format$(groups.Count + 1, "000")
+                    group.Add "target", targetN
+                    group.Add "sourceRow", r
+                    group.Add "order", groups.Count + 1
+                    Dim conditions As Object
+                    Set conditions = CreateObject("Scripting.Dictionary")
+
+                    Dim q As Long
+                    For q = 1 To schema("quotaHeaders").Count
+                        Dim quotaName As String
+                        quotaName = CStr(schema("quotaHeaders")(q))
+                        Dim condCol As Long
+                        condCol = SampleDesign_FindHeaderColumnInRow(ws, groupHeaderRow, quotaName)
+                        If condCol > 0 Then
+                            Dim condValue As String
+                            condValue = Trim$(CStr(ws.Cells(r, condCol).Value))
+                            If Len(condValue) > 0 Then conditions.Add quotaName, condValue
+                        End If
+                    Next q
+                    group.Add "conditions", conditions
+                    group.Add "conditionCount", conditions.Count
+                    groups.Add group
+                End If
+            Next r
+        End If
+    End If
+
+    If groups.Count = 0 And defaultTargetN > 0 Then
+        Dim defaultGroup As Object
+        Set defaultGroup = CreateObject("Scripting.Dictionary")
+        defaultGroup.Add "id", "전체"
+        defaultGroup.Add "target", defaultTargetN
+        defaultGroup.Add "sourceRow", 4
+        defaultGroup.Add "order", 1
+        Dim emptyConditions As Object
+        Set emptyConditions = CreateObject("Scripting.Dictionary")
+        defaultGroup.Add "conditions", emptyConditions
+        defaultGroup.Add "conditionCount", 0
+        groups.Add defaultGroup
+    End If
+
+    Set SampleDesign_ReadTargetGroups = groups
+End Function
+
+Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByVal schema As Object, ByVal targetGroups As Collection, ByRef records As Collection, ByRef issues As Collection)
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, CLng(schema("popCol"))).End(xlUp).Row
+    If lastRow < CLng(schema("dataStartRow")) Then Exit Sub
+
+    Dim r As Long
+    For r = CLng(schema("dataStartRow")) To lastRow
+        Dim popN As Double
+        popN = SampleDesign_CellNumber(ws.Cells(r, CLng(schema("popCol"))).Value)
+        If SampleDesign_RowIsBlank(ws, r, CLng(schema("idCol")), CLng(schema("popCol"))) Then
+        ElseIf popN <= 0 Then
+            issues.Add Array("제외", r, "모집단수가 0 이하이거나 숫자가 아닙니다.")
+        Else
+            Dim quotaValues As Object
+            Set quotaValues = CreateObject("Scripting.Dictionary")
+            Dim q As Long
+            For q = 1 To schema("quotaHeaders").Count
+                quotaValues.Add CStr(schema("quotaHeaders")(q)), Trim$(CStr(ws.Cells(r, CLng(schema("quotaCols")(q))).Value))
+            Next q
+
+            Dim group As Object
+            Set group = SampleDesign_FindTargetGroupForRecord(quotaValues, targetGroups, r, issues)
+            If group Is Nothing Then
+                issues.Add Array("목표그룹없음", r, "어떤 목표표본 그룹에도 매칭되지 않아 할당에서 제외했습니다.")
+            Else
+                Dim key As String
+                key = CStr(group("id")) & "|" & SampleDesign_BuildQuotaKeyDynamic(quotaValues, schema("quotaHeaders"))
+                If dict.Exists(key) Then
+                    Dim existing As Object
+                    Set existing = dict(key)
+                    existing("pop") = CDbl(existing("pop")) + popN
+                    existing("sourceRows") = CStr(existing("sourceRows")) & ", " & r
+                    issues.Add Array("중복합산", r, "같은 목표그룹/쿼터 조합을 기존 행에 합산했습니다.")
+                Else
+                    Dim rec As Object
+                    Set rec = CreateObject("Scripting.Dictionary")
+                    rec.Add "id", Trim$(CStr(ws.Cells(r, CLng(schema("idCol"))).Value))
+                    If Len(rec("id")) = 0 Then rec("id") = "Q" & Format$(records.Count + dict.Count + 1, "000")
+                    rec.Add "quotaValues", quotaValues
+                    rec.Add "pop", popN
+                    rec.Add "priority", SampleDesign_CellTextIfCol(ws, r, CLng(schema("priorityCol")))
+                    rec.Add "min", CLng(SampleDesign_CellNumber(SampleDesign_CellTextIfCol(ws, r, CLng(schema("minCol")))))
+                    rec.Add "max", CLng(SampleDesign_CellNumber(SampleDesign_CellTextIfCol(ws, r, CLng(schema("maxCol")))))
+                    rec.Add "userWeight", SampleDesign_CellNumber(SampleDesign_CellTextIfCol(ws, r, CLng(schema("userWeightCol"))))
+                    rec.Add "note", SampleDesign_CellTextIfCol(ws, r, CLng(schema("noteCol")))
+                    rec.Add "sourceRows", CStr(r)
+                    rec.Add "targetGroupId", CStr(group("id"))
+                    rec.Add "groupTarget", CLng(group("target"))
+                    dict.Add key, rec
+                End If
+            End If
+        End If
+    Next r
+
+    Dim item As Variant
+    For Each item In dict.Items
+        records.Add item
+    Next item
+End Sub
+
+Private Function SampleDesign_RowIsBlank(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal firstCol As Long, ByVal lastCol As Long) As Boolean
+    Dim c As Long
+    For c = firstCol To lastCol
+        If Len(Trim$(CStr(ws.Cells(rowIndex, c).Value))) > 0 Then Exit Function
+    Next c
+    SampleDesign_RowIsBlank = True
+End Function
+
+Private Function SampleDesign_CellTextIfCol(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long) As String
+    If colIndex > 0 Then SampleDesign_CellTextIfCol = Trim$(CStr(ws.Cells(rowIndex, colIndex).Value))
+End Function
+
+Private Function SampleDesign_BuildQuotaKeyDynamic(ByVal quotaValues As Object, ByVal quotaHeaders As Collection) As String
+    Dim q As Long
+    For q = 1 To quotaHeaders.Count
+        SampleDesign_BuildQuotaKeyDynamic = SampleDesign_BuildQuotaKeyDynamic & "|" & CStr(quotaHeaders(q)) & "=" & CStr(quotaValues(CStr(quotaHeaders(q))))
+    Next q
+End Function
+
+Private Function SampleDesign_FindTargetGroupForRecord(ByVal quotaValues As Object, ByVal targetGroups As Collection, ByVal sourceRow As Long, ByRef issues As Collection) As Object
+    Dim bestGroup As Object
+    Dim bestSpecificity As Long
+    Dim tied As Boolean
+    Dim i As Long
+    For i = 1 To targetGroups.Count
+        Dim group As Object
+        Set group = targetGroups(i)
+        If SampleDesign_GroupMatchesRecord(quotaValues, group("conditions")) Then
+            If bestGroup Is Nothing Or CLng(group("conditionCount")) > bestSpecificity Then
+                Set bestGroup = group
+                bestSpecificity = CLng(group("conditionCount"))
+                tied = False
+            ElseIf CLng(group("conditionCount")) = bestSpecificity Then
+                tied = True
+            End If
+        End If
+    Next i
+
+    If tied And Not bestGroup Is Nothing Then
+        issues.Add Array("목표그룹중복", sourceRow, "조건 특이도가 같은 여러 목표그룹에 매칭되어 먼저 나온 '" & CStr(bestGroup("id")) & "' 그룹을 적용했습니다.")
+    End If
+    Set SampleDesign_FindTargetGroupForRecord = bestGroup
+End Function
+
+Private Function SampleDesign_GroupMatchesRecord(ByVal quotaValues As Object, ByVal conditions As Object) As Boolean
+    Dim key As Variant
+    For Each key In conditions.Keys
+        If Not quotaValues.Exists(CStr(key)) Then Exit Function
+        If StrComp(Trim$(CStr(quotaValues(CStr(key)))), Trim$(CStr(conditions(CStr(key)))), vbTextCompare) <> 0 Then Exit Function
+    Next key
+    SampleDesign_GroupMatchesRecord = True
+End Function
+
+Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal targetGroups As Collection, _
+                                       ByVal methodName As String, ByVal alpha As Double, _
+                                       ByVal defaultMin As Long, ByVal defaultMax As Long, _
+                                       ByRef issues As Collection) As Collection
+    Dim result As New Collection
+    Dim groupBuckets As Object
+    Set groupBuckets = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To records.Count
+        Dim rec As Object
+        Set rec = records(i)
+        Dim gid As String
+        gid = CStr(rec("targetGroupId"))
+        If Not groupBuckets.Exists(gid) Then
+            Dim bucket As Collection
+            Set bucket = New Collection
+            groupBuckets.Add gid, bucket
+        End If
+        Dim bucketRef As Collection
+        Set bucketRef = groupBuckets(gid)
+        bucketRef.Add rec
+    Next i
+
+    For i = 1 To targetGroups.Count
+        Dim group As Object
+        Set group = targetGroups(i)
+        gid = CStr(group("id"))
+        If groupBuckets.Exists(gid) Then
+            SampleDesign_AllocateGroup groupBuckets(gid), group, methodName, alpha, defaultMin, defaultMax, issues, result
+        Else
+            issues.Add Array("목표그룹빈값", CLng(group("sourceRow")), "목표그룹 '" & gid & "'에 매칭된 모집단 행이 없습니다.")
+        End If
+    Next i
+
+    Set SampleDesign_Allocate = result
+End Function
+
+Private Sub SampleDesign_AllocateGroup(ByVal records As Collection, ByVal group As Object, _
+                                       ByVal methodName As String, ByVal alpha As Double, _
+                                       ByVal defaultMin As Long, ByVal defaultMax As Long, _
+                                       ByRef issues As Collection, ByRef result As Collection)
+    Dim n As Long
+    n = records.Count
+    If n = 0 Then Exit Sub
+
+    Dim weights() As Double, raws() As Double, residuals() As Double, finals() As Long
+    ReDim weights(1 To n)
+    ReDim raws(1 To n)
+    ReDim residuals(1 To n)
+    ReDim finals(1 To n)
+
+    Dim i As Long, totalPop As Double, totalWeight As Double
+    For i = 1 To n
+        Dim rec As Object
+        Set rec = records(i)
+        totalPop = totalPop + CDbl(rec("pop"))
+        weights(i) = SampleDesign_RecordWeightDynamic(rec, methodName, alpha)
+        totalWeight = totalWeight + weights(i)
+    Next i
+
+    If totalWeight <= 0 Then
+        issues.Add Array("오류", CLng(group("sourceRow")), "목표그룹 '" & CStr(group("id")) & "'의 배분 가중치 합계가 0입니다.")
+        Exit Sub
+    End If
+
+    Dim targetN As Long
+    targetN = CLng(group("target"))
+    Dim assigned As Long
+    For i = 1 To n
+        raws(i) = targetN * weights(i) / totalWeight
+        finals(i) = Fix(raws(i))
+        residuals(i) = raws(i) - finals(i)
+        assigned = assigned + finals(i)
+    Next i
+
+    Dim remain As Long
+    remain = targetN - assigned
+    Do While remain > 0
+        Dim addIndex As Long
+        addIndex = SampleDesign_LargestResidualIndexDynamic(residuals, finals, records, defaultMax)
+        If addIndex = 0 Then Exit Do
+        finals(addIndex) = finals(addIndex) + 1
+        residuals(addIndex) = -1
+        remain = remain - 1
+    Loop
+
+    For i = 1 To n
+        Set rec = records(i)
+        Dim minN As Long, maxN As Long
+        minN = SampleDesign_RecordMin(rec, defaultMin)
+        maxN = SampleDesign_RecordMax(rec, defaultMax)
+        If minN > 0 And finals(i) < minN Then
+            issues.Add Array("최소보정", CStr(rec("sourceRows")), "목표그룹 '" & CStr(group("id")) & "'에서 최소표본 " & minN & " 적용")
+            finals(i) = minN
+        End If
+        If maxN > 0 And finals(i) > maxN Then
+            issues.Add Array("최대보정", CStr(rec("sourceRows")), "목표그룹 '" & CStr(group("id")) & "'에서 최대표본 " & maxN & " 적용")
+            finals(i) = maxN
+        End If
+    Next i
+
+    SampleDesign_AdjustGroupToTarget finals, raws, records, targetN, defaultMin, defaultMax, CStr(group("id")), issues
+
+    For i = 1 To n
+        Set rec = records(i)
+        Dim outRec As Object
+        Set outRec = CreateObject("Scripting.Dictionary")
+        outRec.Add "source", rec
+        outRec.Add "totalPop", totalPop
+        outRec.Add "weight", weights(i)
+        outRec.Add "totalWeight", totalWeight
+        outRec.Add "raw", raws(i)
+        outRec.Add "residual", raws(i) - Fix(raws(i))
+        outRec.Add "final", finals(i)
+        outRec.Add "constraint", SampleDesign_ConstraintLabelDynamic(rec, finals(i), defaultMin, defaultMax)
+        result.Add outRec
+    Next i
+End Sub
+
+Private Function SampleDesign_RecordWeightDynamic(ByVal rec As Object, ByVal methodName As String, ByVal alpha As Double) As Double
+    Dim popN As Double
+    popN = CDbl(rec("pop"))
+    Select Case methodName
+        Case "제곱근 비례": SampleDesign_RecordWeightDynamic = Sqr(popN)
+        Case "멱배분": SampleDesign_RecordWeightDynamic = popN ^ alpha
+        Case "균등 배분": SampleDesign_RecordWeightDynamic = 1
+        Case "사용자 지정 가중"
+            If CDbl(rec("userWeight")) > 0 Then
+                SampleDesign_RecordWeightDynamic = CDbl(rec("userWeight"))
+            Else
+                SampleDesign_RecordWeightDynamic = popN
+            End If
+        Case Else: SampleDesign_RecordWeightDynamic = popN
+    End Select
+End Function
+
+Private Function SampleDesign_LargestResidualIndexDynamic(ByRef residuals() As Double, ByRef finalN() As Long, ByVal records As Collection, ByVal defaultMax As Long) As Long
+    Dim bestIdx As Long, bestVal As Double, i As Long
+    bestVal = -2
+    For i = LBound(residuals) To UBound(residuals)
+        Dim rec As Object
+        Set rec = records(i)
+        Dim maxN As Long
+        maxN = SampleDesign_RecordMax(rec, defaultMax)
+        If (maxN <= 0 Or finalN(i) < maxN) And residuals(i) > bestVal Then
+            bestVal = residuals(i)
+            bestIdx = i
+        End If
+    Next i
+    SampleDesign_LargestResidualIndexDynamic = bestIdx
+End Function
+
+Private Sub SampleDesign_AdjustGroupToTarget(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection, _
+                                             ByVal targetN As Long, ByVal defaultMin As Long, ByVal defaultMax As Long, _
+                                             ByVal groupId As String, ByRef issues As Collection)
+    Dim currentTotal As Long
+    currentTotal = SampleDesign_ArrayTotal(finalN)
+    Dim guard As Long
+    Do While currentTotal < targetN And guard < 100000
+        Dim addIdx As Long
+        addIdx = SampleDesign_AdjustAddIndexDynamic(finalN, rawN, records, defaultMax)
+        If addIdx = 0 Then Exit Do
+        finalN(addIdx) = finalN(addIdx) + 1
+        currentTotal = currentTotal + 1
+        guard = guard + 1
+    Loop
+    Do While currentTotal > targetN And guard < 100000
+        Dim subIdx As Long
+        subIdx = SampleDesign_AdjustSubtractIndexDynamic(finalN, rawN, records, defaultMin)
+        If subIdx = 0 Then Exit Do
+        finalN(subIdx) = finalN(subIdx) - 1
+        currentTotal = currentTotal - 1
+        guard = guard + 1
+    Loop
+    If currentTotal <> targetN Then
+        issues.Add Array("합계불일치", 0, "목표그룹 '" & groupId & "'의 최종합계가 목표 표본 수와 다릅니다. 최종합계=" & currentTotal & ", 목표=" & targetN)
+    End If
+End Sub
+
+Private Function SampleDesign_AdjustAddIndexDynamic(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection, ByVal defaultMax As Long) As Long
+    Dim bestIdx As Long, bestGap As Double, i As Long
+    bestGap = -999999
+    For i = LBound(finalN) To UBound(finalN)
+        Dim rec As Object
+        Set rec = records(i)
+        Dim maxN As Long
+        maxN = SampleDesign_RecordMax(rec, defaultMax)
+        If maxN <= 0 Or finalN(i) < maxN Then
+            If rawN(i) - finalN(i) > bestGap Then
+                bestGap = rawN(i) - finalN(i)
+                bestIdx = i
+            End If
+        End If
+    Next i
+    SampleDesign_AdjustAddIndexDynamic = bestIdx
+End Function
+
+Private Function SampleDesign_AdjustSubtractIndexDynamic(ByRef finalN() As Long, ByRef rawN() As Double, ByVal records As Collection, ByVal defaultMin As Long) As Long
+    Dim bestIdx As Long, bestGap As Double, i As Long
+    bestGap = -999999
+    For i = LBound(finalN) To UBound(finalN)
+        Dim rec As Object
+        Set rec = records(i)
+        Dim minN As Long
+        minN = SampleDesign_RecordMin(rec, defaultMin)
+        If finalN(i) > minN And finalN(i) > 0 Then
+            If finalN(i) - rawN(i) > bestGap Then
+                bestGap = finalN(i) - rawN(i)
+                bestIdx = i
+            End If
+        End If
+    Next i
+    SampleDesign_AdjustSubtractIndexDynamic = bestIdx
+End Function
+
+Private Function SampleDesign_RecordMin(ByVal rec As Object, ByVal defaultMin As Long) As Long
+    SampleDesign_RecordMin = CLng(rec("min"))
+    If SampleDesign_RecordMin <= 0 Then SampleDesign_RecordMin = defaultMin
+End Function
+
+Private Function SampleDesign_RecordMax(ByVal rec As Object, ByVal defaultMax As Long) As Long
+    SampleDesign_RecordMax = CLng(rec("max"))
+    If SampleDesign_RecordMax <= 0 Then SampleDesign_RecordMax = defaultMax
+End Function
+
+Private Function SampleDesign_ConstraintLabelDynamic(ByVal rec As Object, ByVal finalN As Long, ByVal defaultMin As Long, ByVal defaultMax As Long) As String
+    Dim minN As Long, maxN As Long
+    minN = SampleDesign_RecordMin(rec, defaultMin)
+    maxN = SampleDesign_RecordMax(rec, defaultMax)
+    If minN > 0 And finalN = minN Then
+        SampleDesign_ConstraintLabelDynamic = "최소 적용"
+    ElseIf maxN > 0 And finalN = maxN Then
+        SampleDesign_ConstraintLabelDynamic = "최대 적용"
+    End If
+End Function
+
+Private Function SampleDesign_TotalTargetN(ByVal targetGroups As Collection) As Long
+    Dim i As Long
+    For i = 1 To targetGroups.Count
+        Dim group As Object
+        Set group = targetGroups(i)
+        SampleDesign_TotalTargetN = SampleDesign_TotalTargetN + CLng(group("target"))
+    Next i
+End Function
+
+Private Sub SampleDesign_WriteAllocationResult(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal targetN As Long, _
+                                               ByVal methodName As String, ByVal alpha As Double, ByVal quotaHeaders As Collection)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 할당결과"
+    ws.Range("B1").Value = "배분 방식": ws.Range("C1").Value = methodName
+    ws.Range("D1").Value = "목표 표본 수": ws.Range("E1").Value = targetN
+
+    Dim headerRow As Long
+    headerRow = 3
+    Dim col As Long
+    col = 1
+    ws.Cells(headerRow, col).Value = "쿼터ID": col = col + 1
+    Dim q As Long
+    For q = 1 To quotaHeaders.Count
+        ws.Cells(headerRow, col).Value = quotaHeaders(q)
+        col = col + 1
+    Next q
+
+    Dim popCol As Long, popRateCol As Long, groupCol As Long, groupTargetCol As Long, methodCol As Long
+    Dim baseCol As Long, weightCol As Long, weightSumCol As Long, rawCol As Long, residualCol As Long
+    Dim finalCol As Long, sampleRateCol As Long, userWeightCol As Long, constraintCol As Long, noteCol As Long
+    popCol = col: ws.Cells(headerRow, col).Value = "모집단수": col = col + 1
+    popRateCol = col: ws.Cells(headerRow, col).Value = "모집단비율": col = col + 1
+    groupCol = col: ws.Cells(headerRow, col).Value = "목표그룹ID": col = col + 1
+    groupTargetCol = col: ws.Cells(headerRow, col).Value = "그룹목표표본수": col = col + 1
+    methodCol = col: ws.Cells(headerRow, col).Value = "배분방식": col = col + 1
+    baseCol = col: ws.Cells(headerRow, col).Value = "배분기준값": col = col + 1
+    weightCol = col: ws.Cells(headerRow, col).Value = "배분가중치": col = col + 1
+    weightSumCol = col: ws.Cells(headerRow, col).Value = "그룹가중치합": col = col + 1
+    rawCol = col: ws.Cells(headerRow, col).Value = "이론할당": col = col + 1
+    residualCol = col: ws.Cells(headerRow, col).Value = "잔차": col = col + 1
+    finalCol = col: ws.Cells(headerRow, col).Value = "최종할당": col = col + 1
+    sampleRateCol = col: ws.Cells(headerRow, col).Value = "표본비율": col = col + 1
+    userWeightCol = col: ws.Cells(headerRow, col).Value = "사용자가중치": col = col + 1
+    constraintCol = col: ws.Cells(headerRow, col).Value = "제약 적용": col = col + 1
+    noteCol = col: ws.Cells(headerRow, col).Value = "비고"
+
+    Dim firstDataRow As Long, lastDataRow As Long
+    firstDataRow = headerRow + 1
+    lastDataRow = headerRow + allocation.Count
+
+    Dim r As Long
+    For r = 1 To allocation.Count
+        Dim outRec As Object, rec As Object
+        Set outRec = allocation(r)
+        Set rec = outRec("source")
+        Dim rowNo As Long
+        rowNo = headerRow + r
+        col = 1
+        ws.Cells(rowNo, col).Value = rec("id"): col = col + 1
+        For q = 1 To quotaHeaders.Count
+            ws.Cells(rowNo, col).Value = rec("quotaValues")(CStr(quotaHeaders(q)))
+            col = col + 1
+        Next q
+        ws.Cells(rowNo, popCol).Value = CDbl(rec("pop"))
+        ws.Cells(rowNo, groupCol).Value = CStr(rec("targetGroupId"))
+        ws.Cells(rowNo, groupTargetCol).Value = CLng(rec("groupTarget"))
+        ws.Cells(rowNo, methodCol).Value = methodName
+        ws.Cells(rowNo, finalCol).Value = CLng(outRec("final"))
+        ws.Cells(rowNo, userWeightCol).Value = CDbl(rec("userWeight"))
+        ws.Cells(rowNo, constraintCol).Value = CStr(outRec("constraint"))
+        ws.Cells(rowNo, noteCol).Value = CStr(rec("note"))
+    Next r
+
+    If allocation.Count > 0 Then
+        Dim popRange As String, finalRange As String, groupRange As String, weightRange As String
+        popRange = ws.Range(ws.Cells(firstDataRow, popCol), ws.Cells(lastDataRow, popCol)).Address(False, False)
+        finalRange = ws.Range(ws.Cells(firstDataRow, finalCol), ws.Cells(lastDataRow, finalCol)).Address(False, False)
+        groupRange = ws.Range(ws.Cells(firstDataRow, groupCol), ws.Cells(lastDataRow, groupCol)).Address(False, False)
+        weightRange = ws.Range(ws.Cells(firstDataRow, weightCol), ws.Cells(lastDataRow, weightCol)).Address(False, False)
+
+        For r = firstDataRow To lastDataRow
+            Dim popCell As String, baseCell As String, weightCell As String, weightSumCell As String, groupCell As String, groupTargetCell As String, rawCell As String, finalCell As String, userWeightCell As String
+            popCell = ws.Cells(r, popCol).Address(False, False)
+            baseCell = ws.Cells(r, baseCol).Address(False, False)
+            weightCell = ws.Cells(r, weightCol).Address(False, False)
+            weightSumCell = ws.Cells(r, weightSumCol).Address(False, False)
+            groupCell = ws.Cells(r, groupCol).Address(False, False)
+            groupTargetCell = ws.Cells(r, groupTargetCol).Address(False, False)
+            rawCell = ws.Cells(r, rawCol).Address(False, False)
+            finalCell = ws.Cells(r, finalCol).Address(False, False)
+            userWeightCell = ws.Cells(r, userWeightCol).Address(False, False)
+
+            Select Case methodName
+                Case "균등 배분"
+                    ws.Cells(r, baseCol).Formula = "=1"
+                    ws.Cells(r, weightCol).Formula = "=1"
+                Case "사용자 지정 가중"
+                    ws.Cells(r, baseCol).Formula = "=IF(" & userWeightCell & ">0," & userWeightCell & "," & popCell & ")"
+                    ws.Cells(r, weightCol).Formula = "=" & baseCell
+                Case "제곱근 비례"
+                    ws.Cells(r, baseCol).Formula = "=" & popCell
+                    ws.Cells(r, weightCol).Formula = "=SQRT(" & popCell & ")"
+                Case "멱배분"
+                    ws.Cells(r, baseCol).Formula = "=" & popCell
+                    ws.Cells(r, weightCol).Formula = "=" & popCell & "^" & Replace(CStr(alpha), ",", ".")
+                Case Else
+                    ws.Cells(r, baseCol).Formula = "=" & popCell
+                    ws.Cells(r, weightCol).Formula = "=" & popCell
+            End Select
+            ws.Cells(r, popRateCol).Formula = "=" & popCell & "/SUM(" & popRange & ")"
+            ws.Cells(r, weightSumCol).Formula = "=SUMIF(" & groupRange & "," & groupCell & "," & weightRange & ")"
+            ws.Cells(r, rawCol).Formula = "=IF(" & weightSumCell & ">0," & groupTargetCell & "*" & weightCell & "/" & weightSumCell & ",0)"
+            ws.Cells(r, residualCol).Formula = "=" & rawCell & "-INT(" & rawCell & ")"
+            ws.Cells(r, sampleRateCol).Formula = "=" & finalCell & "/SUM(" & finalRange & ")"
+        Next r
+    End If
+
+    Dim totalRow As Long
+    totalRow = lastDataRow + 1
+    ws.Cells(totalRow, 1).Value = "총계"
+    If allocation.Count > 0 Then
+        ws.Cells(totalRow, popCol).Formula = "=SUM(" & ws.Range(ws.Cells(firstDataRow, popCol), ws.Cells(lastDataRow, popCol)).Address(False, False) & ")"
+        ws.Cells(totalRow, groupTargetCol).Value = targetN
+        ws.Cells(totalRow, finalCol).Formula = "=SUM(" & ws.Range(ws.Cells(firstDataRow, finalCol), ws.Cells(lastDataRow, finalCol)).Address(False, False) & ")"
+    End If
+    ws.Range(ws.Cells(totalRow, 1), ws.Cells(totalRow, noteCol)).Font.Bold = True
+
+    With ws.Range(ws.Cells(headerRow, 1), ws.Cells(totalRow, noteCol))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, noteCol)).Font.Bold = True
+    ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, noteCol)).Interior.Color = RGB(220, 235, 250)
+    ws.Range(ws.Cells(firstDataRow, popRateCol), ws.Cells(totalRow, popRateCol)).NumberFormat = "0.0%"
+    ws.Range(ws.Cells(firstDataRow, sampleRateCol), ws.Cells(totalRow, sampleRateCol)).NumberFormat = "0.0%"
+    ws.Range(ws.Cells(firstDataRow, baseCol), ws.Cells(totalRow, rawCol)).NumberFormat = "0.000"
+    SampleDesign_ApplyDynamicResultFormatting ws, firstDataRow, lastDataRow, finalCol, constraintCol
+End Sub
+
+Private Sub SampleDesign_ApplyDynamicResultFormatting(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long, ByVal finalCol As Long, ByVal constraintCol As Long)
+    If lastRow < firstRow Then Exit Sub
+    On Error Resume Next
+    With ws.Range(ws.Cells(firstRow, finalCol), ws.Cells(lastRow, finalCol)).FormatConditions.Add(Type:=xlCellValue, Operator:=xlEqual, Formula1:="=0")
+        .Interior.Color = RGB(255, 230, 230)
+        .Font.Color = RGB(160, 0, 0)
+    End With
+    With ws.Range(ws.Cells(firstRow, constraintCol), ws.Cells(lastRow, constraintCol)).FormatConditions.Add(Type:=xlCellValue, Operator:=xlNotEqual, Formula1:="=" & Chr$(34) & Chr$(34))
+        .Interior.Color = RGB(255, 245, 190)
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Sub SampleDesign_WriteReviewReport(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal targetGroups As Collection, ByVal issues As Collection, _
+                                           ByVal targetN As Long, ByVal methodName As String, ByVal alpha As Double)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 검토"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 14
+
+    Dim totalPop As Double, totalFinal As Long, zeroCount As Long, i As Long
+    For i = 1 To allocation.Count
+        Dim outRec As Object, rec As Object
+        Set outRec = allocation(i)
+        Set rec = outRec("source")
+        totalPop = totalPop + CDbl(rec("pop"))
+        totalFinal = totalFinal + CLng(outRec("final"))
+        If CLng(outRec("final")) = 0 Then zeroCount = zeroCount + 1
+    Next i
+
+    Dim rowNo As Long
+    rowNo = 3
+    SampleDesign_WriteKV ws, rowNo, "배분 방식", methodName
+    SampleDesign_WriteKV ws, rowNo, "멱배분 alpha", alpha
+    SampleDesign_WriteKV ws, rowNo, "총 모집단 수", totalPop
+    SampleDesign_WriteKV ws, rowNo, "목표 표본 수", targetN
+    SampleDesign_WriteKV ws, rowNo, "최종 배정 표본 수", totalFinal
+    SampleDesign_WriteKV ws, rowNo, "쿼터 셀 수", allocation.Count
+    SampleDesign_WriteKV ws, rowNo, "최종할당 0인 셀 수", zeroCount
+    SampleDesign_WriteKV ws, rowNo, "검토/경고 건수", issues.Count
+
+    rowNo = rowNo + 1
+    ws.Cells(rowNo, 1).Value = "목표그룹 검토"
+    ws.Cells(rowNo, 1).Font.Bold = True
+    rowNo = rowNo + 1
+    SampleDesign_WriteArray ws, rowNo, 1, Array("목표그룹ID", "목표표본수", "최종할당", "차이", "행수")
+    ws.Range(ws.Cells(rowNo, 1), ws.Cells(rowNo, 5)).Font.Bold = True
+    rowNo = rowNo + 1
+
+    For i = 1 To targetGroups.Count
+        Dim group As Object
+        Set group = targetGroups(i)
+        Dim groupFinal As Long, groupRows As Long
+        SampleDesign_GroupAllocationSummary allocation, CStr(group("id")), groupFinal, groupRows
+        SampleDesign_WriteArray ws, rowNo, 1, Array(CStr(group("id")), CLng(group("target")), groupFinal, groupFinal - CLng(group("target")), groupRows)
+        rowNo = rowNo + 1
+    Next i
+
+    rowNo = rowNo + 2
+    ws.Cells(rowNo, 1).Value = "검토 항목"
+    ws.Cells(rowNo, 1).Font.Bold = True
+    rowNo = rowNo + 1
+    SampleDesign_WriteArray ws, rowNo, 1, Array("유형", "원본행", "내용")
+    ws.Range(ws.Cells(rowNo, 1), ws.Cells(rowNo, 3)).Font.Bold = True
+    rowNo = rowNo + 1
+    For i = 1 To issues.Count
+        SampleDesign_WriteArray ws, rowNo, 1, issues(i)
+        rowNo = rowNo + 1
+    Next i
+    If issues.Count = 0 Then ws.Cells(rowNo, 1).Value = "검토 경고 없음"
+    ws.Columns("A:F").AutoFit
+End Sub
+
+Private Sub SampleDesign_GroupAllocationSummary(ByVal allocation As Collection, ByVal groupId As String, ByRef finalN As Long, ByRef rowCount As Long)
+    Dim i As Long
+    For i = 1 To allocation.Count
+        Dim outRec As Object, rec As Object
+        Set outRec = allocation(i)
+        Set rec = outRec("source")
+        If CStr(rec("targetGroupId")) = groupId Then
+            finalN = finalN + CLng(outRec("final"))
+            rowCount = rowCount + 1
+        End If
+    Next i
+End Sub
+
+Private Function SampleDesign_TotalFinalN(ByVal allocation As Collection) As Long
+    Dim i As Long
+    For i = 1 To allocation.Count
+        Dim outRec As Object
+        Set outRec = allocation(i)
+        SampleDesign_TotalFinalN = SampleDesign_TotalFinalN + CLng(outRec("final"))
+    Next i
+End Function
+
+Private Sub SampleDesign_ApplyProgressFormatting(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long, ByVal statusCol As Long)
+    If lastRow < firstRow Then Exit Sub
+    On Error Resume Next
+    With ws.Range(ws.Cells(firstRow, statusCol), ws.Cells(lastRow, statusCol)).FormatConditions.Add(Type:=xlTextString, String:="미달", TextOperator:=xlContains)
+        .Interior.Color = RGB(255, 245, 190)
+    End With
+    With ws.Range(ws.Cells(firstRow, statusCol), ws.Cells(lastRow, statusCol)).FormatConditions.Add(Type:=xlTextString, String:="충족", TextOperator:=xlContains)
+        .Interior.Color = RGB(220, 245, 220)
+    End With
+    With ws.Range(ws.Cells(firstRow, statusCol), ws.Cells(lastRow, statusCol)).FormatConditions.Add(Type:=xlTextString, String:="초과", TextOperator:=xlContains)
+        .Interior.Color = RGB(255, 220, 220)
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Sub SampleDesign_WriteInputTemplate_Legacy(ByVal ws As Worksheet)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 입력"
     ws.Range("A1").Font.Bold = True
@@ -7715,7 +9086,7 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
     ws.Columns("A:L").AutoFit
 End Sub
 
-Private Sub SampleDesign_WriteEmptyResult(ByVal ws As Worksheet)
+Private Sub SampleDesign_WriteEmptyResult_Legacy(ByVal ws As Worksheet)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 할당결과"
     ws.Range("A1").Font.Bold = True
@@ -7773,7 +9144,7 @@ Private Function SampleDesign_MethodToChoice(ByVal methodName As String) As Stri
     End Select
 End Function
 
-Private Sub SampleDesign_ReadPopulation(ByVal ws As Worksheet, ByRef records As Collection, ByRef issues As Collection)
+Private Sub SampleDesign_ReadPopulation_Legacy(ByVal ws As Worksheet, ByRef records As Collection, ByRef issues As Collection)
     Dim dict As Object
     Set dict = CreateObject("Scripting.Dictionary")
     Dim lastRow As Long
@@ -7834,7 +9205,7 @@ Private Function SampleDesign_QuotaEnabled(ByVal ws As Worksheet, ByVal colIndex
     SampleDesign_QuotaEnabled = (flagText = "사용" Or UCase$(flagText) = "Y" Or UCase$(flagText) = "YES")
 End Function
 
-Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal targetN As Long, _
+Private Function SampleDesign_Allocate_Legacy(ByVal records As Collection, ByVal targetN As Long, _
                                        ByVal methodName As String, ByVal alpha As Double, _
                                        ByVal defaultMin As Long, ByVal defaultMax As Long, _
                                        ByRef issues As Collection) As Collection
@@ -7848,7 +9219,7 @@ Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal target
     Next i
     If totalWeight <= 0 Then
         issues.Add Array("오류", 0, "배분 가중치 합계가 0입니다.")
-        Set SampleDesign_Allocate = result
+        Set SampleDesign_Allocate_Legacy = result
         Exit Function
     End If
     Dim finals() As Long, residuals() As Double, raws() As Double
@@ -7901,7 +9272,7 @@ Private Function SampleDesign_Allocate(ByVal records As Collection, ByVal target
                          IIf(targetN > 0, finals(i) / targetN, 0), CDbl(rec(10)), _
                          SampleDesign_ConstraintLabel(rec, finals(i), defaultMin, defaultMax), noteText)
     Next i
-    Set SampleDesign_Allocate = result
+    Set SampleDesign_Allocate_Legacy = result
 End Function
 
 Private Function SampleDesign_RecordWeight(ByVal rec As Variant, ByVal methodName As String, ByVal alpha As Double) As Double
@@ -8020,7 +9391,7 @@ Private Function SampleDesign_ConstraintLabel(ByVal rec As Variant, ByVal finalN
     End If
 End Function
 
-Private Sub SampleDesign_WriteAllocationResult(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal targetN As Long, ByVal methodName As String)
+Private Sub SampleDesign_WriteAllocationResult_Legacy(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal targetN As Long, ByVal methodName As String)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 할당결과"
     ws.Range("B1").Value = "배분 방식": ws.Range("C1").Value = methodName
@@ -8054,7 +9425,7 @@ Private Function SampleDesign_ResultHeaders() As Variant
                                        "사용자가중치", "제약 적용", "비고")
 End Function
 
-Private Sub SampleDesign_WriteReviewReport(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal issues As Collection, _
+Private Sub SampleDesign_WriteReviewReport_Legacy(ByVal ws As Worksheet, ByVal allocation As Collection, ByVal issues As Collection, _
                                            ByVal targetN As Long, ByVal methodName As String, ByVal alpha As Double)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 검토"
@@ -8102,12 +9473,12 @@ Private Sub SampleDesign_WriteArray(ByVal ws As Worksheet, ByVal rowIndex As Lon
     ws.Cells(rowIndex, colIndex).Resize(1, UBound(values) - LBound(values) + 1).Value = values
 End Sub
 
-Private Function SampleDesign_TotalFinalN(ByVal allocation As Collection) As Long
+Private Function SampleDesign_TotalFinalN_Legacy(ByVal allocation As Collection) As Long
     Dim i As Long
     For i = 1 To allocation.Count
         Dim rec As Variant
         rec = allocation(i)
-        SampleDesign_TotalFinalN = SampleDesign_TotalFinalN + CLng(rec(10))
+        SampleDesign_TotalFinalN_Legacy = SampleDesign_TotalFinalN_Legacy + CLng(rec(10))
     Next i
 End Function
 
@@ -8124,7 +9495,7 @@ Private Sub SampleDesign_ApplyResultFormatting(ByVal ws As Worksheet, ByVal firs
     On Error GoTo 0
 End Sub
 
-Private Sub SampleDesign_ApplyProgressFormatting(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
+Private Sub SampleDesign_ApplyProgressFormatting_Legacy(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
     If lastRow < firstRow Then Exit Sub
     On Error Resume Next
     With ws.Range(ws.Cells(firstRow, 12), ws.Cells(lastRow, 12)).FormatConditions.Add(Type:=xlTextString, String:="미달", TextOperator:=xlContains)
@@ -9009,7 +10380,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "2. 할당 계산" & vbCrLf & _
         "3. 진행률 관리표 생성" & vbCrLf & _
         "4. 쿼터 점검" & vbCrLf & _
-        "5. 모집단 구성표 리스트화", _
+        "5. 모집단 구성표 리스트화" & vbCrLf & _
+        "6. 리스트→집계표", _
         "1")
 
     Select Case choice
@@ -9018,8 +10390,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "3": SampleDesign_CreateProgressTracker
         Case "4": SampleDesign_ReviewQuota
         Case "5": SampleDesign_ListifyPopulationTable
+        Case "6": SampleDesign_PivotPopulationList
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~5 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~6 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -9327,6 +10700,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignListifyPopulationTable(control As IRibbonControl)
     SampleDesign_ListifyPopulationTable
+End Sub
+
+Public Sub Ribbon_SampleDesignPivotPopulationList(control As IRibbonControl)
+    SampleDesign_PivotPopulationList
 End Sub
 
 Public Sub Ribbon_SampleDesignRunAllocation(control As IRibbonControl)
