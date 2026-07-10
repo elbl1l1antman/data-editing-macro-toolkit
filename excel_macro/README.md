@@ -23,7 +23,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.14`
+`1.1.15`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -44,7 +44,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 전화번호 유형 분류 및 유효성 검사. 050X 계열 안심번호를 정상 전화번호 유형으로 분류
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
-- 기업체명/사업체명 정리: 공백, 회사형태 표기, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용
+- 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용
 - 업체명 표준화 및 유사그룹 생성
 - 명부 품질 진단 리포트 생성
 - 업체명/주소/전화번호/사업자번호 조합 기반 중복 업체 탐지. 업체명은 표준화명 일치, 한쪽 이름 포함, 3자 이상 공통 접두어를 같은 기업 판단 기준에 반영
@@ -112,10 +112,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.14/DataEditingMacroToolkit_v1.1.14.xlam`
-- `release/v1.1.14/DataEditingMacroToolkit_v1.1.14.xlsm`
-- `release/v1.1.14/MacroToolkit.bas`
-- `release/v1.1.14/manifest.json`
+- `release/v1.1.15/DataEditingMacroToolkit_v1.1.15.xlam`
+- `release/v1.1.15/DataEditingMacroToolkit_v1.1.15.xlsm`
+- `release/v1.1.15/MacroToolkit.bas`
+- `release/v1.1.15/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

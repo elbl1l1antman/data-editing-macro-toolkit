@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.14"
+Public Const TOOLKIT_VERSION As String = "1.1.15"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -828,6 +828,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("addCorpPrefix") = CBool(form.AddCorpPrefix)
     options("addCorpSuffix") = CBool(form.AddCorpSuffix)
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
+    options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
 
@@ -852,6 +853,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("addCorpPrefix") = False
     options("addCorpSuffix") = False
     options("cutBeforePossessive") = True
+    options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
     Set CompanyName_DefaultOptions = options
@@ -914,11 +916,12 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
     If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
     If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
-    If CBool(options("normalizeCorpSymbol")) Then textValue = Replace(textValue, "㈜", "(주)")
+    If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
     If CBool(options("normalizeCorpText")) Then textValue = Replace(textValue, "주식회사", "(주)")
     If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
     If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
     If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
+    If CBool(options("removeSpecialChars")) Then textValue = CompanyName_RemoveSpecialChars(textValue)
     If CBool(options("addCorpPrefix")) Then
         If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
     End If
@@ -938,16 +941,59 @@ Private Function CompanyName_RemoveSpaces(ByVal textValue As String) As String
 End Function
 
 Private Function CompanyName_HasCorpMarker(ByVal textValue As String) As Boolean
-    CompanyName_HasCorpMarker = (InStr(1, textValue, "(주)", vbTextCompare) > 0 _
-                             Or InStr(1, textValue, "㈜", vbTextCompare) > 0 _
-                             Or InStr(1, textValue, "주식회사", vbTextCompare) > 0)
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.IgnoreCase = True
+    re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
+    CompanyName_HasCorpMarker = re.Test(textValue)
 End Function
 
 Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As String
-    textValue = Replace(textValue, "(주)", "")
-    textValue = Replace(textValue, "㈜", "")
-    textValue = Replace(textValue, "주식회사", "")
-    CompanyName_RemoveCorpMarkers = textValue
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
+    CompanyName_RemoveCorpMarkers = Trim$(re.Replace(textValue, ""))
+End Function
+
+Private Function CompanyName_NormalizeCorpSymbol(ByVal textValue As String) As String
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\(（]\s*주\s*[\)）]"
+    textValue = re.Replace(textValue, "(주)")
+    textValue = Replace(textValue, "㈜", "(주)")
+    CompanyName_NormalizeCorpSymbol = textValue
+End Function
+
+Private Function CompanyName_RemoveSpecialChars(ByVal textValue As String) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To Len(textValue)
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsNameCharacter(ch) Then result = result & ch
+    Next i
+    CompanyName_RemoveSpecialChars = Trim$(result)
+End Function
+
+Private Function CompanyName_IsNameCharacter(ByVal ch As String) As Boolean
+    Dim codeValue As Long
+    codeValue = AscW(ch)
+    If codeValue < 0 Then codeValue = codeValue + 65536
+
+    CompanyName_IsNameCharacter = _
+        ((codeValue >= 48 And codeValue <= 57) Or _
+         (codeValue >= 65 And codeValue <= 90) Or _
+         (codeValue >= 97 And codeValue <= 122) Or _
+         (codeValue >= &HAC00 And codeValue <= &HD7A3) Or _
+         (codeValue >= &H1100 And codeValue <= &H11FF) Or _
+         (codeValue >= &H3130 And codeValue <= &H318F) Or _
+         (codeValue >= &H4E00 And codeValue <= &H9FFF) Or _
+         ch = " ")
 End Function
 
 Private Function CompanyName_MoveCorpMarker(ByVal textValue As String, ByVal moveToFront As Boolean) As String

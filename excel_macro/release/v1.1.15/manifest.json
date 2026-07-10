@@ -1,0 +1,22 @@
+﻿{
+    "name":  "Data Editing Macro Toolkit",
+    "repository":  "data-editing-macro-toolkit",
+    "license":  "data-editing-macro-toolkit Non-Commercial Software Use License",
+    "licenseFile":  "LICENSE.md",
+    "copyright":  "Copyright (c) 2026 Jung Suhyun (정수현). All rights reserved.",
+    "contact":  "elbr1ll1antant@gmail.com",
+    "version":  "1.1.15",
+    "versionTag":  "v1.1.15",
+    "publishedAt":  "2026-07-10 10:19:01 +09:00",
+    "gitCommit":  "99f01f8-dirty",
+    "addin":  "DataEditingMacroToolkit_v1.1.15.xlam",
+    "workbook":  "DataEditingMacroToolkit_v1.1.15.xlsm",
+    "sourceModule":  "MacroToolkit.bas",
+    "installFile":  "DataEditingMacroToolkit_v1.1.15.xlam",
+    "containsVbaModule":  true,
+    "containsRibbonTab":  true,
+    "ribbonTab":  "데이터 툴킷",
+    "ribbonInsertAfter":  "보기",
+    "vbaImportEncoding":  "CP949",
+    "notes":  "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View."
+}

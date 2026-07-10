@@ -1279,7 +1279,7 @@ function Add-CompanyNameOptionsUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "기업체명/사업체명 정리 옵션"
     $form.Properties.Item("Width").Value = 580
-    $form.Properties.Item("Height").Value = 450
+    $form.Properties.Item("Height").Value = 470
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
@@ -1300,7 +1300,8 @@ function Add-CompanyNameOptionsUserForm {
         @("chkAddCorpSuffix", "회사형태가 없으면 뒤에 (주) 추가", 250, 94, $false),
         @("chkCutBeforePossessive", "'의 ' 앞부분만 남기기", 250, 120, $true),
         @("chkPronounceEnglishWords", "영어 단어를 한글 발음으로 변환", 250, 146, $false),
-        @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 172, $true)
+        @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 172, $true),
+        @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false)
     )
 
     foreach ($item in $labels) {
@@ -1316,21 +1317,21 @@ function Add-CompanyNameOptionsUserForm {
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
     $lblTip.Caption = "기본값은 제공된 기업이름정리.xlsm의 체크 상태를 따릅니다. 결과는 원본 오른쪽 복사본 열에 생성됩니다."
     $lblTip.Left = 12
-    $lblTip.Top = 214
+    $lblTip.Top = 240
     $lblTip.Width = 540
     $lblTip.Height = 42
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 374
-    $cmdOk.Top = 346
+    $cmdOk.Top = 378
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 474
-    $cmdCancel.Top = 346
+    $cmdCancel.Top = 378
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -1381,6 +1382,10 @@ End Property
 
 Public Property Get CutBeforePossessive() As Boolean
     CutBeforePossessive = CBool(chkCutBeforePossessive.Value)
+End Property
+
+Public Property Get RemoveSpecialChars() As Boolean
+    RemoveSpecialChars = CBool(chkRemoveSpecialChars.Value)
 End Property
 
 Public Property Get PronounceEnglishWords() As Boolean
@@ -2408,7 +2413,7 @@ function Add-RibbonCustomUi {
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
-          <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
+          <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 괄호·특수문자, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
           <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
