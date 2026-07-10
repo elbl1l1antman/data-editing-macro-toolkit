@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.16"
+Public Const TOOLKIT_VERSION As String = "1.1.17"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -37,6 +37,9 @@ Private Const API_RESOLVE_TIMEOUT_MS As Long = 5000
 Private Const API_CONNECT_TIMEOUT_MS As Long = 10000
 Private Const API_SEND_TIMEOUT_MS As Long = 15000
 Private Const API_RECEIVE_TIMEOUT_MS As Long = 30000
+Private Const TOOLKIT_PROGRESS_ROW_THRESHOLD As Long = 1000
+Private Const TOOLKIT_PROGRESS_BATCH_ROWS As Long = 500
+Private Const TOOLKIT_PROGRESS_PAIR_BATCH As Long = 10000
 
 Private mToolkitOperationDepth As Long
 Private mToolkitPrevScreenUpdating As Boolean
@@ -210,6 +213,27 @@ Private Sub Toolkit_ProgressClose()
     Application.StatusBar = False
     DoEvents
     On Error GoTo 0
+End Sub
+
+Private Function Toolkit_ShouldShowRowProgress(ByVal totalRows As Long) As Boolean
+    Toolkit_ShouldShowRowProgress = (totalRows > TOOLKIT_PROGRESS_ROW_THRESHOLD)
+End Function
+
+Private Sub Toolkit_RowProgressStart(ByVal title As String, ByVal totalRows As Long, ByVal message As String)
+    If Toolkit_ShouldShowRowProgress(totalRows) Then Toolkit_ProgressShow title, message, totalRows
+End Sub
+
+Private Sub Toolkit_RowProgressUpdate(ByVal processedRows As Long, ByVal totalRows As Long, ByVal message As String)
+    If Not Toolkit_ShouldShowRowProgress(totalRows) Then Exit Sub
+    If processedRows <= 1 _
+       Or processedRows >= totalRows _
+       Or processedRows Mod TOOLKIT_PROGRESS_BATCH_ROWS = 0 Then
+        Toolkit_ProgressUpdate processedRows, totalRows, message
+    End If
+End Sub
+
+Private Sub Toolkit_RowProgressClose(ByVal totalRows As Long)
+    If Toolkit_ShouldShowRowProgress(totalRows) Then Toolkit_ProgressClose
 End Sub
 
 Public Sub Toolkit_SelectA1OnAllSheets()
@@ -876,23 +900,32 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Dim changedCount As Long
     Dim skippedFormulaCount As Long
     Dim cleaned As String
+    Dim totalRows As Long
+    totalRows = outputRange.Rows.Count
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
-    For Each cell In outputRange.Cells
-        If cell.HasFormula Then
-            skippedFormulaCount = skippedFormulaCount + 1
-        Else
-            cleaned = CompanyName_CleanOne(CStr(cell.Value), options)
-            If CStr(cell.Value) <> cleaned Then
-                cell.NumberFormat = "@"
-                cell.Value = cleaned
-                changedCount = changedCount + 1
+    Toolkit_RowProgressStart "기업체명 정리", totalRows, "정리 준비 중"
+    Dim relRow As Long, relCol As Long
+    For relRow = 1 To outputRange.Rows.Count
+        For relCol = 1 To outputRange.Columns.Count
+            Set cell = outputRange.Cells(relRow, relCol)
+            If cell.HasFormula Then
+                skippedFormulaCount = skippedFormulaCount + 1
+            Else
+                cleaned = CompanyName_CleanOne(CStr(cell.Value), options)
+                If CStr(cell.Value) <> cleaned Then
+                    cell.NumberFormat = "@"
+                    cell.Value = cleaned
+                    changedCount = changedCount + 1
+                End If
             End If
-        End If
-    Next cell
+        Next relCol
+        Toolkit_RowProgressUpdate relRow, totalRows, "기업체명 정리 중: " & CStr(relRow) & "/" & CStr(totalRows) & "행"
+    Next relRow
 
     outputRange.Columns.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
     MsgBox changedCount & "개 기업체명/사업체명을 정리했습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
@@ -900,6 +933,7 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Exit Sub
 
 ErrHandler:
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
     MsgBox "기업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업체명 정리"
 End Sub
@@ -1210,6 +1244,10 @@ Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
     outputCol = workRange.Column + workRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outputCol, 2, "주소 유형 판별") Then Exit Sub
 
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStartRow + 1)
+
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
     If headerRow > 0 Then
@@ -1225,6 +1263,7 @@ Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
     Dim sourceAddress As String
     Dim classified As Variant
 
+    Toolkit_RowProgressStart "주소 유형 판별", totalRows, "주소 유형 판별 준비 중"
     For r = dataStartRow To lastRow
         sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
         If Len(sourceAddress) > 0 Then
@@ -1238,15 +1277,23 @@ Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
                 Case Else: unknownCount = unknownCount + 1
             End Select
         End If
+        Toolkit_RowProgressUpdate r - dataStartRow + 1, totalRows, "주소 유형 판별 중: " & CStr(r - dataStartRow + 1) & "/" & CStr(totalRows) & "행"
     Next r
 
     ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 1)).EntireColumn.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
 
     MsgBox "주소 유형 판별을 완료했습니다." & vbCrLf & _
            "도로명주소: " & roadCount & "건" & vbCrLf & _
            "법정/행정동 기준 주소: " & dongCount & "건" & vbCrLf & _
            "확인 필요: " & unknownCount & "건", vbInformation, "주소 유형 판별"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "주소 유형 판별 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 유형 판별"
 End Sub
 
 Public Sub Address_SplitDongAndRoad()
@@ -1292,6 +1339,10 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
     outputCol = workRange.Column + workRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outputCol, 2, "주소 체계 분리") Then Exit Sub
 
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStartRow + 1)
+
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 2).Insert Shift:=xlToRight
     If headerRow > 0 Then
@@ -1307,6 +1358,7 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
     Dim sourceAddress As String
     Dim splitResult As Variant
 
+    Toolkit_RowProgressStart "주소 체계 분리", totalRows, "주소 체계 분리 준비 중"
     For r = dataStartRow To lastRow
         sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
         If Len(sourceAddress) > 0 Then
@@ -1315,15 +1367,23 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
             ws.Cells(r, outputCol + 1).Value = CStr(splitResult(1))
             If CBool(splitResult(2)) Then matchedCount = matchedCount + 1 Else heuristicCount = heuristicCount + 1
         End If
+        Toolkit_RowProgressUpdate r - dataStartRow + 1, totalRows, "주소 체계 분리 중: " & CStr(r - dataStartRow + 1) & "/" & CStr(totalRows) & "행"
     Next r
 
     ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 1)).EntireColumn.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
 
     MsgBox "주소 체계 분리를 완료했습니다." & vbCrLf & _
            "변환표 매칭: " & matchedCount & "건" & vbCrLf & _
            "주소 형태 기반 분리: " & heuristicCount & "건" & vbCrLf & _
            "변환표가 있으면 지번/도로명 양방향 매칭 정확도가 높아집니다.", vbInformation, "주소 체계 분리"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "주소 체계 분리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 체계 분리"
 End Sub
 
 Public Sub Address_CombineDongAndRoad()
@@ -1391,6 +1451,10 @@ Private Sub Address_CombineRangeDongAndRoad(ByVal dongRange As Range, ByVal road
     outputCol = Application.Max(dongRange.Column + dongRange.Columns.Count, roadRange.Column + roadRange.Columns.Count)
     If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "주소 통합") Then Exit Sub
 
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStartRow + 1)
+
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Insert Shift:=xlToRight
     If headerRow > 0 Then
@@ -1403,6 +1467,7 @@ Private Sub Address_CombineRangeDongAndRoad(ByVal dongRange As Range, ByVal road
     Dim roadSelectedCount As Long
     Dim dongSelectedCount As Long
     Dim blankCount As Long
+    Toolkit_RowProgressStart "주소 통합", totalRows, "주소 통합 준비 중"
     For r = dataStartRow To lastRow
         Dim dongAddress As String
         Dim roadAddress As String
@@ -1419,15 +1484,23 @@ Private Sub Address_CombineRangeDongAndRoad(ByVal dongRange As Range, ByVal road
         Else
             dongSelectedCount = dongSelectedCount + 1
         End If
+        Toolkit_RowProgressUpdate r - dataStartRow + 1, totalRows, "주소 통합 중: " & CStr(r - dataStartRow + 1) & "/" & CStr(totalRows) & "행"
     Next r
 
     ws.Columns(outputCol).AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
 
     MsgBox "분할 주소 통합을 완료했습니다." & vbCrLf & _
            "도로명주소 사용: " & roadSelectedCount & "건" & vbCrLf & _
            "동 기준 주소 사용: " & dongSelectedCount & "건" & vbCrLf & _
            "빈값: " & blankCount & "건", vbInformation, "주소 통합"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "주소 통합 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 통합"
 End Sub
 
 Private Function Address_ChooseCombinedAddress(ByVal dongAddress As String, ByVal roadAddress As String, ByVal preference As String) As String
@@ -1490,6 +1563,10 @@ Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal m
     outputCol = workRange.Column + workRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outputCol, 3, "주소 변환") Then Exit Sub
 
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStartRow + 1)
+
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     ws.Columns(outputCol).Resize(, 3).Insert Shift:=xlToRight
     If headerRow > 0 Then
@@ -1502,6 +1579,7 @@ Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal m
     ws.Columns(outputCol).Resize(, 3).NumberFormat = "@"
 
     Dim r As Long, successCount As Long, failCount As Long
+    Toolkit_RowProgressStart "도로명주소 변환", totalRows, "주소 변환 준비 중"
     For r = dataStartRow To lastRow
         Dim sourceAddress As String
         sourceAddress = Trim$(CStr(ws.Cells(r, workRange.Column).Value))
@@ -1518,14 +1596,22 @@ Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal m
                 failCount = failCount + 1
             End If
         End If
+        Toolkit_RowProgressUpdate r - dataStartRow + 1, totalRows, "주소 변환 중: " & CStr(r - dataStartRow + 1) & "/" & CStr(totalRows) & "행"
     Next r
 
     ws.Range(ws.Cells(firstRow, outputCol), ws.Cells(lastRow, outputCol + 2)).EntireColumn.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
 
     MsgBox "도로명주소 변환을 완료했습니다." & vbCrLf & _
            "성공: " & successCount & "건" & vbCrLf & _
            "실패: " & failCount & "건", vbInformation, "도로명주소 변환"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "도로명주소 변환 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "도로명주소 변환"
 End Sub
 
 Private Function Address_FindMappingRange(ByVal wb As Workbook) As Range
@@ -6143,11 +6229,20 @@ Public Sub Roster_DetectDuplicates()
     Dim r1 As Long, r2 As Long, outRow As Long: outRow = 2
     Dim score As Double, reason As String, grade As String
     Dim maxPairs As Long: maxPairs = 0
+    Dim totalRows As Long: totalRows = Application.Max(0, dataRange.Rows.Count - 1)
+    Dim pairPulseCount As Long
 
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "중복 업체 탐지", totalRows, "중복 비교 준비 중"
     For r1 = dataRange.Row + 1 To lastRow - 1
         For r2 = r1 + 1 To lastRow
             score = Roster_DuplicateScore(dataRange.Worksheet, r1, r2, dataRange, nameCol, addressCol, phoneCol, bizCol, reason)
+            pairPulseCount = pairPulseCount + 1
+            If Toolkit_ShouldShowRowProgress(totalRows) And pairPulseCount >= TOOLKIT_PROGRESS_PAIR_BATCH Then
+                pairPulseCount = 0
+                DoEvents
+            End If
             If score >= 55 Then
                 grade = Roster_DuplicateGrade(score)
                 Roster_WriteArray outWs, outRow, 1, Array(r1, r2, grade, Round(score, 1), reason, _
@@ -6159,10 +6254,18 @@ Public Sub Roster_DetectDuplicates()
                 maxPairs = maxPairs + 1
             End If
         Next r2
+        Toolkit_RowProgressUpdate r1 - dataRange.Row, totalRows, "중복 비교 중: 기준 행 " & CStr(r1 - dataRange.Row) & "/" & CStr(totalRows)
     Next r1
     outWs.Columns.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
     MsgBox "중복 업체 탐지를 완료했습니다." & vbCrLf & "의심 쌍: " & maxPairs & "건", vbInformation, "중복 업체 탐지"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "중복 업체 탐지 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "중복 업체 탐지"
 End Sub
 
 Public Sub Roster_QualityReport()
@@ -6198,21 +6301,74 @@ Public Sub Roster_QualityReport()
     Dim totalRows As Long: totalRows = Application.Max(0, dataRange.Rows.Count - 1)
     Roster_WriteArray outWs, outRow, 1, Array("전체 데이터 행", totalRows, "헤더 제외 행 수"): outRow = outRow + 1
 
-    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, nameCol, "업체명 빈값")
-    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, addressCol, "주소 빈값")
-    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, phoneCol, "전화번호 빈값")
-    outRow = Roster_WriteMissingSummary(outWs, outRow, ws, dataRange, bizCol, "사업자번호 빈값")
+    Dim blankName As Long, blankAddress As Long, blankPhone As Long, blankBiz As Long
+    Dim invalidPhone As Long, invalidBiz As Long
+    Dim roadAddress As Long, dongAddress As Long, unknownAddress As Long
+    Dim r As Long, textValue As String, phoneResult As Variant, addressResult As Variant, digits As String
 
-    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", Roster_CountInvalidPhones(ws, dataRange, phoneCol), "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
-    If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", Roster_CountInvalidBizNo(ws, dataRange, bizCol), "숫자 10자리 여부 기준"): outRow = outRow + 1
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "명부 품질 진단", totalRows, "명부 품질 진단 준비 중"
+    For r = dataRange.Row + 1 To lastRow
+        If nameCol > 0 Then
+            If Len(Trim$(CStr(ws.Cells(r, dataRange.Column + nameCol - 1).Value))) = 0 Then blankName = blankName + 1
+        End If
+        If addressCol > 0 Then
+            textValue = Trim$(CStr(ws.Cells(r, dataRange.Column + addressCol - 1).Value))
+            If Len(textValue) = 0 Then
+                blankAddress = blankAddress + 1
+            Else
+                addressResult = Address_ClassifyOneAddress(textValue)
+                Select Case CStr(addressResult(0))
+                    Case "도로명주소": roadAddress = roadAddress + 1
+                    Case "법정/행정동 기준 주소": dongAddress = dongAddress + 1
+                    Case Else: unknownAddress = unknownAddress + 1
+                End Select
+            End If
+        End If
+        If phoneCol > 0 Then
+            textValue = Trim$(CStr(ws.Cells(r, dataRange.Column + phoneCol - 1).Value))
+            If Len(textValue) = 0 Then
+                blankPhone = blankPhone + 1
+            Else
+                phoneResult = Phone_ClassifyOne(textValue)
+                If CStr(phoneResult(1)) <> "정상" Then invalidPhone = invalidPhone + 1
+            End If
+        End If
+        If bizCol > 0 Then
+            textValue = Trim$(CStr(ws.Cells(r, dataRange.Column + bizCol - 1).Value))
+            If Len(textValue) = 0 Then
+                blankBiz = blankBiz + 1
+            Else
+                digits = DigitsOnly(textValue)
+                If Len(digits) > 0 And Len(digits) <> 10 Then invalidBiz = invalidBiz + 1
+            End If
+        End If
+        Toolkit_RowProgressUpdate r - dataRange.Row, totalRows, "명부 품질 진단 중: " & CStr(r - dataRange.Row) & "/" & CStr(totalRows) & "행"
+    Next r
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+
+    If nameCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", blankName, "빈값 여부"): outRow = outRow + 1
+    If addressCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", blankAddress, "빈값 여부"): outRow = outRow + 1
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 빈값", blankPhone, "빈값 여부"): outRow = outRow + 1
+    If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 빈값", blankBiz, "빈값 여부"): outRow = outRow + 1
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If addressCol > 0 Then
-        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", Roster_CountAddressType(ws, dataRange, addressCol, "도로명주소"), "주소 유형 판별 기준"): outRow = outRow + 1
-        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", Roster_CountAddressType(ws, dataRange, addressCol, "법정/행정동 기준 주소"), "주소 유형 판별 기준"): outRow = outRow + 1
-        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", Roster_CountAddressType(ws, dataRange, addressCol, "확인 필요"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", dongAddress, "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", unknownAddress, "주소 유형 판별 기준"): outRow = outRow + 1
     End If
 
     outWs.Columns.AutoFit
     MsgBox "명부 품질 진단 리포트를 생성했습니다.", vbInformation, "명부 품질 진단"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "명부 품질 진단 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "명부 품질 진단"
 End Sub
 
 Private Function Roster_SelectDetectionMode(ByVal title As String) As VbMsgBoxResult
@@ -6321,18 +6477,70 @@ Private Sub Roster_QualityReportManual()
     Dim outRow As Long: outRow = 2
     Roster_WriteArray outWs, outRow, 1, Array("검증 방식", "수동 선택", IIf(hasHeader, "첫 행 헤더 제외", "첫 행부터 데이터")): outRow = outRow + 1
 
-    If selectedItems.Exists("1") Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", Roster_CountBlankRange(nameRange, hasHeader), "수동 선택 범위 빈값 여부"): outRow = outRow + 1
-    If selectedItems.Exists("2") Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", Roster_CountBlankRange(addressRange, hasHeader), "수동 선택 범위 빈값 여부"): outRow = outRow + 1
-    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", Roster_CountInvalidPhonesRange(phoneRange, hasHeader), "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
-    If selectedItems.Exists("4") Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", Roster_CountInvalidBizNoRange(bizRange, hasHeader), "숫자 10자리 여부 기준"): outRow = outRow + 1
+    Dim baseRange As Range
+    Set baseRange = Roster_FirstAvailableRange(nameRange, addressRange, phoneRange, bizRange)
+    Dim firstDataRow As Long: firstDataRow = Roster_FirstDataRow(baseRange, hasHeader)
+    Dim lastRow As Long: lastRow = baseRange.Row + baseRange.Rows.Count - 1
+    Dim totalRows As Long: totalRows = Application.Max(0, lastRow - firstDataRow + 1)
+
+    Dim blankName As Long, blankAddress As Long
+    Dim invalidPhone As Long, invalidBiz As Long
+    Dim roadAddress As Long, dongAddress As Long, unknownAddress As Long
+    Dim r As Long, textValue As String, result As Variant, digits As String
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "명부 품질 진단", totalRows, "수동 선택 명부 품질 진단 준비 중"
+    For r = firstDataRow To lastRow
+        If selectedItems.Exists("1") Then
+            If Len(Roster_RangeTextAtRow(nameRange, r)) = 0 Then blankName = blankName + 1
+        End If
+        If selectedItems.Exists("2") Or selectedItems.Exists("5") Then
+            textValue = Roster_RangeTextAtRow(addressRange, r)
+            If selectedItems.Exists("2") And Len(textValue) = 0 Then blankAddress = blankAddress + 1
+            If selectedItems.Exists("5") And Len(textValue) > 0 Then
+                result = Address_ClassifyOneAddress(textValue)
+                Select Case CStr(result(0))
+                    Case "도로명주소": roadAddress = roadAddress + 1
+                    Case "법정/행정동 기준 주소": dongAddress = dongAddress + 1
+                    Case Else: unknownAddress = unknownAddress + 1
+                End Select
+            End If
+        End If
+        If selectedItems.Exists("3") Then
+            textValue = Roster_RangeTextAtRow(phoneRange, r)
+            If Len(textValue) > 0 Then
+                result = Phone_ClassifyOne(textValue)
+                If CStr(result(1)) <> "정상" Then invalidPhone = invalidPhone + 1
+            End If
+        End If
+        If selectedItems.Exists("4") Then
+            digits = DigitsOnly(Roster_RangeTextAtRow(bizRange, r))
+            If Len(digits) > 0 And Len(digits) <> 10 Then invalidBiz = invalidBiz + 1
+        End If
+        Toolkit_RowProgressUpdate r - firstDataRow + 1, totalRows, "수동 품질 진단 중: " & CStr(r - firstDataRow + 1) & "/" & CStr(totalRows) & "행"
+    Next r
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+
+    If selectedItems.Exists("1") Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", blankName, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
+    If selectedItems.Exists("2") Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", blankAddress, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
+    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If selectedItems.Exists("4") Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If selectedItems.Exists("5") Then
-        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", Roster_CountAddressTypeRange(addressRange, hasHeader, "도로명주소"), "주소 유형 판별 기준"): outRow = outRow + 1
-        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", Roster_CountAddressTypeRange(addressRange, hasHeader, "법정/행정동 기준 주소"), "주소 유형 판별 기준"): outRow = outRow + 1
-        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", Roster_CountAddressTypeRange(addressRange, hasHeader, "확인 필요"), "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("법정/행정동 기준 주소", dongAddress, "주소 유형 판별 기준"): outRow = outRow + 1
+        Roster_WriteArray outWs, outRow, 1, Array("주소 확인 필요", unknownAddress, "주소 유형 판별 기준"): outRow = outRow + 1
     End If
 
     outWs.Columns.AutoFit
     MsgBox "수동 선택 기반 명부 품질 진단 리포트를 생성했습니다." & vbCrLf & outWs.Name, vbInformation, "명부 품질 진단"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "수동 선택 기반 명부 품질 진단 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "명부 품질 진단"
 End Sub
 
 Private Sub Roster_DetectDuplicatesManual()
@@ -6395,11 +6603,20 @@ Private Sub Roster_DetectDuplicatesManual()
 
     Dim r1 As Long, r2 As Long, outRow As Long: outRow = 2
     Dim score As Double, reason As String, grade As String, maxPairs As Long
+    Dim totalRows As Long: totalRows = Application.Max(0, lastRow - firstDataRow + 1)
+    Dim pairPulseCount As Long
 
+    On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "중복 업체 탐지", totalRows, "수동 선택 중복 비교 준비 중"
     For r1 = firstDataRow To lastRow - 1
         For r2 = r1 + 1 To lastRow
             score = Roster_DuplicateScoreManual(ws, r1, r2, nameRange, addressRange, phoneRange, bizRange, reason)
+            pairPulseCount = pairPulseCount + 1
+            If Toolkit_ShouldShowRowProgress(totalRows) And pairPulseCount >= TOOLKIT_PROGRESS_PAIR_BATCH Then
+                pairPulseCount = 0
+                DoEvents
+            End If
             If score >= 55 Then
                 grade = Roster_DuplicateGrade(score)
                 Roster_WriteArray outWs, outRow, 1, Array(r1, r2, grade, Round(score, 1), reason, _
@@ -6411,10 +6628,18 @@ Private Sub Roster_DetectDuplicatesManual()
                 maxPairs = maxPairs + 1
             End If
         Next r2
+        Toolkit_RowProgressUpdate r1 - firstDataRow + 1, totalRows, "수동 중복 비교 중: 기준 행 " & CStr(r1 - firstDataRow + 1) & "/" & CStr(totalRows)
     Next r1
     outWs.Columns.AutoFit
+    Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
     MsgBox "수동 선택 기반 중복 업체 탐지를 완료했습니다." & vbCrLf & "의심 쌍: " & maxPairs & "건", vbInformation, "중복 업체 탐지"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "수동 선택 기반 중복 업체 탐지 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "중복 업체 탐지"
 End Sub
 
 Public Sub Roster_MatchCompanyNames()
@@ -6437,12 +6662,19 @@ Public Sub Roster_MatchCompanyNames()
 
     Dim outCol As Long: outCol = workRange.Column + workRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outCol, 2, "업체명 유사도 매칭") Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStart + 1)
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
     ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
     ws.Cells(firstRow, outCol).Value = "업체명 표준화"
     ws.Cells(firstRow, outCol + 1).Value = "유사그룹"
 
     Dim dict As Object: Set dict = CreateObject("Scripting.Dictionary")
     Dim r As Long, key As String, groupNo As Long, groupLabel As String
+    Toolkit_RowProgressStart "업체명 유사도 매칭", totalRows, "업체명 매칭 준비 중"
     For r = dataStart To lastRow
         key = Roster_NormalizeCompanyName(CStr(ws.Cells(r, workRange.Column).Value))
         ws.Cells(r, outCol).Value = key
@@ -6455,9 +6687,18 @@ Public Sub Roster_MatchCompanyNames()
             If Not dict.Exists(key) Then dict(key) = groupLabel
             ws.Cells(r, outCol + 1).Value = groupLabel
         End If
+        Toolkit_RowProgressUpdate r - dataStart + 1, totalRows, "업체명 매칭 중: " & CStr(r - dataStart + 1) & "/" & CStr(totalRows) & "행"
     Next r
     ws.Columns(outCol).Resize(, 2).AutoFit
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
     MsgBox "업체명 표준화와 유사그룹 생성을 완료했습니다.", vbInformation, "업체명 유사도 매칭"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "업체명 유사도 매칭 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "업체명 유사도 매칭"
 End Sub
 
 Public Sub Address_SplitAdministrativeParts()
@@ -6476,16 +6717,32 @@ Public Sub Address_SplitAdministrativeParts()
 
     Dim outCol As Long: outCol = addressRange.Column + addressRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outCol, 4, "행정구역 분해") Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStart + 1)
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
     ws.Columns(outCol).Resize(, 4).Insert Shift:=xlToRight
     Roster_WriteArray ws, firstRow, outCol, Array("광역시도", "시군구", "읍면동", "상세주소")
 
     Dim r As Long, parts As Variant
+    Toolkit_RowProgressStart "행정구역 분해", totalRows, "행정구역 분해 준비 중"
     For r = dataStart To lastRow
         parts = Address_ParseAdministrativeParts(CStr(ws.Cells(r, addressRange.Column).Value))
         Roster_WriteArray ws, r, outCol, parts
+        Toolkit_RowProgressUpdate r - dataStart + 1, totalRows, "행정구역 분해 중: " & CStr(r - dataStart + 1) & "/" & CStr(totalRows) & "행"
     Next r
     ws.Columns(outCol).Resize(, 4).AutoFit
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
     MsgBox "행정구역 분해를 완료했습니다.", vbInformation, "행정구역 분해"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "행정구역 분해 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "행정구역 분해"
 End Sub
 
 Public Sub Phone_ValidateSelection()
@@ -6504,16 +6761,32 @@ Public Sub Phone_ValidateSelection()
 
     Dim outCol As Long: outCol = phoneRange.Column + phoneRange.Columns.Count
     If Not Toolkit_CanInsertColumns(ws, outCol, 2, "전화번호 유효성 검사") Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStart + 1)
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
     ws.Columns(outCol).Resize(, 2).Insert Shift:=xlToRight
     Roster_WriteArray ws, firstRow, outCol, Array("전화번호 유형", "전화번호 유효성")
 
     Dim r As Long, result As Variant
+    Toolkit_RowProgressStart "전화번호 유효성 검사", totalRows, "전화번호 검사 준비 중"
     For r = dataStart To lastRow
         result = Phone_ClassifyOne(CStr(ws.Cells(r, phoneRange.Column).Value))
         Roster_WriteArray ws, r, outCol, result
+        Toolkit_RowProgressUpdate r - dataStart + 1, totalRows, "전화번호 검사 중: " & CStr(r - dataStart + 1) & "/" & CStr(totalRows) & "행"
     Next r
     ws.Columns(outCol).Resize(, 2).AutoFit
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
     MsgBox "전화번호 유효성 검사를 완료했습니다.", vbInformation, "전화번호 유효성 검사"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "전화번호 유효성 검사 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "전화번호 유효성 검사"
 End Sub
 
 Public Sub SPSS_ExtractTableMetadata()
