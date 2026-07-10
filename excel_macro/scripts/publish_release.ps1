@@ -286,6 +286,258 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-SampleDesignSetupUserForm {
+    param($Workbook)
+
+    $script:publishStage = "sample setup form: create component"
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmSampleDesignSetup"
+    $designer = $form.Designer
+    $script:publishStage = "sample setup form: set form properties"
+    $form.Properties.Item("Caption").Value = "표본설계 설정 마법사"
+    $form.Properties.Item("Width").Value = 650
+    $form.Properties.Item("Height").Value = 570
+    $form.Properties.Item("ScrollBars").Value = 2
+
+    $script:publishStage = "sample setup form: title"
+    $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
+    $lblTitle.Caption = "표본설계 시트를 만들기 전에 기본 목표와 사용할 쿼터 변수를 먼저 지정합니다."
+    $lblTitle.Left = 12
+    $lblTitle.Top = 10
+    $lblTitle.Width = 600
+    $lblTitle.Height = 28
+    $lblTitle.WordWrap = $true
+
+    $script:publishStage = "sample setup form: input mode options"
+    $optList = $designer.Controls.Add("Forms.OptionButton.1", "optList", $true)
+    $optList.Caption = "리스트형 입력"
+    $optList.Left = 18
+    $optList.Top = 48
+    $optList.Width = 120
+    $optList.Height = 20
+    $optList.Value = $true
+
+    $optTable = $designer.Controls.Add("Forms.OptionButton.1", "optTable", $true)
+    $optTable.Caption = "집계표형 입력"
+    $optTable.Left = 148
+    $optTable.Top = 48
+    $optTable.Width = 120
+    $optTable.Height = 20
+
+    $script:publishStage = "sample setup form: basic fields"
+    $basic = @(
+        @("lblTargetN", "전체 목표 표본수", "txtTargetN", "800", 18, 86),
+        @("lblAlpha", "멱배분 alpha", "txtAlpha", "0.5", 18, 146),
+        @("lblMinN", "기본 최소표본", "txtMinN", "0", 330, 116),
+        @("lblMaxN", "기본 최대표본", "txtMaxN", "0", 330, 146)
+    )
+    foreach ($item in $basic) {
+        $lbl = $designer.Controls.Add("Forms.Label.1", $item[0], $true)
+        $lbl.Caption = $item[1]
+        $lbl.Left = $item[4]
+        $lbl.Top = $item[5]
+        $lbl.Width = 110
+        $lbl.Height = 18
+
+        $txt = $designer.Controls.Add("Forms.TextBox.1", $item[2], $true)
+        $txt.Text = $item[3]
+        $txt.Left = $item[4] + 116
+        $txt.Top = $item[5] - 2
+        $txt.Width = 120
+        $txt.Height = 20
+    }
+
+    $script:publishStage = "sample setup form: method combo"
+    $lblMethod = $designer.Controls.Add("Forms.Label.1", "lblMethod", $true)
+    $lblMethod.Caption = "배분 방식"
+    $lblMethod.Left = 18
+    $lblMethod.Top = 116
+    $lblMethod.Width = 110
+    $lblMethod.Height = 18
+
+    $cboMethod = $designer.Controls.Add("Forms.ComboBox.1", "cboMethod", $true)
+    $cboMethod.Left = 134
+    $cboMethod.Top = 114
+    $cboMethod.Width = 150
+    $cboMethod.Height = 20
+
+    $script:publishStage = "sample setup form: quota labels"
+    $lblQuota = $designer.Controls.Add("Forms.Label.1", "lblQuota", $true)
+    $lblQuota.Caption = "사용할 쿼터 변수"
+    $lblQuota.Left = 18
+    $lblQuota.Top = 192
+    $lblQuota.Width = 180
+    $lblQuota.Height = 18
+
+    $lblQuotaHelp = $designer.Controls.Add("Forms.Label.1", "lblQuotaHelp", $true)
+    $lblQuotaHelp.Caption = "체크한 변수만 계산에 사용됩니다. 변수명은 프로젝트 용어에 맞게 직접 수정할 수 있습니다."
+    $lblQuotaHelp.Left = 160
+    $lblQuotaHelp.Top = 192
+    $lblQuotaHelp.Width = 460
+    $lblQuotaHelp.Height = 18
+
+    $script:publishStage = "sample setup form: quota controls"
+    $quotaNames = @("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")
+    for ($i = 1; $i -le 8; $i++) {
+        $row = [int][Math]::Floor(($i - 1) / 2)
+        $col = [int](($i - 1) % 2)
+        $left = [int](18 + ($col * 306))
+        $top = [int](222 + ($row * 34))
+
+        $chk = $designer.Controls.Add("Forms.CheckBox.1", "chkQuota$i", $true)
+        $chk.Caption = "사용"
+        $chk.Left = $left
+        $chk.Top = $top
+        $chk.Width = 54
+        $chk.Height = 18
+        $chk.Value = ($i -le 3)
+
+        $txt = $designer.Controls.Add("Forms.TextBox.1", "txtQuota$i", $true)
+        $txt.Text = $quotaNames[$i - 1]
+        $txt.Left = $left + 58
+        $txt.Top = $top - 2
+        $txt.Width = 190
+        $txt.Height = 20
+    }
+
+    $script:publishStage = "sample setup form: guide and buttons"
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Caption = "그룹별 목표 표본수가 필요한 경우 시트 생성 후 '목표표본 그룹표'에 조건과 목표표본수를 입력하세요. 예: 산업=SW AND 지역=수도권 목표 300"
+    $lblGuide.Left = 18
+    $lblGuide.Top = 370
+    $lblGuide.Width = 590
+    $lblGuide.Height = 42
+    $lblGuide.WordWrap = $true
+
+    $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOK.Caption = "시트 생성"
+    $cmdOK.Left = 422
+    $cmdOK.Top = 486
+    $cmdOK.Width = 90
+    $cmdOK.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 522
+    $cmdCancel.Top = 486
+    $cmdCancel.Width = 78
+    $cmdCancel.Height = 28
+
+    $script:publishStage = "sample setup form: code module"
+    $formCode = @'
+Option Explicit
+Public Cancelled As Boolean
+
+Private Sub UserForm_Initialize()
+    Cancelled = True
+    cboMethod.Clear
+    cboMethod.AddItem "단순 비례"
+    cboMethod.AddItem "제곱근 비례"
+    cboMethod.AddItem "멱배분"
+    cboMethod.AddItem "균등 배분"
+    cboMethod.AddItem "사용자 지정 가중"
+    cboMethod.ListIndex = 0
+End Sub
+
+Private Sub cboMethod_Change()
+    txtAlpha.Enabled = (cboMethod.Value = "멱배분")
+End Sub
+
+Private Sub cmdOK_Click()
+    If CLng(Val(txtTargetN.Text)) <= 0 Then
+        MsgBox "전체 목표 표본수는 1 이상의 숫자로 입력하세요.", vbExclamation, "표본설계"
+        txtTargetN.SetFocus
+        Exit Sub
+    End If
+    If cboMethod.Value = "멱배분" And CDbl(Val(txtAlpha.Text)) <= 0 Then
+        MsgBox "멱배분 alpha는 0보다 큰 숫자로 입력하세요.", vbExclamation, "표본설계"
+        txtAlpha.SetFocus
+        Exit Sub
+    End If
+
+    Dim hasQuota As Boolean
+    Dim i As Long
+    For i = 1 To 8
+        If Controls("chkQuota" & CStr(i)).Value Then
+            If Len(Trim$(CStr(Controls("txtQuota" & CStr(i)).Text))) = 0 Then
+                MsgBox "사용할 쿼터 변수명은 비워둘 수 없습니다.", vbExclamation, "표본설계"
+                Controls("txtQuota" & CStr(i)).SetFocus
+                Exit Sub
+            End If
+            hasQuota = True
+        End If
+    Next i
+    If Not hasQuota Then
+        MsgBox "최소 1개 이상의 쿼터 변수를 선택하세요.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Cancelled = False
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    Hide
+End Sub
+
+Public Property Get InputMode() As String
+    If optTable.Value Then
+        InputMode = "table"
+    Else
+        InputMode = "list"
+    End If
+End Property
+
+Public Property Get TargetN() As String
+    TargetN = CStr(txtTargetN.Text)
+End Property
+
+Public Property Get MethodName() As String
+    MethodName = CStr(cboMethod.Value)
+End Property
+
+Public Property Get AlphaValue() As String
+    AlphaValue = CStr(txtAlpha.Text)
+End Property
+
+Public Property Get MinN() As String
+    MinN = CStr(txtMinN.Text)
+End Property
+
+Public Property Get MaxN() As String
+    MaxN = CStr(txtMaxN.Text)
+End Property
+
+Public Property Get QuotaHeaders() As String
+    Dim i As Long
+    For i = 1 To 8
+        If i > 1 Then QuotaHeaders = QuotaHeaders & "|"
+        QuotaHeaders = QuotaHeaders & Trim$(CStr(Controls("txtQuota" & CStr(i)).Text))
+    Next i
+End Property
+
+Public Property Get QuotaEnabled() As String
+    Dim i As Long
+    For i = 1 To 8
+        If i > 1 Then QuotaEnabled = QuotaEnabled & "|"
+        If Controls("chkQuota" & CStr(i)).Value Then
+            QuotaEnabled = QuotaEnabled & "1"
+        Else
+            QuotaEnabled = QuotaEnabled & "0"
+        End If
+    Next i
+End Property
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        Cancelled = True
+    End If
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-PopulationListifyPreviewUserForm {
     param($Workbook)
 
@@ -2455,6 +2707,7 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="선택 범위 안의 여러 집계표 블록을 자동 탐지하고 미리보기 창에서 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
+          <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>
@@ -2558,33 +2811,51 @@ $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 $workbook = $null
+$publishStage = "start"
 try {
     $workbook = $excel.Workbooks.Open($DevWorkbook)
     try {
+        $publishStage = "remove old VBA components"
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmSampleDesignSetup" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
+        $publishStage = "import MacroToolkit module"
         $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
         $imported.Name = "MacroToolkit"
+        $publishStage = "add frmToolkitButtonMenu"
         Add-ToolkitButtonMenuUserForm -Workbook $workbook
+        $publishStage = "add frmToolkitCheckListMenu"
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
+        $publishStage = "add frmSampleDesignSetup"
+        Add-SampleDesignSetupUserForm -Workbook $workbook
+        $publishStage = "add frmPopulationListifyPreview"
         Add-PopulationListifyPreviewUserForm -Workbook $workbook
+        $publishStage = "add frmDatabaseMergeSetup"
         Add-DatabaseMergeSetupUserForm -Workbook $workbook
+        $publishStage = "add frmDatabaseMergeReview"
         Add-DatabaseMergeReviewUserForm -Workbook $workbook
+        $publishStage = "add frmSpssRebuildOptions"
         Add-SpssRebuildUserForm -Workbook $workbook
+        $publishStage = "add frmCompanyNameOptions"
         Add-CompanyNameOptionsUserForm -Workbook $workbook
+        $publishStage = "add frmBizStatusFieldsOptions"
         Add-BizStatusFieldsOptionsUserForm -Workbook $workbook
+        $publishStage = "add frmNaverLocalBuildOptions"
         Add-NaverLocalBuildOptionsUserForm -Workbook $workbook
+        $publishStage = "add frmNaverLocalVerifyOptions"
         Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
+        $publishStage = "add frmProgressStatus"
         Add-ProgressStatusUserForm -Workbook $workbook
+        $publishStage = "add admin dong master"
         Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
+        $publishStage = "add legal dong master"
         Add-LegalDongMasterWorksheet -Workbook $workbook -CsvPath $LegalDongMasterCsv
     }
     catch {
-        throw "Could not import VBA module into .xlam. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
+        throw "Could not import VBA module into .xlam. Stage: $publishStage. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
     }
 
     $workbook.IsAddin = $true

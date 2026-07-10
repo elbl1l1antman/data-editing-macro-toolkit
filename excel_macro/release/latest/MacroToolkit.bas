@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.15"
+Public Const TOOLKIT_VERSION As String = "1.1.16"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -127,6 +127,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A45").Value = "NaverLocal_CreateLegalDongMasterTemplate"
     ws.Range("A46").Value = "Address_CombineDongAndRoad"
     ws.Range("A47").Value = "SampleDesign_PivotPopulationList"
+    ws.Range("A48").Value = "SampleDesign_ShowGuide"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -6971,14 +6972,20 @@ Public Sub SampleDesign_CreateTemplate()
         Exit Sub
     End If
 
+    Dim setup As Object
+    Set setup = SampleDesign_GetSetupFromUser()
+    If setup Is Nothing Then Exit Sub
+
     Dim templateMode As String
-    templateMode = SampleDesign_SelectInputTemplateMode()
+    templateMode = CStr(setup("inputMode"))
     If Len(templateMode) = 0 Then Exit Sub
 
+    Dim guideWs As Worksheet
     Dim inputWs As Worksheet
     Dim tableWs As Worksheet
     Dim resultWs As Worksheet
     Dim reviewWs As Worksheet
+    Set guideWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_가이드")
     Set inputWs = SampleDesign_PrepareSheet(wb, "표본설계_입력", "표본설계 입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
     If inputWs Is Nothing Then Exit Sub
     If templateMode = "table" Then
@@ -6990,7 +6997,8 @@ Public Sub SampleDesign_CreateTemplate()
     Set reviewWs = SampleDesign_PrepareSheet(wb, "표본설계_검토", "표본설계 검토 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
     If reviewWs Is Nothing Then Exit Sub
 
-    SampleDesign_WriteInputTemplate inputWs
+    SampleDesign_WriteGuideSheet guideWs, setup, templateMode
+    SampleDesign_WriteInputTemplate inputWs, setup
     If templateMode = "table" Then SampleDesign_WriteTableInputTemplate tableWs
     SampleDesign_WriteEmptyResult resultWs
     SampleDesign_WriteEmptyReview reviewWs
@@ -6999,13 +7007,14 @@ Public Sub SampleDesign_CreateTemplate()
         tableWs.Activate
         tableWs.Range("A8").Select
         MsgBox "집계표 입력용 시트와 계산용 리스트 입력 시트를 만들었습니다." & vbCrLf & _
-               "집계표를 표본설계_집계표입력 시트에 붙여넣으면 [할당 계산] 실행 시 계산용 리스트로 자동 변환을 시도합니다.", _
+               "1) 표본설계_가이드 시트를 먼저 확인하세요." & vbCrLf & _
+               "2) 집계표를 표본설계_집계표입력 시트에 붙여넣은 뒤 [할당 계산]을 실행하세요.", _
                vbInformation, "표본설계"
     Else
         inputWs.Activate
-        inputWs.Range("B4").Select
+        inputWs.Range("A1").Select
         MsgBox "표본설계 입력/결과/검토 시트를 만들었습니다." & vbCrLf & _
-               "목표 표본 그룹표와 모집단 표를 입력한 뒤 [할당 계산]을 실행하세요.", _
+               "표본설계_가이드 시트의 체크리스트를 확인한 뒤 모집단 표를 채우고 [할당 계산]을 실행하세요.", _
                vbInformation, "표본설계"
     End If
 End Sub
@@ -7030,13 +7039,11 @@ Public Sub SampleDesign_RunAllocation()
     Dim maxN As Long
     Dim alpha As Double
     Dim methodName As String
-    minN = CLng(Val(inputWs.Range("B5").Value))
-    maxN = CLng(Val(inputWs.Range("B6").Value))
-    methodName = Trim$(CStr(inputWs.Range("B7").Value))
-    alpha = Val(inputWs.Range("B8").Value)
-    If alpha <= 0 Then alpha = 0.5
+    SampleDesign_ReadRunSettings inputWs, methodName, alpha, minN, maxN
 
     If Not SampleDesign_SelectMethod(methodName, alpha) Then Exit Sub
+    inputWs.Range("B5").Value = methodName
+    inputWs.Range("B6").Value = alpha
 
     Dim issues As Collection
     Set issues = New Collection
@@ -8092,6 +8099,139 @@ Private Function SampleDesign_DefaultQuotaHeaders() As Variant
     SampleDesign_DefaultQuotaHeaders = Array("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")
 End Function
 
+Private Function SampleDesign_DefaultQuotaEnabled() As Variant
+    SampleDesign_DefaultQuotaEnabled = Array(True, True, True, False, False, False, False, False)
+End Function
+
+Private Function SampleDesign_DefaultSetup() As Object
+    Dim setup As Object
+    Set setup = CreateObject("Scripting.Dictionary")
+    setup("inputMode") = "list"
+    setup("targetN") = 800
+    setup("methodName") = "단순 비례"
+    setup("alpha") = 0.5
+    setup("minN") = 0
+    setup("maxN") = 0
+    setup("quotaHeaders") = SampleDesign_DefaultQuotaHeaders()
+    setup("quotaEnabled") = SampleDesign_DefaultQuotaEnabled()
+    Set SampleDesign_DefaultSetup = setup
+End Function
+
+Private Function SampleDesign_GetSetupFromUser() As Object
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmSampleDesignSetup")
+    form.Show
+    If CBool(form.Cancelled) Then
+        Unload form
+        Exit Function
+    End If
+
+    Dim setup As Object
+    Set setup = SampleDesign_DefaultSetup()
+    setup("inputMode") = CStr(form.InputMode)
+    setup("targetN") = CLng(Val(form.TargetN))
+    setup("methodName") = CStr(form.MethodName)
+    setup("alpha") = CDbl(Val(form.AlphaValue))
+    setup("minN") = CLng(Val(form.MinN))
+    setup("maxN") = CLng(Val(form.MaxN))
+    setup("quotaHeaders") = SampleDesign_ParsePipeText(form.QuotaHeaders, SampleDesign_DefaultQuotaHeaders())
+    setup("quotaEnabled") = SampleDesign_ParsePipeFlags(form.QuotaEnabled, SampleDesign_DefaultQuotaEnabled())
+    Unload form
+
+    Set SampleDesign_GetSetupFromUser = setup
+    Exit Function
+
+Fallback:
+    Set SampleDesign_GetSetupFromUser = SampleDesign_GetSetupFallback()
+End Function
+
+Private Function SampleDesign_GetSetupFallback() As Object
+    Dim setup As Object
+    Set setup = SampleDesign_DefaultSetup()
+
+    Dim templateMode As String
+    templateMode = SampleDesign_SelectInputTemplateMode()
+    If Len(templateMode) = 0 Then Exit Function
+    setup("inputMode") = templateMode
+
+    Dim targetInput As Variant
+    targetInput = Application.InputBox("전체 목표 표본수를 입력하세요.", "표본설계 기본 설정", setup("targetN"), Type:=1)
+    If VarType(targetInput) = vbBoolean And targetInput = False Then Exit Function
+    If CLng(targetInput) > 0 Then setup("targetN") = CLng(targetInput)
+
+    Dim quotaChoice As String
+    quotaChoice = Toolkit_CheckListMenu( _
+        "표본설계 쿼터 변수", _
+        "표본설계에 사용할 쿼터 변수를 선택하세요. 선택하지 않은 변수는 입력 시트에서 미사용 처리됩니다.", _
+        "1" & vbTab & "산업" & vbLf & _
+        "2" & vbTab & "대분류" & vbLf & _
+        "3" & vbTab & "지역" & vbLf & _
+        "4" & vbTab & "조사지역" & vbLf & _
+        "5" & vbTab & "대조지역" & vbLf & _
+        "6" & vbTab & "존" & vbLf & _
+        "7" & vbTab & "성별" & vbLf & _
+        "8" & vbTab & "연령", _
+        "1,2,3")
+    If Len(quotaChoice) > 0 Then setup("quotaEnabled") = SampleDesign_EnabledFlagsFromCsv(quotaChoice)
+
+    Set SampleDesign_GetSetupFallback = setup
+End Function
+
+Private Function SampleDesign_ParsePipeText(ByVal pipeText As String, ByVal defaults As Variant) As Variant
+    Dim parts As Variant
+    parts = Split(CStr(pipeText), "|")
+
+    Dim result() As String
+    Dim i As Long
+    ReDim result(LBound(defaults) To UBound(defaults))
+    For i = LBound(defaults) To UBound(defaults)
+        result(i) = CStr(defaults(i))
+        If i - LBound(defaults) <= UBound(parts) Then
+            If Len(Trim$(CStr(parts(i - LBound(defaults))))) > 0 Then result(i) = Trim$(CStr(parts(i - LBound(defaults))))
+        End If
+    Next i
+    SampleDesign_ParsePipeText = result
+End Function
+
+Private Function SampleDesign_ParsePipeFlags(ByVal pipeText As String, ByVal defaults As Variant) As Variant
+    Dim parts As Variant
+    parts = Split(CStr(pipeText), "|")
+
+    Dim result() As Boolean
+    Dim i As Long
+    ReDim result(LBound(defaults) To UBound(defaults))
+    For i = LBound(defaults) To UBound(defaults)
+        result(i) = CBool(defaults(i))
+        If i - LBound(defaults) <= UBound(parts) Then
+            result(i) = (CStr(parts(i - LBound(defaults))) = "1")
+        End If
+    Next i
+    SampleDesign_ParsePipeFlags = result
+End Function
+
+Private Function SampleDesign_EnabledFlagsFromCsv(ByVal csvText As String) As Variant
+    Dim defaults As Variant
+    defaults = SampleDesign_DefaultQuotaEnabled()
+
+    Dim result() As Boolean
+    Dim i As Long
+    ReDim result(LBound(defaults) To UBound(defaults))
+    For i = LBound(result) To UBound(result)
+        result(i) = False
+    Next i
+
+    Dim parts As Variant
+    parts = Split(CStr(csvText), ",")
+    For i = LBound(parts) To UBound(parts)
+        Dim idx As Long
+        idx = CLng(Val(Trim$(CStr(parts(i)))))
+        If idx >= 1 And idx <= UBound(result) - LBound(result) + 1 Then result(LBound(result) + idx - 1) = True
+    Next i
+    SampleDesign_EnabledFlagsFromCsv = result
+End Function
+
 Private Function SampleDesign_SelectInputTemplateMode() As String
     Dim choice As String
     choice = Toolkit_ButtonMenu( _
@@ -8108,60 +8248,65 @@ Private Function SampleDesign_SelectInputTemplateMode() As String
     End Select
 End Function
 
-Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
+Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet, ByVal setup As Object)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 입력"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
 
+    Dim headers As Variant
+    Dim enabled As Variant
+    headers = setup("quotaHeaders")
+    enabled = setup("quotaEnabled")
+
     ws.Range("A3").Value = "기본 설정"
     ws.Range("A3").Font.Bold = True
     ws.Range("A4").Value = "전체 목표 표본수"
-    ws.Range("B4").Value = 800
+    ws.Range("B4").Value = CLng(setup("targetN"))
     ws.Range("A5").Value = "배분 방식"
-    ws.Range("B5").Value = "단순 비례"
+    ws.Range("B5").Value = CStr(setup("methodName"))
     ws.Range("A6").Value = "멱배분 alpha"
-    ws.Range("B6").Value = 0.5
+    ws.Range("B6").Value = CDbl(setup("alpha"))
     ws.Range("A7").Value = "기본 최소표본"
-    ws.Range("B7").Value = 0
+    ws.Range("B7").Value = CLng(setup("minN"))
     ws.Range("A8").Value = "기본 최대표본"
-    ws.Range("B8").Value = 0
-    ws.Range("D4").Value = "목표표본 그룹표가 비어 있으면 B4 전체 목표 표본수로 배분합니다."
-    ws.Range("D5").Value = "그룹표가 있으면 조건이 비어 있지 않은 쿼터값을 AND 조건으로 매칭합니다."
-    ws.Range("D6").Value = "빈 조건은 wildcard입니다. 완전 빈 조건 행은 catch-all 그룹으로 쓸 수 있습니다."
-
-    Dim defaults As Variant
-    defaults = SampleDesign_DefaultQuotaHeaders()
+    ws.Range("B8").Value = CLng(setup("maxN"))
+    ws.Range("D3").Value = "필수 입력"
+    ws.Range("D4").Value = "1. B4 전체 목표 표본수를 확인합니다."
+    ws.Range("D5").Value = "2. 19행 사용여부에서 사용할 쿼터만 '사용'으로 둡니다."
+    ws.Range("D6").Value = "3. 21행부터 쿼터값과 모집단수를 입력합니다."
+    ws.Range("D7").Value = "4. 그룹별 목표가 있으면 아래 목표표본 그룹표를 채웁니다."
+    ws.Range("D8").Value = "5. 입력 후 [할당 계산] 버튼을 누릅니다."
 
     Dim i As Long
     ws.Range("A11").Value = "목표표본 그룹표"
     ws.Range("A11").Font.Bold = True
     ws.Cells(12, 1).Value = "목표그룹ID"
     ws.Cells(12, 2).Value = "목표표본수"
-    For i = LBound(defaults) To UBound(defaults)
-        ws.Cells(12, 3 + i - LBound(defaults)).Value = defaults(i)
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(12, 3 + i - LBound(headers)).Value = headers(i)
     Next i
-    ws.Cells(12, 3 + UBound(defaults) - LBound(defaults) + 1).Value = "비고"
-    SampleDesign_WriteArray ws, 13, 1, Array("G001", "", "SW", "", "수도권", "", "", "", "", "", "예: 산업=SW, 지역=수도권")
-    SampleDesign_WriteArray ws, 14, 1, Array("G002", "", "SW", "", "비수도권", "", "", "", "", "", "예: 산업=SW, 지역=비수도권")
-    SampleDesign_WriteArray ws, 15, 1, Array("G999", "", "", "", "", "", "", "", "", "", "빈 조건 catch-all 예시")
+    ws.Cells(12, 3 + UBound(headers) - LBound(headers) + 1).Value = "비고"
+    SampleDesign_WriteTargetGroupExample ws, 13, headers, "G001", "예: 특정 산업/지역 목표"
+    SampleDesign_WriteTargetGroupExample ws, 14, headers, "G002", "예: 다른 조건의 목표"
+    SampleDesign_WriteTargetGroupExample ws, 15, headers, "G999", "조건을 비우면 나머지 전체 catch-all"
 
     ws.Range("A18").Value = "모집단 표"
     ws.Range("A18").Font.Bold = True
     ws.Cells(19, 1).Value = "사용여부"
-    For i = LBound(defaults) To UBound(defaults)
-        ws.Cells(19, 2 + i - LBound(defaults)).Value = "사용"
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(19, 2 + i - LBound(headers)).Value = IIf(CBool(enabled(i)), "사용", "미사용")
     Next i
 
     Dim headerRow As Long
     headerRow = 20
     ws.Cells(headerRow, 1).Value = "쿼터ID"
-    For i = LBound(defaults) To UBound(defaults)
-        ws.Cells(headerRow, 2 + i - LBound(defaults)).Value = defaults(i)
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(headerRow, 2 + i - LBound(headers)).Value = headers(i)
     Next i
 
     Dim optionStartCol As Long
-    optionStartCol = 2 + UBound(defaults) - LBound(defaults) + 1
+    optionStartCol = 2 + UBound(headers) - LBound(headers) + 1
     ws.Cells(headerRow, optionStartCol).Value = "모집단수"
     ws.Cells(headerRow, optionStartCol + 1).Value = "우선배정여부"
     ws.Cells(headerRow, optionStartCol + 2).Value = "최소표본"
@@ -8169,9 +8314,10 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
     ws.Cells(headerRow, optionStartCol + 4).Value = "사용자가중치"
     ws.Cells(headerRow, optionStartCol + 5).Value = "비고"
 
-    SampleDesign_WriteArray ws, 21, 1, Array("Q001", "SW", "패키지SW", "수도권", "", "", "", "", "", "", "", "", "", "예시 행: 모집단수를 입력하면 계산 대상이 됩니다.")
-    SampleDesign_WriteArray ws, 22, 1, Array("Q002", "SW", "IT서비스", "비수도권", "", "", "", "", "", "", "", "", "", "")
-    SampleDesign_WriteArray ws, 23, 1, Array("Q003", "Non-SW", "제조", "수도권", "", "", "", "", "", "", "", "", "", "")
+    Dim exampleRow As Long
+    For exampleRow = 21 To 23
+        SampleDesign_WritePopulationExample ws, exampleRow, headers, enabled, optionStartCol
+    Next exampleRow
 
     With ws.Range(ws.Cells(12, 1), ws.Cells(15, optionStartCol + 1))
         .Borders.LineStyle = xlContinuous
@@ -8185,7 +8331,93 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet)
     ws.Range(ws.Cells(12, 1), ws.Cells(12, optionStartCol + 1)).Interior.Color = RGB(220, 235, 250)
     ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, optionStartCol + 5)).Font.Bold = True
     ws.Range(ws.Cells(headerRow, 1), ws.Cells(headerRow, optionStartCol + 5)).Interior.Color = RGB(220, 235, 250)
+    ws.Range("A4:B8").Interior.Color = RGB(255, 242, 204)
+    ws.Range("D3:D8").Interior.Color = RGB(234, 244, 255)
+    ws.Range("D3:D8").Font.Color = RGB(31, 78, 121)
+    SampleDesign_ApplyQuotaColumnFormatting ws, headers, enabled, 2, 12, 23
+    SampleDesign_ApplyInputValidation ws
     ws.Columns.AutoFit
+End Sub
+
+Private Sub SampleDesign_WriteTargetGroupExample(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal headers As Variant, _
+                                                 ByVal groupId As String, ByVal noteText As String)
+    ws.Cells(rowIndex, 1).Value = groupId
+    ws.Cells(rowIndex, 2).Value = ""
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, 3 + i - LBound(headers)).Value = ""
+    Next i
+    ws.Cells(rowIndex, 3 + UBound(headers) - LBound(headers) + 1).Value = noteText
+End Sub
+
+Private Sub SampleDesign_WritePopulationExample(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal headers As Variant, _
+                                                ByVal enabled As Variant, ByVal optionStartCol As Long)
+    Dim exampleIndex As Long
+    exampleIndex = rowIndex - 20
+
+    ws.Cells(rowIndex, 1).Value = "Q" & Format$(exampleIndex, "000")
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        If CBool(enabled(i)) Then
+            ws.Cells(rowIndex, 2 + i - LBound(headers)).Value = SampleDesign_ExampleQuotaValue(CStr(headers(i)), exampleIndex)
+        Else
+            ws.Cells(rowIndex, 2 + i - LBound(headers)).Value = ""
+        End If
+    Next i
+    ws.Cells(rowIndex, optionStartCol).Value = Choose(exampleIndex, 1000, 500, 300)
+    If exampleIndex = 1 Then ws.Cells(rowIndex, optionStartCol + 5).Value = "예시 행입니다. 실제 모집단 값으로 교체하세요."
+End Sub
+
+Private Function SampleDesign_ExampleQuotaValue(ByVal headerText As String, ByVal exampleIndex As Long) As String
+    Select Case True
+        Case InStr(1, headerText, "산업", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "SW", "SW", "Non-SW")
+        Case InStr(1, headerText, "대분류", vbTextCompare) > 0 Or InStr(1, headerText, "업종", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "패키지SW", "IT서비스", "제조")
+        Case InStr(1, headerText, "지역", vbTextCompare) > 0 Or InStr(1, headerText, "권역", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "수도권", "비수도권", "수도권")
+        Case InStr(1, headerText, "존", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "A존", "B존", "C존")
+        Case InStr(1, headerText, "성별", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "남성", "여성", "전체")
+        Case InStr(1, headerText, "연령", vbTextCompare) > 0 Or InStr(1, headerText, "나이", vbTextCompare) > 0
+            SampleDesign_ExampleQuotaValue = Choose(exampleIndex, "20대", "30대", "40대")
+        Case Else
+            SampleDesign_ExampleQuotaValue = ""
+    End Select
+End Function
+
+Private Sub SampleDesign_ApplyQuotaColumnFormatting(ByVal ws As Worksheet, ByVal headers As Variant, ByVal enabled As Variant, _
+                                                    ByVal firstQuotaCol As Long, ByVal firstRow As Long, ByVal lastRow As Long)
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        Dim colIndex As Long
+        colIndex = firstQuotaCol + i - LBound(headers)
+        With ws.Range(ws.Cells(firstRow, colIndex), ws.Cells(lastRow, colIndex))
+            If CBool(enabled(i)) Then
+                .Interior.Color = RGB(255, 255, 255)
+                .Font.Color = RGB(0, 0, 0)
+            Else
+                .Interior.Color = RGB(242, 242, 242)
+                .Font.Color = RGB(130, 130, 130)
+            End If
+        End With
+    Next i
+End Sub
+
+Private Sub SampleDesign_ApplyInputValidation(ByVal ws As Worksheet)
+    On Error Resume Next
+    With ws.Range("B5").Validation
+        .Delete
+        .Add Type:=xlValidateList, AlertStyle:=xlValidAlertStop, Operator:=xlBetween, _
+             Formula1:="단순 비례,제곱근 비례,멱배분,균등 배분,사용자 지정 가중"
+    End With
+    With ws.Range("B4:B8").Validation
+        .IgnoreBlank = True
+        .InCellDropdown = True
+    End With
+    On Error GoTo 0
 End Sub
 
 Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet)
@@ -8194,9 +8426,10 @@ Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet)
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
     ws.Range("A3").Value = "사용 방법"
-    ws.Range("A4").Value = "1. 이 시트에 모집단 구성표를 원본 형태로 붙여넣습니다."
-    ws.Range("A5").Value = "2. [구성표 리스트화]로 확인하거나 [할당 계산]을 실행하면 표본설계_입력으로 자동 변환합니다."
-    ws.Range("A6").Value = "3. 가로축/세로축 이름은 표 구조에서 탐지되며, 필요하면 표본설계_입력의 쿼터 헤더를 수정합니다."
+    ws.Range("A4").Value = "1. 이 시트에 모집단 구성표를 원본 형태로 붙여넣습니다. 여러 표를 한 번에 붙여넣어도 됩니다."
+    ws.Range("A5").Value = "2. [구성표 리스트화] 버튼으로 탐지 결과를 미리 확인할 수 있습니다."
+    ws.Range("A6").Value = "3. [할당 계산] 실행 시 표본설계_입력 시트의 모집단 표로 자동 변환을 시도합니다."
+    ws.Range("A7").Value = "4. 변환 후 표본설계_입력 시트에서 쿼터명, 목표표본 그룹표, 모집단수를 검토하세요."
     ws.Range("A8").Value = "예시"
     SampleDesign_WriteArray ws, 10, 1, Array("구분", "10인 미만", "10~50인 미만", "50인 이상", "합계")
     SampleDesign_WriteArray ws, 11, 1, Array("패키지SW", 42081, 4213, 82, 46376)
@@ -9146,6 +9379,124 @@ Private Sub SampleDesign_WriteEmptyReview(ByVal ws As Worksheet)
     ws.Range("A1").Font.Bold = True
     ws.Range("A3").Value = "할당 계산 후 검토 요약이 표시됩니다."
     ws.Columns("A:D").AutoFit
+End Sub
+
+Public Sub SampleDesign_ShowGuide()
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "표본설계 가이드를 만들 통합문서를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, "표본설계_가이드")
+    If ws Is Nothing Then
+        Set ws = SampleDesign_PrepareOutputSheet(wb, "표본설계_가이드")
+        SampleDesign_WriteGuideSheet ws, SampleDesign_DefaultSetup(), "list"
+    End If
+    ws.Activate
+    ws.Range("A1").Select
+End Sub
+
+Private Sub SampleDesign_WriteGuideSheet(ByVal ws As Worksheet, ByVal setup As Object, ByVal templateMode As String)
+    ws.Cells.Clear
+    ws.Range("A1").Value = "표본설계 사용 가이드"
+    ws.Range("A1").Font.Bold = True
+    ws.Range("A1").Font.Size = 16
+
+    ws.Range("A3").Value = "권장 작업 순서"
+    ws.Range("A3").Font.Bold = True
+    SampleDesign_WriteArray ws, 4, 1, Array("1", "설계 시트 생성", "설정 마법사에서 입력 형태, 목표 표본수, 사용할 쿼터 변수를 먼저 정합니다.")
+    SampleDesign_WriteArray ws, 5, 1, Array("2", "모집단 입력", "표본설계_입력 시트의 21행부터 쿼터값과 모집단수를 입력합니다.")
+    SampleDesign_WriteArray ws, 6, 1, Array("3", "그룹 목표 입력", "상위 쿼터별 목표 표본수가 다르면 목표표본 그룹표에 조건과 목표표본수를 입력합니다.")
+    SampleDesign_WriteArray ws, 7, 1, Array("4", "할당 계산", "할당 계산 버튼을 눌러 배분 방식을 확인하고 결과/검토 시트를 생성합니다.")
+    SampleDesign_WriteArray ws, 8, 1, Array("5", "진행관리", "조사 진행 중에는 진행률 관리표 버튼으로 회수/부족/초과를 관리합니다.")
+
+    ws.Range("A11").Value = "필수 입력값"
+    ws.Range("A11").Font.Bold = True
+    SampleDesign_WriteArray ws, 12, 1, Array("위치", "필수 여부", "설명")
+    SampleDesign_WriteArray ws, 13, 1, Array("표본설계_입력!B4", "필수", "전체 목표 표본수. 그룹표가 비어 있으면 이 값으로 전체 배분합니다.")
+    SampleDesign_WriteArray ws, 14, 1, Array("표본설계_입력!B5", "필수", "배분 방식. 단순 비례, 제곱근 비례, 멱배분, 균등 배분, 사용자 지정 가중 중 선택합니다.")
+    SampleDesign_WriteArray ws, 15, 1, Array("표본설계_입력!19행", "필수", "사용할 쿼터 변수는 '사용', 제외할 변수는 '미사용'으로 둡니다.")
+    SampleDesign_WriteArray ws, 16, 1, Array("표본설계_입력!20행", "필수", "쿼터 변수명입니다. 산업, 지역, 성별 등 프로젝트 용어로 바꿔도 됩니다.")
+    SampleDesign_WriteArray ws, 17, 1, Array("표본설계_입력!21행 이하", "필수", "쿼터ID, 쿼터값, 모집단수를 입력합니다. 모집단수 1 이상만 계산 대상입니다.")
+
+    ws.Range("A20").Value = "목표표본 그룹표 사용법"
+    ws.Range("A20").Font.Bold = True
+    SampleDesign_WriteArray ws, 21, 1, Array("상황", "입력 방법")
+    SampleDesign_WriteArray ws, 22, 1, Array("전체 목표만 있음", "목표표본 그룹표를 비우고 B4만 입력합니다.")
+    SampleDesign_WriteArray ws, 23, 1, Array("산업별 목표가 다름", "목표표본 그룹표에 산업 조건과 목표표본수를 입력합니다.")
+    SampleDesign_WriteArray ws, 24, 1, Array("산업+지역 조합별 목표가 다름", "같은 행에 산업과 지역 조건을 모두 입력합니다. 조건은 AND로 매칭됩니다.")
+    SampleDesign_WriteArray ws, 25, 1, Array("나머지 전체 목표가 필요", "조건 칸을 비운 행을 만들면 catch-all 그룹으로 사용할 수 있습니다.")
+
+    ws.Range("A28").Value = "현재 생성 설정"
+    ws.Range("A28").Font.Bold = True
+    SampleDesign_WriteArray ws, 29, 1, Array("입력 형태", IIf(templateMode = "table", "집계표형 입력", "리스트형 입력"))
+    SampleDesign_WriteArray ws, 30, 1, Array("전체 목표 표본수", setup("targetN"))
+    SampleDesign_WriteArray ws, 31, 1, Array("배분 방식", setup("methodName"))
+    SampleDesign_WriteArray ws, 32, 1, Array("멱배분 alpha", setup("alpha"))
+    SampleDesign_WriteArray ws, 33, 1, Array("기본 최소/최대표본", CStr(setup("minN")) & " / " & CStr(setup("maxN")))
+    SampleDesign_WriteArray ws, 34, 1, Array("사용 쿼터", SampleDesign_EnabledQuotaSummary(setup("quotaHeaders"), setup("quotaEnabled")))
+
+    ws.Range("A37").Value = "자주 나는 오류와 조치"
+    ws.Range("A37").Font.Bold = True
+    SampleDesign_WriteArray ws, 38, 1, Array("메시지", "조치")
+    SampleDesign_WriteArray ws, 39, 1, Array("모집단수 헤더를 찾지 못함", "표본설계_입력 시트에서 '모집단수' 헤더가 삭제되었는지 확인합니다.")
+    SampleDesign_WriteArray ws, 40, 1, Array("목표 표본 수를 찾지 못함", "B4 또는 목표표본 그룹표의 목표표본수를 입력합니다.")
+    SampleDesign_WriteArray ws, 41, 1, Array("계산할 모집단 행을 찾지 못함", "21행 이하 모집단수에 1 이상의 숫자가 있는지 확인합니다.")
+    SampleDesign_WriteArray ws, 42, 1, Array("목표그룹없음", "목표표본 그룹표의 조건이 모집단 표의 쿼터값과 정확히 일치하는지 확인합니다.")
+
+    With ws.Range("A4:C8")
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("A12:C17")
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("A21:B25")
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("A29:B34")
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("A38:B42")
+        .Borders.LineStyle = xlContinuous
+    End With
+    ws.Range("A3:C3,A11:C12,A20:B21,A28:B28,A37:B38").Interior.Color = RGB(220, 235, 250)
+    ws.Columns("A:C").AutoFit
+End Sub
+
+Private Function SampleDesign_EnabledQuotaSummary(ByVal headers As Variant, ByVal enabled As Variant) As String
+    Dim result As String
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        If CBool(enabled(i)) Then
+            If Len(result) > 0 Then result = result & ", "
+            result = result & CStr(headers(i))
+        End If
+    Next i
+    If Len(result) = 0 Then result = "(선택 없음)"
+    SampleDesign_EnabledQuotaSummary = result
+End Function
+
+Private Sub SampleDesign_ReadRunSettings(ByVal inputWs As Worksheet, ByRef methodName As String, ByRef alpha As Double, _
+                                         ByRef minN As Long, ByRef maxN As Long)
+    If IsNumeric(inputWs.Range("B5").Value) Or Len(Trim$(CStr(inputWs.Range("B5").Value))) = 0 Then
+        ' 구버전 레이아웃: B5 최소표본, B6 최대표본, B7 배분방식, B8 alpha
+        minN = CLng(Val(inputWs.Range("B5").Value))
+        maxN = CLng(Val(inputWs.Range("B6").Value))
+        methodName = Trim$(CStr(inputWs.Range("B7").Value))
+        alpha = Val(inputWs.Range("B8").Value)
+    Else
+        ' 1.1.16+ 레이아웃: B5 배분방식, B6 alpha, B7 최소표본, B8 최대표본
+        methodName = Trim$(CStr(inputWs.Range("B5").Value))
+        alpha = Val(inputWs.Range("B6").Value)
+        minN = CLng(Val(inputWs.Range("B7").Value))
+        maxN = CLng(Val(inputWs.Range("B8").Value))
+    End If
+
+    If Len(methodName) = 0 Then methodName = "단순 비례"
+    If alpha <= 0 And methodName = "멱배분" Then alpha = 0.5
 End Sub
 
 Private Function SampleDesign_SelectMethod(ByRef methodName As String, ByRef alpha As Double) As Boolean
@@ -10427,7 +10778,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "3. 진행률 관리표 생성" & vbCrLf & _
         "4. 쿼터 점검" & vbCrLf & _
         "5. 모집단 구성표 리스트화" & vbCrLf & _
-        "6. 리스트→집계표", _
+        "6. 리스트→집계표" & vbCrLf & _
+        "7. 표본설계 가이드 열기", _
         "1")
 
     Select Case choice
@@ -10437,8 +10789,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "4": SampleDesign_ReviewQuota
         Case "5": SampleDesign_ListifyPopulationTable
         Case "6": SampleDesign_PivotPopulationList
+        Case "7": SampleDesign_ShowGuide
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~6 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~7 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -10758,6 +11111,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignCreateProgressTracker(control As IRibbonControl)
     SampleDesign_CreateProgressTracker
+End Sub
+
+Public Sub Ribbon_SampleDesignShowGuide(control As IRibbonControl)
+    SampleDesign_ShowGuide
 End Sub
 
 Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)

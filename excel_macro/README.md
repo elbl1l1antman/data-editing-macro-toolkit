@@ -23,7 +23,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.15`
+`1.1.16`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -81,6 +81,8 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - SPSS 집계표 표 제목, 행 위치, 배너 목록, 이동 링크 메타 시트 생성
 - SPSS BOT/TOP/MID 계열 세로형 배너 삭제 기능 분리
 - 업종 x 종사자규모, 지역 x 인구수, 사업체규모 등 여러 행/열 집계표를 자동 탐지하고 미리보기 확인 후 표본설계용 리스트형 데이터로 변환
+- 표본설계 설정 마법사에서 목표 표본수, 배분 방식, 사용할 쿼터 변수를 GUI로 지정
+- 표본설계_가이드 시트에서 필수 입력값, 그룹별 목표표본 입력법, 오류 조치 방법 안내
 - 표본설계 입력 시 리스트형/집계표형 입력 선택 지원
 - 표본설계 입력 시트에서 동적 쿼터 열과 복합 목표표본 그룹표 지원
 - 단순 비례/제곱근 비례/멱배분/균등/사용자 지정 가중 기반 표본할당 결과 및 검토 시트 생성
@@ -112,10 +114,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.15/DataEditingMacroToolkit_v1.1.15.xlam`
-- `release/v1.1.15/DataEditingMacroToolkit_v1.1.15.xlsm`
-- `release/v1.1.15/MacroToolkit.bas`
-- `release/v1.1.15/manifest.json`
+- `release/v1.1.16/DataEditingMacroToolkit_v1.1.16.xlam`
+- `release/v1.1.16/DataEditingMacroToolkit_v1.1.16.xlsm`
+- `release/v1.1.16/MacroToolkit.bas`
+- `release/v1.1.16/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -135,7 +137,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 - `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
 - `명부 품질`: 품질 진단, 중복 탐지, 업체명 매칭, 행정구역 분해, 전화번호 검사
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
-- `표본설계`: 구성표 리스트화, 리스트→집계표, 설계 시트 생성, 표본할당 계산, 진행률 관리표 생성
+- `표본설계`: 구성표 리스트화, 리스트→집계표, 설계 시트 생성, 표본설계 가이드, 표본할당 계산, 진행률 관리표 생성
 - `정보`: 모든 시트 A1 선택, 버전 정보
 설치 대상 파일:
 
