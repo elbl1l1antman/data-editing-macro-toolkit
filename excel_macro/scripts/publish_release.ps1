@@ -712,7 +712,7 @@ function Add-DatabaseMergeSetupUserForm {
     $form.Properties.Item("Height").Value = 660
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
-    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, KEY 헤더, 가져올 헤더, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
+    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, ID 처리 방식, 가져올 헤더 또는 표시행 기준, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
     $lblGuide.Left = 12
     $lblGuide.Top = 10
     $lblGuide.Width = 720
@@ -815,25 +815,47 @@ function Add-DatabaseMergeSetupUserForm {
     $cmbHeaderMode.Height = 22
     $cmbHeaderMode.Style = 2
 
+    $lblIdMode = $designer.Controls.Add("Forms.Label.1", "lblIdMode", $true)
+    $lblIdMode.Caption = "ID 처리 방식"
+    $lblIdMode.Left = 286
+    $lblIdMode.Top = 154
+    $lblIdMode.Width = 120
+    $lblIdMode.Height = 18
+
+    $cmbIdMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbIdMode", $true)
+    $cmbIdMode.Left = 410
+    $cmbIdMode.Top = 150
+    $cmbIdMode.Width = 322
+    $cmbIdMode.Height = 22
+    $cmbIdMode.Style = 2
+
+    $chkUseMarkerRow = $designer.Controls.Add("Forms.CheckBox.1", "chkUseMarkerRow", $true)
+    $chkUseMarkerRow.Caption = "표시행 기준으로 통합할 열 선택"
+    $chkUseMarkerRow.Left = 286
+    $chkUseMarkerRow.Top = 182
+    $chkUseMarkerRow.Width = 360
+    $chkUseMarkerRow.Height = 18
+
     $lblHeaders = $designer.Controls.Add("Forms.Label.1", "lblHeaders", $true)
     $lblHeaders.Caption = "통합할 헤더 목록"
     $lblHeaders.Left = 286
-    $lblHeaders.Top = 164
+    $lblHeaders.Top = 214
     $lblHeaders.Width = 180
     $lblHeaders.Height = 18
 
     $lblHeadersHelp = $designer.Controls.Add("Forms.Label.1", "lblHeadersHelp", $true)
-    $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. KEY 헤더는 자동으로 첫 열에 포함됩니다. 2행 헤더 구조에서는 표시명 또는 실제 변수명 모두 매칭됩니다."
+    $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. 표시행 기준을 켜면 표시된 열에서 자동 생성되며, 이 목록은 선택사항입니다."
     $lblHeadersHelp.Left = 286
-    $lblHeadersHelp.Top = 184
+    $lblHeadersHelp.Top = 234
     $lblHeadersHelp.Width = 430
-    $lblHeadersHelp.Height = 18
+    $lblHeadersHelp.Height = 30
+    $lblHeadersHelp.WordWrap = $true
 
     $txtOutputHeaders = $designer.Controls.Add("Forms.TextBox.1", "txtOutputHeaders", $true)
     $txtOutputHeaders.Left = 286
-    $txtOutputHeaders.Top = 208
+    $txtOutputHeaders.Top = 270
     $txtOutputHeaders.Width = 446
-    $txtOutputHeaders.Height = 290
+    $txtOutputHeaders.Height = 228
     $txtOutputHeaders.MultiLine = $true
     $txtOutputHeaders.ScrollBars = 2
     $txtOutputHeaders.EnterKeyBehavior = $true
@@ -861,7 +883,8 @@ Public Cancelled As Boolean
 Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As String, _
                      ByVal defaultOutputHeaders As String, ByVal defaultOutputSheetName As String, _
                      ByVal defaultOutputPosition As String, ByVal defaultHeaderRowSetting As String, _
-                     ByVal defaultHeaderMode As String)
+                     ByVal defaultHeaderMode As String, ByVal defaultIdMode As String, _
+                     ByVal defaultUseMarkerRow As Boolean)
     Cancelled = True
     lstSheets.Clear
 
@@ -906,6 +929,20 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
         Case Else
             cmbHeaderMode.Value = "1줄 헤더"
     End Select
+
+    cmbIdMode.Clear
+    cmbIdMode.AddItem "ID 없으면 결과 시트에만 자동 생성"
+    cmbIdMode.AddItem "기존 KEY 헤더 사용"
+    cmbIdMode.AddItem "ID 없으면 원본 시트에 ID열 생성"
+    Select Case defaultIdMode
+        Case "existing"
+            cmbIdMode.Value = "기존 KEY 헤더 사용"
+        Case "source_auto"
+            cmbIdMode.Value = "ID 없으면 원본 시트에 ID열 생성"
+        Case Else
+            cmbIdMode.Value = "ID 없으면 결과 시트에만 자동 생성"
+    End Select
+    chkUseMarkerRow.Value = defaultUseMarkerRow
 End Sub
 
 Public Property Get SelectedSheets() As String
@@ -952,6 +989,21 @@ Public Property Get HeaderMode() As String
     End Select
 End Property
 
+Public Property Get IdMode() As String
+    Select Case CStr(cmbIdMode.Value)
+        Case "기존 KEY 헤더 사용"
+            IdMode = "existing"
+        Case "ID 없으면 원본 시트에 ID열 생성"
+            IdMode = "source_auto"
+        Case Else
+            IdMode = "output_auto"
+    End Select
+End Property
+
+Public Property Get UseMarkerRow() As Boolean
+    UseMarkerRow = CBool(chkUseMarkerRow.Value)
+End Property
+
 Private Function HeadersForDisplay(ByVal headerText As String) As String
     Dim t As String
     t = Replace(headerText, vbCrLf, vbLf)
@@ -988,8 +1040,8 @@ Private Sub cmdOK_Click()
         lstSheets.SetFocus
         Exit Sub
     End If
-    If Len(Trim$(txtKeyHeader.Text)) = 0 Then
-        MsgBox "메인 KEY 헤더를 입력하세요.", vbExclamation, "시트 데이터 통합"
+    If Len(Trim$(txtKeyHeader.Text)) = 0 And IdMode = "existing" Then
+        MsgBox "기존 KEY 헤더 사용 방식에서는 메인 KEY 헤더를 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtKeyHeader.SetFocus
         Exit Sub
     End If
@@ -998,8 +1050,8 @@ Private Sub cmdOK_Click()
         txtHeaderRow.SetFocus
         Exit Sub
     End If
-    If Len(Trim$(txtOutputHeaders.Text)) = 0 Then
-        MsgBox "통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
+    If Len(Trim$(txtOutputHeaders.Text)) = 0 And Not CBool(chkUseMarkerRow.Value) Then
+        MsgBox "표시행 기준을 사용하지 않을 때는 통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtOutputHeaders.SetFocus
         Exit Sub
     End If
@@ -1550,7 +1602,7 @@ function Add-CompanyNameOptionsUserForm {
         @("chkRemoveCorpMarkers", "(주), ㈜, 주식회사 삭제", 250, 42, $true),
         @("chkAddCorpPrefix", "회사형태가 없으면 앞에 (주) 추가", 250, 68, $false),
         @("chkAddCorpSuffix", "회사형태가 없으면 뒤에 (주) 추가", 250, 94, $false),
-        @("chkCutBeforePossessive", "'의 ' 앞부분만 남기기", 250, 120, $true),
+        @("chkCutBeforePossessive", "'의 ' 앞부분만 남기기", 250, 120, $false),
         @("chkPronounceEnglishWords", "영어 단어를 한글 발음으로 변환", 250, 146, $false),
         @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 172, $true),
         @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false)
@@ -2685,6 +2737,7 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpDatabaseTools" label="데이터 통합">
           <button id="btnDatabaseMergeSheets" label="시트 통합" size="large" imageMso="TableInsert" onAction="Ribbon_DatabaseMergeSheets" screentip="여러 시트 데이터 통합" supertip="KEY와 통합 헤더를 지정하고 시트별 헤더 매핑을 검증한 뒤 여러 시트의 데이터를 하나의 통합 시트로 쌓습니다." />
+          <button id="btnDatabaseCreateMarkerRows" label="통합 표시행" imageMso="InsertRows" onAction="Ribbon_DatabaseCreateMergeMarkerRows" screentip="통합할 열 표시행 만들기" supertip="선택한 시트의 헤더 위에 표시행을 추가합니다. 통합할 열 위 셀에 x, 1 등 아무 값을 입력한 뒤 시트 통합에서 표시행 기준을 선택하세요." />
           <button id="btnDatabaseSplitMergedSheet" label="통합 시트 분리" imageMso="TableSelect" onAction="Ribbon_DatabaseSplitMergedSheet" screentip="통합 데이터 원본별 분리" supertip="통합 시트 1행의 관리코드를 기준으로 원본시트별 분리 시트를 다시 생성합니다." />
         </group>
         <group id="grpSpssTableTools" label="SPSS 표 정리">

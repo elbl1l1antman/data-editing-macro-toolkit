@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.17"
+Public Const TOOLKIT_VERSION As String = "1.1.18"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -126,11 +126,12 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A41").Value = "SampleDesign_CreateProgressTracker"
     ws.Range("A42").Value = "SampleDesign_ListifyPopulationTable"
     ws.Range("A43").Value = "Database_MergeSheetsByHeaders"
-    ws.Range("A44").Value = "Database_SplitMergedSheetBySource"
-    ws.Range("A45").Value = "NaverLocal_CreateLegalDongMasterTemplate"
-    ws.Range("A46").Value = "Address_CombineDongAndRoad"
-    ws.Range("A47").Value = "SampleDesign_PivotPopulationList"
-    ws.Range("A48").Value = "SampleDesign_ShowGuide"
+    ws.Range("A44").Value = "Database_CreateMergeMarkerRows"
+    ws.Range("A45").Value = "Database_SplitMergedSheetBySource"
+    ws.Range("A46").Value = "NaverLocal_CreateLegalDongMasterTemplate"
+    ws.Range("A47").Value = "Address_CombineDongAndRoad"
+    ws.Range("A48").Value = "SampleDesign_PivotPopulationList"
+    ws.Range("A49").Value = "SampleDesign_ShowGuide"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -877,7 +878,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("removeCorpMarkers") = True
     options("addCorpPrefix") = False
     options("addCorpSuffix") = False
-    options("cutBeforePossessive") = True
+    options("cutBeforePossessive") = False
     options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
@@ -896,10 +897,13 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Set outputRange = CopyRangeToAdjacentColumns(workRange, "기업명_정리")
     If outputRange Is Nothing Then Exit Sub
 
-    Dim cell As Range
+    Dim sourceCell As Range
+    Dim outputCell As Range
     Dim changedCount As Long
     Dim skippedFormulaCount As Long
+    Dim blankPreventedCount As Long
     Dim cleaned As String
+    Dim originalText As String
     Dim totalRows As Long
     totalRows = outputRange.Rows.Count
 
@@ -909,14 +913,20 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Dim relRow As Long, relCol As Long
     For relRow = 1 To outputRange.Rows.Count
         For relCol = 1 To outputRange.Columns.Count
-            Set cell = outputRange.Cells(relRow, relCol)
-            If cell.HasFormula Then
+            Set sourceCell = workRange.Cells(relRow, relCol)
+            Set outputCell = outputRange.Cells(relRow, relCol)
+            If sourceCell.HasFormula Then
                 skippedFormulaCount = skippedFormulaCount + 1
             Else
-                cleaned = CompanyName_CleanOne(CStr(cell.Value), options)
-                If CStr(cell.Value) <> cleaned Then
-                    cell.NumberFormat = "@"
-                    cell.Value = cleaned
+                originalText = CStr(sourceCell.Value)
+                cleaned = CompanyName_CleanOne(originalText, options)
+                If Len(Trim$(originalText)) > 0 And Len(Trim$(cleaned)) = 0 Then
+                    cleaned = originalText
+                    blankPreventedCount = blankPreventedCount + 1
+                End If
+                If originalText <> cleaned Then
+                    outputCell.NumberFormat = "@"
+                    outputCell.Value = cleaned
                     changedCount = changedCount + 1
                 End If
             End If
@@ -928,6 +938,7 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
     MsgBox changedCount & "개 기업체명/사업체명을 정리했습니다." & vbCrLf & _
+           blankPreventedCount & "개 비공란 원본은 공란화를 방지해 원본값을 유지했습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
            "원본 범위는 변경하지 않았습니다.", vbInformation, "기업체명 정리"
     Exit Sub
@@ -10194,6 +10205,8 @@ Public Sub Database_MergeSheetsByHeaders()
     Dim outputPosition As String
     Dim headerRowSetting As String
     Dim headerMode As String
+    Dim idMode As String
+    Dim useMarkerRow As Boolean
 
     keyHeader = "ID"
     outputHeadersCsv = DBMerge_DefaultHeaderCsv(wb)
@@ -10201,12 +10214,15 @@ Public Sub Database_MergeSheetsByHeaders()
     outputPosition = "맨 뒤"
     headerRowSetting = "자동"
     headerMode = "single"
+    idMode = "output_auto"
+    useMarkerRow = False
 
-    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode) Then Exit Sub
+    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, useMarkerRow) Then Exit Sub
 
     keyHeader = Trim$(keyHeader)
     headerRowSetting = Trim$(headerRowSetting)
     outputSheetName = DBMerge_CleanSheetName(outputSheetName, "통합데이터")
+    If Len(keyHeader) = 0 And idMode <> "existing" Then keyHeader = "ID"
     If Len(keyHeader) = 0 Then
         MsgBox "메인 KEY 헤더를 입력해야 합니다.", vbExclamation, "시트 데이터 통합"
         Exit Sub
@@ -10228,13 +10244,13 @@ Public Sub Database_MergeSheetsByHeaders()
 
     Dim outputHeaders As Collection
     Set outputHeaders = DBMerge_ParseHeaderList(outputHeadersCsv, keyHeader)
-    If outputHeaders.Count = 0 Then
+    If outputHeaders.Count = 0 Or (outputHeaders.Count = 1 And Not useMarkerRow) Then
         MsgBox "통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
         Exit Sub
     End If
 
     Dim plan As Object
-    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders, headerRowSetting, headerMode)
+    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders, headerRowSetting, headerMode, idMode, useMarkerRow)
     If plan Is Nothing Then Exit Sub
 
     If Not DBMerge_ShowReviewForm(plan) Then Exit Sub
@@ -10324,15 +10340,94 @@ Public Sub Database_SplitMergedSheetBySource()
     MsgBox groups.Count & "개 시트로 분리했습니다.", vbInformation, "통합 시트 분리"
 End Sub
 
+Public Sub Database_CreateMergeMarkerRows()
+    If ActiveWorkbook Is Nothing Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+
+    Dim selectedKeys As String
+    selectedKeys = Toolkit_CheckListMenu( _
+        "통합 표시행 만들기", _
+        "표시행을 추가할 시트를 선택하세요. 헤더 바로 위에 빈 행을 만들고, 통합할 열 위에 x, 1 등 아무 값을 입력하면 됩니다.", _
+        DBMerge_WorksheetOptionsText(wb), _
+        DBMerge_AllWorksheetDefaultCsv(wb))
+    If Len(Trim$(selectedKeys)) = 0 Then Exit Sub
+
+    Dim headerMode As String
+    headerMode = Toolkit_ButtonMenu( _
+        "통합 표시행 - 헤더 구조", _
+        "표시행을 넣을 시트의 헤더 구조를 선택하세요.", _
+        "single" & vbTab & "1줄 헤더" & vbLf & _
+        "display_next_key" & vbTab & "위=표시명, 아래=변수" & vbLf & _
+        "key_prev_display" & vbTab & "이전=표시명, 선택=변수", _
+        "single")
+    If Len(headerMode) = 0 Then Exit Sub
+
+    Dim headerRowSetting As String
+    headerRowSetting = InputBox("헤더 행 번호를 입력하세요." & vbCrLf & _
+                                "자동 탐지를 쓰려면 '자동' 또는 '0'을 입력하세요.", _
+                                "통합 표시행 만들기", "자동")
+    If Len(headerRowSetting) = 0 Then Exit Sub
+
+    Dim sheets As Collection
+    Set sheets = DBMerge_SelectedWorksheetsByKeys(wb, selectedKeys)
+    If sheets.Count = 0 Then
+        MsgBox "표시행을 추가할 시트를 선택하지 않았습니다.", vbExclamation, "통합 표시행 만들기"
+        Exit Sub
+    End If
+
+    Application.ScreenUpdating = False
+    On Error GoTo ErrHandler
+
+    Dim insertedCount As Long
+    Dim skippedCount As Long
+    Dim i As Long
+    For i = 1 To sheets.Count
+        Dim ws As Worksheet
+        Set ws = sheets(i)
+
+        Dim headerRow As Long
+        headerRow = DBMerge_HeaderRowForSheet(ws, headerRowSetting, headerMode, False)
+        If headerRow = 0 Then
+            skippedCount = skippedCount + 1
+        Else
+            Dim insertRow As Long
+            insertRow = DBMerge_TopHeaderRow(headerRow, headerMode)
+            If insertRow < 1 Then
+                skippedCount = skippedCount + 1
+            Else
+                ws.Rows(insertRow).Insert Shift:=xlDown
+                With ws.Rows(insertRow)
+                    .Interior.Color = RGB(255, 242, 204)
+                    .Font.Color = RGB(120, 90, 0)
+                    .RowHeight = 20
+                End With
+                insertedCount = insertedCount + 1
+            End If
+        End If
+    Next i
+
+    Application.ScreenUpdating = True
+    MsgBox insertedCount & "개 시트에 통합 표시행을 추가했습니다." & vbCrLf & _
+           skippedCount & "개 시트는 헤더 행을 찾지 못해 건너뛰었습니다.", vbInformation, "통합 표시행 만들기"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "통합 표시행을 만드는 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "통합 표시행 만들기"
+End Sub
+
 Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheetNames As String, _
                                        ByRef keyHeader As String, ByRef outputHeadersCsv As String, _
                                        ByRef outputSheetName As String, ByRef outputPosition As String, _
-                                       ByRef headerRowSetting As String, ByRef headerMode As String) As Boolean
+                                       ByRef headerRowSetting As String, ByRef headerMode As String, _
+                                       ByRef idMode As String, ByRef useMarkerRow As Boolean) As Boolean
     On Error GoTo ErrHandler
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmDatabaseMergeSetup")
-    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode
+    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, useMarkerRow
     form.Show
 
     If CBool(form.Cancelled) Then
@@ -10347,6 +10442,8 @@ Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheet
     outputPosition = CStr(form.OutputPosition)
     headerRowSetting = CStr(form.HeaderRowSetting)
     headerMode = CStr(form.HeaderMode)
+    idMode = CStr(form.IdMode)
+    useMarkerRow = CBool(form.UseMarkerRow)
     Unload form
     DBMerge_ShowSetupForm = True
     Exit Function
@@ -10385,6 +10482,42 @@ Private Function DBMerge_WorksheetNamesText(ByVal wb As Workbook) As String
     Next ws
 End Function
 
+Private Function DBMerge_WorksheetOptionsText(ByVal wb As Workbook) As String
+    Dim i As Long
+    For i = 1 To wb.Worksheets.Count
+        If Len(DBMerge_WorksheetOptionsText) > 0 Then DBMerge_WorksheetOptionsText = DBMerge_WorksheetOptionsText & vbLf
+        DBMerge_WorksheetOptionsText = DBMerge_WorksheetOptionsText & CStr(i) & vbTab & wb.Worksheets(i).Name
+    Next i
+End Function
+
+Private Function DBMerge_AllWorksheetDefaultCsv(ByVal wb As Workbook) As String
+    Dim i As Long
+    For i = 1 To wb.Worksheets.Count
+        If Len(DBMerge_AllWorksheetDefaultCsv) > 0 Then DBMerge_AllWorksheetDefaultCsv = DBMerge_AllWorksheetDefaultCsv & ","
+        DBMerge_AllWorksheetDefaultCsv = DBMerge_AllWorksheetDefaultCsv & CStr(i)
+    Next i
+End Function
+
+Private Function DBMerge_SelectedWorksheetsByKeys(ByVal wb As Workbook, ByVal selectedKeys As String) As Collection
+    Dim sheets As Collection
+    Set sheets = New Collection
+
+    Dim parts As Variant
+    parts = Split(selectedKeys, ",")
+    Dim i As Long
+    For i = LBound(parts) To UBound(parts)
+        Dim keyText As String
+        keyText = Trim$(CStr(parts(i)))
+        If IsNumeric(keyText) Then
+            Dim idx As Long
+            idx = CLng(keyText)
+            If idx >= 1 And idx <= wb.Worksheets.Count Then sheets.Add wb.Worksheets(idx)
+        End If
+    Next i
+
+    Set DBMerge_SelectedWorksheetsByKeys = sheets
+End Function
+
 Private Function DBMerge_DefaultHeaderCsv(ByVal wb As Workbook) As String
     Dim seen As Object
     Set seen = CreateObject("Scripting.Dictionary")
@@ -10392,7 +10525,7 @@ Private Function DBMerge_DefaultHeaderCsv(ByVal wb As Workbook) As String
     Dim ws As Worksheet
     For Each ws In wb.Worksheets
         Dim headerRow As Long
-        headerRow = DBMerge_DetectHeaderRow(ws)
+        headerRow = DBMerge_HeaderRowForSheet(ws, "자동", "single", True)
         If headerRow > 0 Then
             Dim lastCol As Long
             lastCol = DBMerge_LastUsedCol(ws)
@@ -10477,16 +10610,22 @@ Private Sub DBMerge_AddHeader(ByVal headers As Collection, ByVal seen As Object,
 End Sub
 
 Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader As String, ByVal outputHeaders As Collection, _
-                                   ByVal headerRowSetting As String, ByVal headerMode As String) As Object
+                                   ByVal headerRowSetting As String, ByVal headerMode As String, _
+                                   ByVal idMode As String, ByVal useMarkerRow As Boolean) As Object
     Dim plan As Object
     Set plan = CreateObject("Scripting.Dictionary")
     plan.Add "keyHeader", keyHeader
-    plan.Add "headers", outputHeaders
     plan.Add "headerRowSetting", headerRowSetting
     plan.Add "headerMode", headerMode
+    plan.Add "idMode", idMode
+    plan.Add "useMarkerRow", useMarkerRow
 
     Dim sheetPlans As Collection
     Set sheetPlans = New Collection
+    Dim markerHeaders As Collection
+    Set markerHeaders = New Collection
+    Dim markerSeen As Object
+    Set markerSeen = CreateObject("Scripting.Dictionary")
 
     Dim i As Long
     For i = 1 To sheets.Count
@@ -10494,7 +10633,7 @@ Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader A
         Set ws = sheets(i)
 
         Dim headerRow As Long
-        headerRow = DBMerge_HeaderRowForSheet(ws, headerRowSetting)
+        headerRow = DBMerge_HeaderRowForSheet(ws, headerRowSetting, headerMode, useMarkerRow)
         If headerRow = 0 Then
             MsgBox ws.Name & " 시트에서 헤더 행을 찾지 못했습니다.", vbExclamation, "시트 데이터 통합"
             Exit Function
@@ -10510,27 +10649,70 @@ Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader A
 
         Dim headerMap As Object
         Set headerMap = DBMerge_HeaderMap(ws, headerRow, headerMode)
+        If idMode = "existing" And Not headerMap.Exists(DBMerge_NormalizeHeader(keyHeader)) Then
+            MsgBox ws.Name & " 시트에서 메인 KEY 헤더 '" & keyHeader & "'를 찾지 못했습니다." & vbCrLf & _
+                   "ID가 없는 시트는 ID 처리 방식을 자동 생성으로 바꾸세요.", vbExclamation, "시트 데이터 통합"
+            Exit Function
+        End If
+
+        Dim markerRow As Long
+        markerRow = 0
+        If useMarkerRow Then
+            markerRow = DBMerge_MarkerRowForHeader(headerRow, headerMode)
+            If markerRow < 1 Then
+                MsgBox ws.Name & " 시트의 헤더 위에 통합 표시행이 없습니다." & vbCrLf & _
+                       "먼저 [통합 표시행 만들기]를 실행하거나 헤더 행 번호를 다시 지정하세요.", vbExclamation, "시트 데이터 통합"
+                Exit Function
+            End If
+            DBMerge_AddHeadersFromMarkerRow markerHeaders, markerSeen, ws, markerRow, headerRow, headerMode
+        End If
 
         Dim sheetPlan As Object
         Set sheetPlan = CreateObject("Scripting.Dictionary")
         sheetPlan.Add "sheetName", ws.Name
         sheetPlan.Add "worksheet", ws
         sheetPlan.Add "headerRow", headerRow
+        sheetPlan.Add "markerRow", markerRow
         sheetPlan.Add "dataStartRow", dataStartRow
-        sheetPlan.Add "lastRow", DBMerge_LastDataRow(ws, dataStartRow, headerMap, outputHeaders)
         sheetPlan.Add "headerMap", headerMap
         sheetPlans.Add sheetPlan
     Next i
 
+    Dim finalHeaders As Collection
+    If useMarkerRow Then
+        Set finalHeaders = DBMerge_FinalHeadersFromMarkers(keyHeader, markerHeaders)
+        If finalHeaders.Count <= 1 Then
+            MsgBox "통합 표시행에서 선택된 열을 찾지 못했습니다." & vbCrLf & _
+                   "헤더 위 표시행에 통합할 열만 아무 값으로 표시하세요.", vbExclamation, "시트 데이터 통합"
+            Exit Function
+        End If
+    Else
+        Set finalHeaders = outputHeaders
+    End If
+
+    For i = 1 To sheetPlans.Count
+        Set sheetPlan = sheetPlans(i)
+        Set ws = sheetPlan("worksheet")
+        Set headerMap = sheetPlan("headerMap")
+        sheetPlan.Add "lastRow", DBMerge_LastDataRow(ws, CLng(sheetPlan("dataStartRow")), headerMap, finalHeaders)
+        DBMerge_UpdateIdStats sheetPlan, keyHeader, idMode, finalHeaders
+    Next i
+
+    plan.Add "headers", finalHeaders
     plan.Add "sheets", sheetPlans
     Set DBMerge_BuildPlan = plan
 End Function
 
-Private Function DBMerge_HeaderRowForSheet(ByVal ws As Worksheet, ByVal headerRowSetting As String) As Long
+Private Function DBMerge_HeaderRowForSheet(ByVal ws As Worksheet, ByVal headerRowSetting As String, _
+                                           Optional ByVal headerMode As String = "single", _
+                                           Optional ByVal useMarkerRow As Boolean = False) As Long
     Dim settingText As String
     settingText = LCase$(Trim$(headerRowSetting))
     If Len(settingText) = 0 Or settingText = "자동" Or settingText = "auto" Or settingText = "0" Then
         DBMerge_HeaderRowForSheet = DBMerge_DetectHeaderRow(ws)
+        If useMarkerRow And DBMerge_RowLooksLikeMarker(ws, DBMerge_HeaderRowForSheet) Then
+            DBMerge_HeaderRowForSheet = DBMerge_HeaderRowForSheet + 1
+        End If
         Exit Function
     End If
 
@@ -10540,6 +10722,92 @@ Private Function DBMerge_HeaderRowForSheet(ByVal ws As Worksheet, ByVal headerRo
     rowNo = CLng(settingText)
     If rowNo < 1 Or rowNo > DBMerge_LastUsedRow(ws) Then Exit Function
     DBMerge_HeaderRowForSheet = rowNo
+End Function
+
+Private Function DBMerge_TopHeaderRow(ByVal headerRow As Long, ByVal headerMode As String) As Long
+    If headerMode = "key_prev_display" Then
+        DBMerge_TopHeaderRow = headerRow - 1
+    Else
+        DBMerge_TopHeaderRow = headerRow
+    End If
+End Function
+
+Private Function DBMerge_MarkerRowForHeader(ByVal headerRow As Long, ByVal headerMode As String) As Long
+    DBMerge_MarkerRowForHeader = DBMerge_TopHeaderRow(headerRow, headerMode) - 1
+End Function
+
+Private Function DBMerge_RowLooksLikeMarker(ByVal ws As Worksheet, ByVal rowNo As Long) As Boolean
+    If rowNo < 1 Or rowNo >= DBMerge_LastUsedRow(ws) Then Exit Function
+
+    Dim lastCol As Long
+    lastCol = DBMerge_LastUsedCol(ws)
+    If lastCol = 0 Then Exit Function
+
+    If ws.Cells(rowNo, 1).Interior.Color = RGB(255, 242, 204) And DBMerge_RowTextCount(ws, rowNo + 1, lastCol) >= 2 Then
+        DBMerge_RowLooksLikeMarker = True
+        Exit Function
+    End If
+
+    Dim nonBlankCount As Long
+    Dim shortMarkCount As Long
+    Dim c As Long
+    For c = 1 To lastCol
+        Dim cellText As String
+        cellText = Trim$(CStr(ws.Cells(rowNo, c).Value))
+        If Len(cellText) > 0 Then
+            nonBlankCount = nonBlankCount + 1
+            If Len(cellText) <= 3 Then shortMarkCount = shortMarkCount + 1
+        End If
+    Next c
+
+    If nonBlankCount = 0 Then Exit Function
+    DBMerge_RowLooksLikeMarker = (nonBlankCount = shortMarkCount And DBMerge_RowTextCount(ws, rowNo + 1, lastCol) >= 2)
+End Function
+
+Private Sub DBMerge_AddHeadersFromMarkerRow(ByVal headers As Collection, ByVal seen As Object, _
+                                            ByVal ws As Worksheet, ByVal markerRow As Long, _
+                                            ByVal headerRow As Long, ByVal headerMode As String)
+    Dim lastCol As Long
+    lastCol = DBMerge_LastUsedCol(ws)
+
+    Dim c As Long
+    For c = 1 To lastCol
+        If Len(Trim$(CStr(ws.Cells(markerRow, c).Value))) > 0 Then
+            Dim headerText As String
+            headerText = DBMerge_HeaderTextForColumn(ws, c, headerRow, headerMode)
+            DBMerge_AddHeader headers, seen, headerText
+        End If
+    Next c
+End Sub
+
+Private Function DBMerge_HeaderTextForColumn(ByVal ws As Worksheet, ByVal colNo As Long, _
+                                             ByVal headerRow As Long, ByVal headerMode As String) As String
+    Select Case headerMode
+        Case "display_next_key"
+            DBMerge_HeaderTextForColumn = Trim$(CStr(ws.Cells(headerRow + 1, colNo).Value))
+            If Len(DBMerge_HeaderTextForColumn) = 0 Then DBMerge_HeaderTextForColumn = Trim$(CStr(ws.Cells(headerRow, colNo).Value))
+        Case "key_prev_display"
+            DBMerge_HeaderTextForColumn = Trim$(CStr(ws.Cells(headerRow, colNo).Value))
+            If Len(DBMerge_HeaderTextForColumn) = 0 Then DBMerge_HeaderTextForColumn = Trim$(CStr(ws.Cells(headerRow - 1, colNo).Value))
+        Case Else
+            DBMerge_HeaderTextForColumn = Trim$(CStr(ws.Cells(headerRow, colNo).Value))
+    End Select
+End Function
+
+Private Function DBMerge_FinalHeadersFromMarkers(ByVal keyHeader As String, ByVal markerHeaders As Collection) As Collection
+    Dim headers As Collection
+    Set headers = New Collection
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    DBMerge_AddHeader headers, seen, keyHeader
+
+    Dim i As Long
+    For i = 1 To markerHeaders.Count
+        DBMerge_AddHeader headers, seen, CStr(markerHeaders(i))
+    Next i
+
+    Set DBMerge_FinalHeadersFromMarkers = headers
 End Function
 
 Private Function DBMerge_HeaderModeIsUsable(ByVal ws As Worksheet, ByVal headerRow As Long, ByVal headerMode As String) As Boolean
@@ -10649,6 +10917,8 @@ End Function
 Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
     Dim result As String
     result = "메인 KEY: " & CStr(plan("keyHeader")) & vbCrLf & _
+             "ID 처리: " & DBMerge_IdModeLabel(CStr(plan("idMode"))) & vbCrLf & _
+             "열 선택: " & IIf(CBool(plan("useMarkerRow")), "통합 표시행 기준", "헤더 목록 직접 지정") & vbCrLf & _
              "헤더 구조: " & DBMerge_HeaderModeLabel(CStr(plan("headerMode"))) & vbCrLf & _
              "헤더 행 설정: " & CStr(plan("headerRowSetting")) & vbCrLf & _
              "통합 헤더 수: " & CStr(plan("headers").Count) & vbCrLf & _
@@ -10661,9 +10931,25 @@ Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
         result = result & i & ". " & CStr(sheetPlan("sheetName")) & _
                  " / 헤더 행: " & CStr(sheetPlan("headerRow")) & _
                  " / 데이터 시작: " & CStr(sheetPlan("dataStartRow")) & _
-                 " / 마지막 행: " & CStr(sheetPlan("lastRow")) & vbCrLf
+                 " / 마지막 행: " & CStr(sheetPlan("lastRow")) & _
+                 " / 기존ID: " & CStr(sheetPlan("idExistingCount")) & _
+                 " / 자동ID: " & CStr(sheetPlan("idGeneratedCount")) & vbCrLf
     Next i
+    If CStr(plan("idMode")) = "source_auto" Then
+        result = result & vbCrLf & "주의: 실행 시 원본 시트에 ID 열 또는 빈 ID 값이 생성됩니다." & vbCrLf
+    End If
     DBMerge_PlanSummary = result
+End Function
+
+Private Function DBMerge_IdModeLabel(ByVal idMode As String) As String
+    Select Case idMode
+        Case "existing"
+            DBMerge_IdModeLabel = "기존 KEY 헤더 사용"
+        Case "source_auto"
+            DBMerge_IdModeLabel = "ID 없으면 원본 시트에 ID열 생성"
+        Case Else
+            DBMerge_IdModeLabel = "ID 없으면 결과 시트에만 자동 생성"
+    End Select
 End Function
 
 Private Function DBMerge_HeaderModeLabel(ByVal headerMode As String) As String
@@ -10709,6 +10995,7 @@ End Function
 
 Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As Worksheet) As Long
     outWs.Cells.Clear
+    If CStr(plan("idMode")) = "source_auto" Then DBMerge_ApplySourceIds plan
 
     Dim dataHeaders As Collection
     Set dataHeaders = DBMerge_DataHeaders(plan("headers"), CStr(plan("keyHeader")))
@@ -10740,10 +11027,10 @@ Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As W
 
         Dim r As Long
         For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
-            If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers")) Then
+            If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers"), CStr(plan("keyHeader"))) Then
                 outWs.Cells(outRow, 1).Value = ws.Name
                 outWs.Cells(outRow, 2).Value = r
-                outWs.Cells(outRow, 3).Value = DBMerge_CellByHeader(ws, r, headerMap, CStr(plan("keyHeader")))
+                outWs.Cells(outRow, 3).Value = DBMerge_KeyValueForRow(ws, r, headerMap, CStr(plan("keyHeader")))
 
                 For c = 1 To dataHeaders.Count
                     outWs.Cells(outRow, c + 3).Value = DBMerge_CellByHeader(ws, r, headerMap, CStr(dataHeaders(c)))
@@ -10782,12 +11069,17 @@ Private Function DBMerge_DataHeaders(ByVal headers As Collection, ByVal keyHeade
     Set DBMerge_DataHeaders = result
 End Function
 
-Private Function DBMerge_RowHasSelectedData(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal headerMap As Object, ByVal headers As Collection) As Boolean
+Private Function DBMerge_RowHasSelectedData(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal headerMap As Object, _
+                                            ByVal headers As Collection, Optional ByVal keyHeader As String = "") As Boolean
     Dim i As Long
+    Dim keyNorm As String
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
     For i = 1 To headers.Count
         Dim norm As String
         norm = DBMerge_NormalizeHeader(CStr(headers(i)))
-        If headerMap.Exists(norm) Then
+        If Len(keyNorm) > 0 And norm = keyNorm Then
+            ' KEY만 있는 행을 데이터 행으로 오인하지 않도록 데이터 판단에서는 제외한다.
+        ElseIf headerMap.Exists(norm) Then
             If Len(Trim$(CStr(ws.Cells(rowNo, CLng(headerMap(norm))).Value))) > 0 Then
                 DBMerge_RowHasSelectedData = True
                 Exit Function
@@ -10801,6 +11093,117 @@ Private Function DBMerge_CellByHeader(ByVal ws As Worksheet, ByVal rowNo As Long
     norm = DBMerge_NormalizeHeader(headerText)
     If headerMap.Exists(norm) Then DBMerge_CellByHeader = ws.Cells(rowNo, CLng(headerMap(norm))).Value
 End Function
+
+Private Function DBMerge_KeyValueForRow(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal headerMap As Object, ByVal keyHeader As String) As String
+    Dim keyValue As String
+    keyValue = Trim$(CStr(DBMerge_CellByHeader(ws, rowNo, headerMap, keyHeader)))
+    If Len(keyValue) > 0 Then
+        DBMerge_KeyValueForRow = keyValue
+    Else
+        DBMerge_KeyValueForRow = DBMerge_AutoId(ws.Name, rowNo)
+    End If
+End Function
+
+Private Function DBMerge_AutoId(ByVal sheetName As String, ByVal rowNo As Long) As String
+    DBMerge_AutoId = DBMerge_CleanIdPart(sheetName) & "_R" & CStr(rowNo)
+End Function
+
+Private Function DBMerge_CleanIdPart(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+    result = Replace(result, " ", "_")
+    result = Replace(result, "'", "")
+    result = Replace(result, "!", "_")
+    result = Replace(result, ":", "_")
+    result = Replace(result, "\", "_")
+    result = Replace(result, "/", "_")
+    result = Replace(result, "[", "_")
+    result = Replace(result, "]", "_")
+    If Len(result) = 0 Then result = "Sheet"
+    DBMerge_CleanIdPart = result
+End Function
+
+Private Sub DBMerge_UpdateIdStats(ByVal sheetPlan As Object, ByVal keyHeader As String, _
+                                  ByVal idMode As String, ByVal headers As Collection)
+    Dim ws As Worksheet
+    Set ws = sheetPlan("worksheet")
+    Dim headerMap As Object
+    Set headerMap = sheetPlan("headerMap")
+
+    Dim existingCount As Long
+    Dim generatedCount As Long
+    Dim blankFilledCount As Long
+    Dim r As Long
+    For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
+        If DBMerge_RowHasSelectedData(ws, r, headerMap, headers, keyHeader) Then
+            Dim keyValue As String
+            keyValue = Trim$(CStr(DBMerge_CellByHeader(ws, r, headerMap, keyHeader)))
+            If Len(keyValue) > 0 Then
+                existingCount = existingCount + 1
+            Else
+                generatedCount = generatedCount + 1
+                If headerMap.Exists(DBMerge_NormalizeHeader(keyHeader)) Then blankFilledCount = blankFilledCount + 1
+            End If
+        End If
+    Next r
+
+    sheetPlan.Add "idExistingCount", existingCount
+    sheetPlan.Add "idGeneratedCount", generatedCount
+    sheetPlan.Add "idBlankFilledCount", blankFilledCount
+End Sub
+
+Private Sub DBMerge_ApplySourceIds(ByVal plan As Object)
+    Dim i As Long
+    For i = 1 To plan("sheets").Count
+        Dim sheetPlan As Object
+        Set sheetPlan = plan("sheets")(i)
+
+        Dim ws As Worksheet
+        Set ws = sheetPlan("worksheet")
+        Dim headerMap As Object
+        Set headerMap = sheetPlan("headerMap")
+        Dim keyHeader As String
+        keyHeader = CStr(plan("keyHeader"))
+        Dim keyNorm As String
+        keyNorm = DBMerge_NormalizeHeader(keyHeader)
+
+        Dim keyCol As Long
+        If headerMap.Exists(keyNorm) Then
+            keyCol = CLng(headerMap(keyNorm))
+        Else
+            keyCol = 1
+            ws.Columns(keyCol).Insert Shift:=xlToRight
+            DBMerge_WriteSourceIdHeader ws, CLng(sheetPlan("headerRow")), CStr(plan("headerMode")), keyHeader
+            Set headerMap = DBMerge_HeaderMap(ws, CLng(sheetPlan("headerRow")), CStr(plan("headerMode")))
+            sheetPlan.Remove "headerMap"
+            sheetPlan.Add "headerMap", headerMap
+        End If
+
+        Dim r As Long
+        For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
+            If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers"), keyHeader) Then
+                If Len(Trim$(CStr(ws.Cells(r, keyCol).Value))) = 0 Then
+                    ws.Cells(r, keyCol).NumberFormat = "@"
+                    ws.Cells(r, keyCol).Value = DBMerge_AutoId(ws.Name, r)
+                End If
+            End If
+        Next r
+    Next i
+End Sub
+
+Private Sub DBMerge_WriteSourceIdHeader(ByVal ws As Worksheet, ByVal headerRow As Long, _
+                                        ByVal headerMode As String, ByVal keyHeader As String)
+    Select Case headerMode
+        Case "display_next_key"
+            ws.Cells(headerRow, 1).Value = keyHeader
+            ws.Cells(headerRow + 1, 1).Value = keyHeader
+        Case "key_prev_display"
+            ws.Cells(headerRow - 1, 1).Value = keyHeader
+            ws.Cells(headerRow, 1).Value = keyHeader
+        Case Else
+            ws.Cells(headerRow, 1).Value = keyHeader
+    End Select
+End Sub
 
 Private Function DBMerge_PrepareOutputSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal outputPosition As String) As Worksheet
     Dim ws As Worksheet
@@ -11392,6 +11795,10 @@ End Sub
 
 Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)
     Database_MergeSheetsByHeaders
+End Sub
+
+Public Sub Ribbon_DatabaseCreateMergeMarkerRows(control As IRibbonControl)
+    Database_CreateMergeMarkerRows
 End Sub
 
 Public Sub Ribbon_DatabaseSplitMergedSheet(control As IRibbonControl)
