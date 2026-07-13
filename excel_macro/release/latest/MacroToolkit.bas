@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.19"
+Public Const TOOLKIT_VERSION As String = "1.1.20"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -855,6 +855,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("addCorpSuffix") = CBool(form.AddCorpSuffix)
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
     options("removeBranchMarkers") = CBool(form.RemoveBranchMarkers)
+    options("removeLegalEntityMarkers") = CBool(form.RemoveLegalEntityMarkers)
     options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
@@ -881,6 +882,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("addCorpSuffix") = False
     options("cutBeforePossessive") = False
     options("removeBranchMarkers") = False
+    options("removeLegalEntityMarkers") = False
     options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
@@ -970,6 +972,7 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
     If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
     If CBool(options("removeBranchMarkers")) Then textValue = CompanyName_RemoveBranchMarkers(textValue)
+    If CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_RemoveLegalEntityMarkers(textValue)
     If CBool(options("removeSpecialChars")) Then textValue = CompanyName_RemoveSpecialChars(textValue)
     If CBool(options("addCorpPrefix")) Then
         If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
@@ -1022,6 +1025,105 @@ Private Function CompanyName_RemoveBranchMarkers(ByVal textValue As String) As S
     result = CompanyName_RemoveTrailingBranchMarker(result)
 
     CompanyName_RemoveBranchMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveLegalEntityMarkers(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+    If Len(result) = 0 Then Exit Function
+
+    result = CompanyName_RemoveKoreanLegalEntityMarkers(result)
+    result = CompanyName_RemoveForeignLegalEntityMarkers(result)
+    result = CompanyName_CleanTrailingSeparators(result)
+
+    CompanyName_RemoveLegalEntityMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveKoreanLegalEntityMarkers(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\(（]\s*(유|유한|유한회사|유한책임회사|합자|합명)\s*[\)）]"
+    result = Trim$(re.Replace(result, ""))
+
+    Dim markers As Variant
+    markers = Array("유한책임회사", "유한회사", "합자회사", "합명회사", "사단법인", "재단법인", _
+                    "학교법인", "의료법인", "농업회사법인", "영농조합법인", "사회복지법인", _
+                    "법무법인", "세무법인", "회계법인", "특허법인")
+
+    Dim i As Long
+    For i = LBound(markers) To UBound(markers)
+        result = CompanyName_RemoveLegalMarkerAtEdges(result, CStr(markers(i)))
+    Next i
+
+    CompanyName_RemoveKoreanLegalEntityMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveLegalMarkerAtEdges(ByVal textValue As String, ByVal markerText As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+
+    Do While Len(result) > Len(markerText) And Left$(result, Len(markerText)) = markerText
+        result = Trim$(Mid$(result, Len(markerText) + 1))
+        result = CompanyName_CleanLeadingSeparators(result)
+    Loop
+
+    Do While Len(result) > Len(markerText) And Right$(result, Len(markerText)) = markerText
+        result = Trim$(Left$(result, Len(result) - Len(markerText)))
+        result = CompanyName_CleanTrailingSeparators(result)
+    Loop
+
+    CompanyName_RemoveLegalMarkerAtEdges = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveForeignLegalEntityMarkers(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\s,\.·ㆍ・\-_/\(\)（）]*(co\.?\s*,?\s*ltd\.?|company\s+limited|pvt\.?\s*ltd\.?|pte\.?\s*ltd\.?|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|llc|l\.l\.c\.?|llp|l\.l\.p\.?|plc|gmbh)[\s,\.·ㆍ・\-_/\(\)（）]*$"
+
+    Do While re.Test(result)
+        result = Trim$(re.Replace(result, ""))
+    Loop
+
+    re.Pattern = "[\s,\.·ㆍ・\-_/\(\)（）]+(s\.?a\.?|ag)[\s,\.·ㆍ・\-_/\(\)（）]*$"
+    Do While re.Test(result)
+        result = Trim$(re.Replace(result, ""))
+    Loop
+
+    CompanyName_RemoveForeignLegalEntityMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_CleanLeadingSeparators(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+    Do While Len(result) > 0 And CompanyName_IsLegalSeparator(Left$(result, 1))
+        result = Trim$(Mid$(result, 2))
+    Loop
+    CompanyName_CleanLeadingSeparators = result
+End Function
+
+Private Function CompanyName_CleanTrailingSeparators(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+    Do While Len(result) > 0 And CompanyName_IsLegalSeparator(Right$(result, 1))
+        result = Trim$(Left$(result, Len(result) - 1))
+    Loop
+    CompanyName_CleanTrailingSeparators = result
+End Function
+
+Private Function CompanyName_IsLegalSeparator(ByVal ch As String) As Boolean
+    CompanyName_IsLegalSeparator = (ch = " " Or ch = "," Or ch = "." Or ch = "-" Or ch = "_" Or _
+                                   ch = "/" Or ch = "·" Or ch = "ㆍ" Or ch = "・" Or _
+                                   ch = "(" Or ch = ")" Or ch = "（" Or ch = "）")
 End Function
 
 Private Function CompanyName_RemoveLeadingBranchMarker(ByVal textValue As String) As String
