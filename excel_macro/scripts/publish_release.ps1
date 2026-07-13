@@ -1583,7 +1583,7 @@ function Add-CompanyNameOptionsUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "기업체명/사업체명 정리 옵션"
     $form.Properties.Item("Width").Value = 580
-    $form.Properties.Item("Height").Value = 470
+    $form.Properties.Item("Height").Value = 510
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
@@ -1605,7 +1605,8 @@ function Add-CompanyNameOptionsUserForm {
         @("chkCutBeforePossessive", "'의 ' 앞부분만 남기기", 250, 120, $false),
         @("chkPronounceEnglishWords", "영어 단어를 한글 발음으로 변환", 250, 146, $false),
         @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 172, $true),
-        @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false)
+        @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false),
+        @("chkRemoveBranchMarkers", "본점/지점/점포명 제거", 250, 224, $false)
     )
 
     foreach ($item in $labels) {
@@ -1621,21 +1622,21 @@ function Add-CompanyNameOptionsUserForm {
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
     $lblTip.Caption = "기본값은 제공된 기업이름정리.xlsm의 체크 상태를 따릅니다. 결과는 원본 오른쪽 복사본 열에 생성됩니다."
     $lblTip.Left = 12
-    $lblTip.Top = 240
+    $lblTip.Top = 266
     $lblTip.Width = 540
     $lblTip.Height = 42
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 374
-    $cmdOk.Top = 378
+    $cmdOk.Top = 418
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 474
-    $cmdCancel.Top = 378
+    $cmdCancel.Top = 418
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -1686,6 +1687,10 @@ End Property
 
 Public Property Get CutBeforePossessive() As Boolean
     CutBeforePossessive = CBool(chkCutBeforePossessive.Value)
+End Property
+
+Public Property Get RemoveBranchMarkers() As Boolean
+    RemoveBranchMarkers = CBool(chkRemoveBranchMarkers.Value)
 End Property
 
 Public Property Get RemoveSpecialChars() As Boolean

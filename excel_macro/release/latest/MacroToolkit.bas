@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.18"
+Public Const TOOLKIT_VERSION As String = "1.1.19"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -854,6 +854,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("addCorpPrefix") = CBool(form.AddCorpPrefix)
     options("addCorpSuffix") = CBool(form.AddCorpSuffix)
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
+    options("removeBranchMarkers") = CBool(form.RemoveBranchMarkers)
     options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
@@ -879,6 +880,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("addCorpPrefix") = False
     options("addCorpSuffix") = False
     options("cutBeforePossessive") = False
+    options("removeBranchMarkers") = False
     options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
@@ -967,6 +969,7 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
     If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
     If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
+    If CBool(options("removeBranchMarkers")) Then textValue = CompanyName_RemoveBranchMarkers(textValue)
     If CBool(options("removeSpecialChars")) Then textValue = CompanyName_RemoveSpecialChars(textValue)
     If CBool(options("addCorpPrefix")) Then
         If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
@@ -1002,6 +1005,103 @@ Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As Str
     re.IgnoreCase = True
     re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
     CompanyName_RemoveCorpMarkers = Trim$(re.Replace(textValue, ""))
+End Function
+
+Private Function CompanyName_RemoveBranchMarkers(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\(（]\s*(본점|지점|[A-Za-z0-9가-힣]{1,4}점)\s*[\)）]"
+    result = Trim$(re.Replace(result, ""))
+
+    result = CompanyName_RemoveLeadingBranchMarker(result)
+    result = CompanyName_RemoveTrailingBranchMarker(result)
+
+    CompanyName_RemoveBranchMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveLeadingBranchMarker(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = False
+    re.IgnoreCase = True
+    re.Pattern = "^(본점|지점)[\s_\-]+"
+    result = re.Replace(result, "")
+
+    CompanyName_RemoveLeadingBranchMarker = Trim$(result)
+End Function
+
+Private Function CompanyName_RemoveTrailingBranchMarker(ByVal textValue As String) As String
+    Dim result As String
+    result = Trim$(textValue)
+    If Len(result) = 0 Then Exit Function
+
+    Dim knownResult As String
+    If CompanyName_RemoveKnownTrailingBranch(result, "본점", knownResult) Then
+        CompanyName_RemoveTrailingBranchMarker = knownResult
+        Exit Function
+    End If
+    If CompanyName_RemoveKnownTrailingBranch(result, "지점", knownResult) Then
+        CompanyName_RemoveTrailingBranchMarker = knownResult
+        Exit Function
+    End If
+
+    If Right$(result, 1) = "점" Then
+        Dim branchLen As Long
+        For branchLen = 4 To 1 Step -1
+            Dim suffixLen As Long
+            suffixLen = branchLen + 1
+            If Len(result) > suffixLen Then
+                Dim baseName As String
+                Dim suffixText As String
+                baseName = Left$(result, Len(result) - suffixLen)
+                suffixText = Right$(result, suffixLen)
+                If CompanyName_VisibleLength(baseName) >= 2 And CompanyName_IsBranchSuffix(suffixText) Then
+                    CompanyName_RemoveTrailingBranchMarker = Trim$(baseName)
+                    Exit Function
+                End If
+            End If
+        Next branchLen
+    End If
+
+    CompanyName_RemoveTrailingBranchMarker = result
+End Function
+
+Private Function CompanyName_RemoveKnownTrailingBranch(ByVal textValue As String, ByVal suffixText As String, ByRef resultOut As String) As Boolean
+    If Len(textValue) <= Len(suffixText) Then Exit Function
+    If Right$(textValue, Len(suffixText)) <> suffixText Then Exit Function
+
+    Dim baseName As String
+    baseName = Trim$(Left$(textValue, Len(textValue) - Len(suffixText)))
+    If CompanyName_VisibleLength(baseName) < 2 Then Exit Function
+
+    resultOut = baseName
+    CompanyName_RemoveKnownTrailingBranch = True
+End Function
+
+Private Function CompanyName_IsBranchSuffix(ByVal suffixText As String) As Boolean
+    If Len(suffixText) < 2 Or Len(suffixText) > 5 Then Exit Function
+    If Right$(suffixText, 1) <> "점" Then Exit Function
+
+    Dim stem As String
+    stem = Left$(suffixText, Len(suffixText) - 1)
+    CompanyName_IsBranchSuffix = (CompanyName_VisibleLength(stem) >= 1 And CompanyName_VisibleLength(stem) <= 4)
+End Function
+
+Private Function CompanyName_VisibleLength(ByVal textValue As String) As Long
+    Dim i As Long
+    For i = 1 To Len(textValue)
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsNameCharacter(ch) And ch <> " " Then CompanyName_VisibleLength = CompanyName_VisibleLength + 1
+    Next i
 End Function
 
 Private Function CompanyName_NormalizeCorpSymbol(ByVal textValue As String) As String
@@ -1161,7 +1261,13 @@ Private Function CompanyName_SpellAlphabetKorean(ByVal textValue As String) As S
     Dim result As String
     Dim i As Long
     For i = 1 To Len(textValue)
-        result = result & CompanyName_AlphabetKorean(Mid$(textValue, i, 1))
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsAsciiLetter(ch) Then
+            result = result & CompanyName_AlphabetKorean(ch)
+        Else
+            result = result & ch
+        End If
     Next i
     CompanyName_SpellAlphabetKorean = result
 End Function
