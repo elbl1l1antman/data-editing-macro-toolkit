@@ -30,7 +30,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.21`
+`1.1.22`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -79,6 +79,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 범위 선택 시 Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 선택 후 실행 가능
 - 1천 행 초과 기업명 정리, 주소 분리/판별/통합, 행정구역 분해, 전화번호 검사, 명부 품질/중복/업체명 매칭 작업에서 진행률 팝업 표시 및 500행 단위 응답 갱신
 - 이상치 탐지 및 대체 결과 시트 생성
+- 이상치 실행 전 2차 자료/전년도 자료 대체 여부 확인 및 작업 안내 시트 생성
 - 이상치 확인 실행 시 범위 검증 후 기초통계량표를 먼저 생성
 - 표 전체 선택 시 숫자형 열 자동 탐지 후 선택 목록 제공
 - Q1/Q3 기준값 열, 원본 검토복사 열, 조건부 서식 자동 생성
@@ -123,10 +124,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.21/DataEditingMacroToolkit_v1.1.21.xlam`
-- `release/v1.1.21/DataEditingMacroToolkit_v1.1.21.xlsm`
-- `release/v1.1.21/MacroToolkit.bas`
-- `release/v1.1.21/manifest.json`
+- `release/v1.1.22/DataEditingMacroToolkit_v1.1.22.xlam`
+- `release/v1.1.22/DataEditingMacroToolkit_v1.1.22.xlsm`
+- `release/v1.1.22/MacroToolkit.bas`
+- `release/v1.1.22/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

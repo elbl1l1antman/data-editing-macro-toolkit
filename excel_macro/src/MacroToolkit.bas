@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.21"
+Public Const TOOLKIT_VERSION As String = "1.1.22"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -3798,6 +3798,7 @@ End Function
 ' ============================================================
 
 Private Const OD_CFG_SHEET As String = "_이상치탐지_설정"
+Private Const OD_WORK_SHEET As String = "이상치탐지_작업"
 Private Const OD_MIN_N     As Long   = 30
 
 Private Const OD_IQR15  As String = "IQR × 1.5"
@@ -3824,9 +3825,28 @@ Private Const OD_C_MEMO As String = "B8"
 '             분석 변수 드롭다운이 최신 컬럼 목록으로 갱신된다.
 ' ============================================================
 Public Sub OutlierDetect_Setup()
-    MsgBox "이상치 탐지는 이제 설정 시트를 만들지 않고 바로 범위를 선택하는 방식으로 통합되었습니다." & vbCrLf & vbCrLf & _
-           "[데이터 툴킷] 탭의 [분석 열 선택] 버튼 또는 OutlierDetect_Run을 실행하세요.", _
+    On Error GoTo ErrHandler
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "이상치 탐지 작업 시트를 만들 통합문서를 먼저 여세요.", vbExclamation, "이상치 탐지"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = OD_CreateWorkspaceSheet(wb)
+    ws.Activate
+
+    MsgBox "이상치 탐지 작업 시트를 만들었습니다." & vbCrLf & vbCrLf & _
+           "원본 데이터에서 검토 대상만 필터링해 이 시트에 붙여넣은 뒤 " & _
+           "[데이터 툴킷] > [이상치 탐지] > [분석 열 선택]을 실행하세요.", _
            vbInformation, "이상치 탐지"
+    Exit Sub
+
+ErrHandler:
+    MsgBox "이상치 탐지 작업 시트를 만드는 중 오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, "이상치 탐지"
 End Sub
 
 ' ============================================================
@@ -4141,6 +4161,10 @@ Public Sub OutlierDetect_ApplyToSelection(Optional ByVal criteriaOverride As Str
                       Or Len(Trim$(methodOverride)) > 0 _
                       Or Not Application.Visible
 
+    If Not suppressPrompts Then
+        If Not OD_PrepareInteractiveWorkspace() Then Exit Sub
+    End If
+
     Dim dataArea As Range
     Dim targetRange As Range
     Dim analysisRelativeCol As Long
@@ -4338,6 +4362,122 @@ End Sub
 ' ──────────────────────────────────────────────────────────────
 ' OutlierDetector 내부 헬퍼
 ' ──────────────────────────────────────────────────────────────
+
+Private Function OD_PrepareInteractiveWorkspace() As Boolean
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox( _
+        "이상치 탐지 전 확인" & vbCrLf & vbCrLf & _
+        "이 기능은 통계적으로 의심되는 값을 표시하는 보조 도구입니다." & vbCrLf & _
+        "실행 전에 가능한 경우 다음과 같이 실제 확인 가능한 대체 절차를 먼저 검토하세요." & vbCrLf & _
+        "- 2차 자료 대체" & vbCrLf & _
+        "- 전년도 자료 대체" & vbCrLf & _
+        "- 원자료 또는 응답자 재확인" & vbCrLf & vbCrLf & _
+        "예: 안내용 작업 시트를 만들고 계속합니다." & vbCrLf & _
+        "아니요: 이미 준비한 범위를 바로 선택합니다." & vbCrLf & _
+        "취소: 실행을 중단합니다.", _
+        vbQuestion + vbYesNoCancel, "이상치 탐지 - 사전 확인")
+
+    Select Case answer
+        Case vbCancel
+            Exit Function
+        Case vbNo
+            OD_PrepareInteractiveWorkspace = True
+            Exit Function
+    End Select
+
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then
+        MsgBox "이상치 탐지 작업 시트를 만들 통합문서를 먼저 여세요.", vbExclamation, "이상치 탐지"
+        Exit Function
+    End If
+
+    Dim ws As Worksheet
+    Set ws = OD_CreateWorkspaceSheet(wb)
+    ws.Activate
+
+    answer = MsgBox( _
+        "이상치 탐지 작업 시트를 만들었습니다." & vbCrLf & vbCrLf & _
+        "시트 안내에 따라 ID, 업종, 매출액 규모, 종사자 규모, 대체 대상 값을 붙여넣으세요." & vbCrLf & _
+        "지금 범위 선택을 계속하려면 확인을 누르고, 안내 시트만 준비하려면 취소를 누르세요.", _
+        vbInformation + vbOKCancel, "이상치 탐지 - 작업 시트")
+    OD_PrepareInteractiveWorkspace = (answer = vbOK)
+End Function
+
+Private Function OD_CreateWorkspaceSheet(ByVal wb As Workbook) As Worksheet
+    Dim ws As Worksheet
+    Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    ws.Name = SPSS_UniqueSheetName(wb, OD_WORK_SHEET)
+
+    OD_WriteWorkspaceGuide ws
+    Set OD_CreateWorkspaceSheet = ws
+End Function
+
+Private Sub OD_WriteWorkspaceGuide(ByVal ws As Worksheet)
+    ws.Cells.Clear
+    ws.Tab.Color = RGB(255, 192, 0)
+
+    With ws.Range("A1:H1")
+        .Merge
+        .Value = "이상치 탐지 작업 시트"
+        .Font.Bold = True
+        .Font.Size = 16
+        .Interior.Color = RGB(255, 235, 185)
+        .HorizontalAlignment = xlLeft
+    End With
+
+    ws.Range("A3").Value = "사용 전 확인"
+    ws.Range("A4").Value = "이상치 탐지는 최종 대체 결정을 자동으로 보장하지 않습니다. 가능한 경우 2차 자료, 전년도 자료, 원자료 또는 응답자 확인처럼 실제로 확인 가능한 대체 절차를 먼저 검토하세요."
+
+    ws.Range("A6").Value = "권장 작업 흐름"
+    ws.Range("A7").Value = "1. 원본 데이터에서 대체가 필요한 후보만 필터로 좁힙니다."
+    ws.Range("A8").Value = "2. ID, 업종, 규모 구분, 실제 대체가 필요한 숫자값을 아래 예시 열에 맞춰 붙여넣습니다."
+    ws.Range("A9").Value = "3. 대체 대상 값의 헤더와 데이터 범위를 선택한 뒤 [데이터 툴킷] > [이상치 탐지] > [분석 열 선택]을 실행합니다."
+    ws.Range("A10").Value = "4. 생성된 Q1/Q3 기준열, 검토복사 열, 기초통계량표를 확인하고 필요한 값만 직접 수정합니다."
+
+    ws.Range("A12").Value = "붙여넣기 예시"
+    Dim headers As Variant
+    headers = Array("ID", "업종", "매출액 규모", "종사자 규모", "대체대상_원값", "2차자료_대체값", "전년도자료_대체값", "검토메모")
+
+    Dim samples As Variant
+    samples = Array("A001", "제조", "10억 미만", "10~49명", 123456789, "공시자료 값", "전년도 값", "확인 필요")
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(14, i + 1).Value = headers(i)
+        ws.Cells(15, i + 1).Value = samples(i)
+    Next i
+
+    With ws.Range("A14:H14")
+        .Font.Bold = True
+        .Interior.Color = RGB(220, 235, 250)
+        .Borders.LineStyle = xlContinuous
+    End With
+    With ws.Range("A15:H15")
+        .Interior.Color = RGB(245, 245, 245)
+        .Font.Color = RGB(120, 120, 120)
+        .Borders.LineStyle = xlContinuous
+    End With
+
+    ws.Range("A17").Value = "선택 범위 기준"
+    ws.Range("A18").Value = "대체 대상 숫자 열은 헤더 1행과 실제 숫자 데이터가 포함되도록 선택하세요. 예: E14:E500"
+    ws.Range("A19").Value = "표 전체를 선택하면 숫자형 열을 자동 탐지한 뒤 분석할 열을 선택할 수 있습니다."
+    ws.Range("A20").Value = "숫자가 텍스트로 저장되어 있다면 먼저 [값 정리] > [숫자 변환]을 실행하세요."
+
+    With ws.Range("A3,A6,A12,A17")
+        .Font.Bold = True
+        .Font.Color = RGB(50, 80, 120)
+    End With
+    ws.Range("A4:H10").WrapText = True
+    ws.Range("A18:H20").WrapText = True
+    ws.Columns("A:H").AutoFit
+    ws.Columns("A").ColumnWidth = 18
+    ws.Columns("E:H").ColumnWidth = 18
+    ws.Rows("1:20").VerticalAlignment = xlTop
+    ws.Range("E14:E15").NumberFormat = "#,##0"
+    ws.Activate
+    ws.Range("A1").Select
+End Sub
 
 Private Function OD_TrimToUsedRange(ByVal selectedRange As Range) As Range
     Dim usedPart As Range

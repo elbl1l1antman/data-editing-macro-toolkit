@@ -2765,7 +2765,7 @@ function Add-RibbonCustomUi {
           <button id="btnPhoneValidate" label="전화번호 검사" imageMso="ContactPictureMenu" onAction="Ribbon_PhoneValidateSelection" screentip="전화번호 유효성 검사" supertip="전화번호 범위 오른쪽에 번호 유형과 정상/확인 필요 결과를 생성합니다." />
         </group>
         <group id="grpOutlierTools" label="이상치 탐지">
-          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
+          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="실행 전 2차 자료/전년도 자료 대체 여부를 확인하고, 필요하면 이상치 탐지 작업 시트를 만든 뒤 범위 검증, 기초통계량표, Q1/Q3 기준값 열, 원본 검토복사 열, 조건부 서식을 생성합니다." />
         </group>
         <group id="grpSampleDesignTools" label="표본설계">
           <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="자동 감지 또는 범위 직접 지정을 선택하고, 미리보기 창에서 행축/가로축/값 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
