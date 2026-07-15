@@ -27,10 +27,11 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - `release/`: 버전별 배포 산출물입니다.
 - `scripts/`: 빌드와 퍼블리시 자동화 스크립트입니다.
 - `docs/USER_MANUAL.md`: 사용자 메뉴얼입니다. 기능 추가나 사용 흐름 변경 시 함께 갱신합니다.
+- `docs/sample_design_calculation_spec.md`: 표본설계 배분 방식과 검토 기준 설계 문서입니다.
 
 ## 현재 버전
 
-`1.1.22`
+`1.1.23`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -97,6 +98,8 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 표본설계 입력 시트에서 동적 쿼터 열과 복합 목표표본 그룹표 지원
 - 단순 비례/제곱근 비례/멱배분/균등/사용자 지정 가중 기반 표본할당 결과 및 검토 시트 생성
 - 표본할당 결과에 목표그룹, 그룹목표표본수, 배분가중치, 그룹가중치합, 이론할당, 잔차, 최종할당 검토 열 표시
+- 매출액, 종사자 수, 인구수 등 숫자 열을 UserForm에서 지정한 구간 기준으로 오른쪽 구간 열에 변환
+- 표본설계 구간 설정을 통합문서 내 숨김 시트에 임시 저장해 다음 실행 시 재사용
 - 리스트화 결과 또는 할당결과를 표제목별 집계표 블록으로 되돌리는 리스트→집계표 변환
 - 표본할당 결과 기반 진행률 관리표 생성
 - 0.9.0 리본 UI 정리: 중복 버튼 축소, 작업 중심 라벨, 기능 연상 아이콘/설명 개선
@@ -124,10 +127,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.22/DataEditingMacroToolkit_v1.1.22.xlam`
-- `release/v1.1.22/DataEditingMacroToolkit_v1.1.22.xlsm`
-- `release/v1.1.22/MacroToolkit.bas`
-- `release/v1.1.22/manifest.json`
+- `release/v1.1.23/DataEditingMacroToolkit_v1.1.23.xlam`
+- `release/v1.1.23/DataEditingMacroToolkit_v1.1.23.xlsm`
+- `release/v1.1.23/MacroToolkit.bas`
+- `release/v1.1.23/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -147,7 +150,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 - `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
 - `명부 품질`: 검증 시트 생성, 품질 진단, 중복 탐지, 업체명 매칭, 행정구역 분해, 전화번호 검사
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
-- `표본설계`: 구성표 리스트화(자동 감지/범위 직접 지정), 리스트→집계표, 설계 시트 생성, 표본설계 가이드, 표본할당 계산, 진행률 관리표 생성
+- `표본설계`: 구성표 리스트화(자동 감지/범위 직접 지정), 리스트→집계표, 설계 시트 생성, 표본설계 가이드, 숫자값 구간 만들기, 표본할당 계산, 진행률 관리표 생성
 - `정보`: 모든 시트 A1 선택, 버전 정보
 설치 대상 파일:
 

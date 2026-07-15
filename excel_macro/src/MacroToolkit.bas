@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.22"
+Public Const TOOLKIT_VERSION As String = "1.1.23"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -132,6 +132,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A47").Value = "Address_CombineDongAndRoad"
     ws.Range("A48").Value = "SampleDesign_PivotPopulationList"
     ws.Range("A49").Value = "SampleDesign_ShowGuide"
+    ws.Range("A50").Value = "SampleDesign_CreateBandColumn"
     ws.Range("A50").Value = "Roster_CreateValidationWorkspace"
 
     ' 내용에 맞게 열 너비 자동 조절
@@ -7845,6 +7846,8 @@ End Function
 ' ============================================================
 ' 표본설계/표본할당 도구
 ' ============================================================
+Private Const SD_BAND_SETTINGS_SHEET As String = "_SampleDesignBandSettings"
+
 Public Sub SampleDesign_CreateTemplate()
     Dim wb As Workbook
     Set wb = ActiveWorkbook
@@ -8071,6 +8074,133 @@ Public Sub SampleDesign_CreateProgressTracker()
     SampleDesign_ApplyProgressFormatting outWs, 4, outRow - 1, finalOutCol + 5
     outWs.Activate
     MsgBox "표본설계 진행관리 시트를 생성했습니다.", vbInformation, "표본설계"
+End Sub
+
+Public Sub SampleDesign_CreateBandColumn()
+    On Error GoTo ErrHandler
+
+    Dim sourceRange As Range
+    If Not Toolkit_GetRangeFromUserForm("표본설계 구간 만들기", _
+        "구간으로 바꿀 숫자 열을 선택하세요." & vbCrLf & _
+        "예: B열의 실제 매출액 또는 종사자 수를 선택하면 오른쪽에 구간 열을 추가합니다.", _
+        sourceRange) Then Exit Sub
+    If sourceRange Is Nothing Then Exit Sub
+    Set sourceRange = sourceRange.Areas(1)
+
+    If sourceRange.Columns.Count <> 1 Then
+        MsgBox "구간 만들기는 한 번에 숫자 열 1개만 처리합니다.", vbExclamation, "표본설계 구간 만들기"
+        Exit Sub
+    End If
+
+    Set sourceRange = SampleDesign_TrimBandSourceRange(sourceRange)
+    If sourceRange Is Nothing Then
+        MsgBox "선택 범위에서 실제 데이터를 찾지 못했습니다.", vbExclamation, "표본설계 구간 만들기"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = sourceRange.Worksheet
+
+    Dim hasHeader As Boolean
+    hasHeader = SampleDesign_BandHasHeader(sourceRange)
+
+    Dim firstDataRow As Long
+    If hasHeader Then
+        firstDataRow = sourceRange.Row + 1
+    Else
+        firstDataRow = sourceRange.Row
+    End If
+
+    Dim lastRow As Long
+    lastRow = sourceRange.Row + sourceRange.Rows.Count - 1
+    If firstDataRow > lastRow Then
+        MsgBox "구간을 적용할 숫자 데이터가 없습니다.", vbExclamation, "표본설계 구간 만들기"
+        Exit Sub
+    End If
+
+    Dim wb As Workbook
+    Set wb = ws.Parent
+
+    Dim specText As String
+    Dim outputHeader As String
+    outputHeader = SampleDesign_DefaultBandHeader(sourceRange, hasHeader)
+    If Not SampleDesign_ShowBandBuilder(wb, outputHeader, specText) Then Exit Sub
+
+    Dim bands As Collection
+    Set bands = New Collection
+    If Not SampleDesign_ParseBandSpecs(specText, bands) Then Exit Sub
+    If bands.Count = 0 Then
+        MsgBox "구간 설정을 1개 이상 입력하세요.", vbExclamation, "표본설계 구간 만들기"
+        Exit Sub
+    End If
+
+    Dim outputCol As Long
+    outputCol = sourceRange.Column + 1
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "표본설계 구간 만들기") Then Exit Sub
+
+    Dim answer As VbMsgBoxResult
+    answer = MsgBox("선택 열 오른쪽에 구간 열을 추가합니다." & vbCrLf & vbCrLf & _
+                    "원본 열: " & sourceRange.Address(False, False) & vbCrLf & _
+                    "결과 헤더: " & outputHeader & vbCrLf & _
+                    "구간 수: " & bands.Count & vbCrLf & vbCrLf & _
+                    "계속할까요?", _
+                    vbQuestion + vbYesNo, "표본설계 구간 만들기")
+    If answer = vbNo Then Exit Sub
+
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+
+    If hasHeader Then
+        ws.Cells(sourceRange.Row, outputCol).Value = outputHeader
+        ws.Cells(sourceRange.Row, outputCol).Font.Bold = True
+        ws.Cells(sourceRange.Row, outputCol).Interior.Color = RGB(220, 235, 250)
+    End If
+
+    Dim rowCount As Long
+    rowCount = lastRow - firstDataRow + 1
+    Dim outputData() As Variant
+    ReDim outputData(1 To rowCount, 1 To 1)
+
+    Dim r As Long
+    Dim outIndex As Long
+    Dim numericCount As Long
+    Dim unmatchedCount As Long
+    Dim nonNumericCount As Long
+    For r = firstDataRow To lastRow
+        outIndex = r - firstDataRow + 1
+        Dim numericValue As Double
+        If SampleDesign_BandTryNumber(ws.Cells(r, sourceRange.Column).Value, numericValue) Then
+            numericCount = numericCount + 1
+            outputData(outIndex, 1) = SampleDesign_BandLabelForValue(numericValue, bands)
+            If Len(CStr(outputData(outIndex, 1))) = 0 Then
+                outputData(outIndex, 1) = "미분류"
+                unmatchedCount = unmatchedCount + 1
+            End If
+        ElseIf Len(Trim$(CStr(ws.Cells(r, sourceRange.Column).Value))) = 0 Then
+            outputData(outIndex, 1) = ""
+        Else
+            outputData(outIndex, 1) = "숫자아님"
+            nonNumericCount = nonNumericCount + 1
+        End If
+    Next r
+
+    ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol)).Value = outputData
+    ws.Columns(outputCol).AutoFit
+    SampleDesign_SaveBandSettings wb, outputHeader, specText
+    Application.ScreenUpdating = True
+
+    MsgBox "구간 열을 생성했습니다." & vbCrLf & _
+           "숫자 처리: " & numericCount & "행" & vbCrLf & _
+           "미분류: " & unmatchedCount & "행" & vbCrLf & _
+           "숫자 아님: " & nonNumericCount & "행" & vbCrLf & _
+           "설정은 숨김 시트에 임시 저장되었습니다.", _
+           vbInformation, "표본설계 구간 만들기"
+    Exit Sub
+
+ErrHandler:
+    Application.ScreenUpdating = True
+    MsgBox "구간 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, _
+           vbExclamation, "표본설계 구간 만들기"
 End Sub
 
 Public Sub SampleDesign_ReviewQuota()
@@ -9310,6 +9440,300 @@ Private Function SampleDesign_FindSheet(ByVal wb As Workbook, ByVal sheetName As
     Set SampleDesign_FindSheet = wb.Worksheets(sheetName)
     On Error GoTo 0
 End Function
+
+Private Function SampleDesign_TrimBandSourceRange(ByVal sourceRange As Range) As Range
+    Dim usedPart As Range
+    On Error Resume Next
+    Set usedPart = Application.Intersect(sourceRange, sourceRange.Worksheet.UsedRange)
+    On Error GoTo 0
+    If usedPart Is Nothing Then
+        Set SampleDesign_TrimBandSourceRange = sourceRange
+    Else
+        Set SampleDesign_TrimBandSourceRange = usedPart.Areas(1)
+    End If
+End Function
+
+Private Function SampleDesign_BandHasHeader(ByVal sourceRange As Range) As Boolean
+    If sourceRange.Rows.Count < 2 Then Exit Function
+    Dim numericValue As Double
+    SampleDesign_BandHasHeader = Not SampleDesign_BandTryNumber(sourceRange.Cells(1, 1).Value, numericValue)
+End Function
+
+Private Function SampleDesign_DefaultBandHeader(ByVal sourceRange As Range, ByVal hasHeader As Boolean) As String
+    Dim baseHeader As String
+    If hasHeader Then baseHeader = Trim$(CStr(sourceRange.Cells(1, 1).Value))
+    If Len(baseHeader) = 0 Then baseHeader = "값"
+    SampleDesign_DefaultBandHeader = baseHeader & "_구간"
+End Function
+
+Private Function SampleDesign_ShowBandBuilder(ByVal wb As Workbook, ByRef outputHeader As String, ByRef specText As String) As Boolean
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmSampleDesignBandBuilder")
+    form.Configure SampleDesign_LoadBandSpecText(wb), SampleDesign_LoadBandHeader(wb, outputHeader)
+    form.Show
+    If CBool(form.Cancelled) Then
+        Unload form
+        Exit Function
+    End If
+
+    outputHeader = Trim$(CStr(form.OutputHeader))
+    specText = CStr(form.BandSpecText)
+    Unload form
+    If Len(outputHeader) = 0 Then outputHeader = "구간"
+    SampleDesign_ShowBandBuilder = True
+    Exit Function
+
+Fallback:
+    SampleDesign_ShowBandBuilder = SampleDesign_ShowBandBuilderFallback(outputHeader, specText)
+End Function
+
+Private Function SampleDesign_ShowBandBuilderFallback(ByRef outputHeader As String, ByRef specText As String) As Boolean
+    Dim headerInput As Variant
+    headerInput = Application.InputBox("결과 열 헤더를 입력하세요.", "표본설계 구간 만들기", outputHeader, Type:=2)
+    If VarType(headerInput) = vbBoolean And headerInput = False Then Exit Function
+    outputHeader = Trim$(CStr(headerInput))
+    If Len(outputHeader) = 0 Then outputHeader = "구간"
+
+    Dim countInput As Variant
+    countInput = Application.InputBox("구간 개수를 입력하세요. 최대 15개까지 가능합니다.", "표본설계 구간 만들기", 5, Type:=1)
+    If VarType(countInput) = vbBoolean And countInput = False Then Exit Function
+    Dim bandCount As Long
+    bandCount = CLng(countInput)
+    If bandCount < 1 Or bandCount > 15 Then
+        MsgBox "구간 개수는 1~15 사이로 입력하세요.", vbExclamation, "표본설계 구간 만들기"
+        Exit Function
+    End If
+
+    Dim i As Long
+    For i = 1 To bandCount
+        Dim startText As String, endText As String, labelText As String
+        Dim startInput As Variant, endInput As Variant, labelInput As Variant
+        startInput = Application.InputBox(i & "구간 시작값을 입력하세요. 첫 구간은 비워도 됩니다.", "표본설계 구간 만들기", "", Type:=2)
+        If VarType(startInput) = vbBoolean And startInput = False Then Exit Function
+        endInput = Application.InputBox(i & "구간 종료값을 입력하세요. 마지막 구간은 비워도 됩니다.", "표본설계 구간 만들기", "", Type:=2)
+        If VarType(endInput) = vbBoolean And endInput = False Then Exit Function
+        labelInput = Application.InputBox(i & "구간명을 입력하세요. 비우면 조건으로 자동 생성됩니다.", "표본설계 구간 만들기", "", Type:=2)
+        If VarType(labelInput) = vbBoolean And labelInput = False Then Exit Function
+        startText = CStr(startInput)
+        endText = CStr(endInput)
+        labelText = CStr(labelInput)
+        If Len(specText) > 0 Then specText = specText & vbLf
+        specText = specText & CStr(i) & vbTab & Trim$(startText) & vbTab & "이상" & vbTab & Trim$(endText) & vbTab & "미만" & vbTab & Trim$(labelText)
+    Next i
+
+    SampleDesign_ShowBandBuilderFallback = True
+End Function
+
+Private Function SampleDesign_ParseBandSpecs(ByVal specText As String, ByRef bands As Collection) As Boolean
+    Dim lines As Variant
+    lines = Split(Replace(CStr(specText), vbCrLf, vbLf), vbLf)
+
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim lineText As String
+        lineText = Trim$(CStr(lines(i)))
+        If Len(lineText) > 0 Then
+            Dim parts As Variant
+            parts = Split(lineText, vbTab)
+            If UBound(parts) < 4 Then
+                MsgBox "구간 설정 형식이 올바르지 않습니다.", vbExclamation, "표본설계 구간 만들기"
+                Exit Function
+            End If
+
+            Dim band As Object
+            Set band = CreateObject("Scripting.Dictionary")
+
+            Dim startValue As Double, endValue As Double
+            Dim hasStart As Boolean, hasEnd As Boolean
+            hasStart = SampleDesign_BandTryNumber(parts(1), startValue)
+            hasEnd = SampleDesign_BandTryNumber(parts(3), endValue)
+            If Not hasStart And Not hasEnd Then
+                MsgBox "각 구간은 시작값 또는 종료값 중 하나 이상이 필요합니다.", vbExclamation, "표본설계 구간 만들기"
+                Exit Function
+            End If
+            If hasStart And hasEnd And startValue >= endValue Then
+                MsgBox "구간 시작값은 종료값보다 작아야 합니다." & vbCrLf & _
+                       "문제 구간: " & CStr(parts(0)), vbExclamation, "표본설계 구간 만들기"
+                Exit Function
+            End If
+
+            band.Add "hasStart", hasStart
+            band.Add "startValue", startValue
+            band.Add "startOp", SampleDesign_NormalizeBandStartOp(CStr(parts(2)))
+            band.Add "hasEnd", hasEnd
+            band.Add "endValue", endValue
+            band.Add "endOp", SampleDesign_NormalizeBandEndOp(CStr(parts(4)))
+            If UBound(parts) >= 5 Then
+                band.Add "label", Trim$(CStr(parts(5)))
+            Else
+                band.Add "label", ""
+            End If
+            If Len(CStr(band("label"))) = 0 Then band("label") = SampleDesign_BandAutoLabel(band)
+            bands.Add band
+        End If
+    Next i
+
+    SampleDesign_ParseBandSpecs = True
+End Function
+
+Private Function SampleDesign_BandTryNumber(ByVal valueData As Variant, ByRef valueOut As Double) As Boolean
+    If IsError(valueData) Then Exit Function
+    Dim textValue As String
+    textValue = Replace(Trim$(CStr(valueData)), ",", "")
+    If Len(textValue) = 0 Then Exit Function
+    If IsNumeric(textValue) Then
+        valueOut = CDbl(textValue)
+        SampleDesign_BandTryNumber = True
+    End If
+End Function
+
+Private Function SampleDesign_NormalizeBandStartOp(ByVal opText As String) As String
+    If InStr(1, opText, "초과", vbTextCompare) > 0 Then
+        SampleDesign_NormalizeBandStartOp = "초과"
+    Else
+        SampleDesign_NormalizeBandStartOp = "이상"
+    End If
+End Function
+
+Private Function SampleDesign_NormalizeBandEndOp(ByVal opText As String) As String
+    If InStr(1, opText, "이하", vbTextCompare) > 0 Then
+        SampleDesign_NormalizeBandEndOp = "이하"
+    Else
+        SampleDesign_NormalizeBandEndOp = "미만"
+    End If
+End Function
+
+Private Function SampleDesign_BandLabelForValue(ByVal numericValue As Double, ByVal bands As Collection) As String
+    Dim i As Long
+    For i = 1 To bands.Count
+        Dim band As Object
+        Set band = bands(i)
+        If SampleDesign_BandValueMatches(numericValue, band) Then
+            SampleDesign_BandLabelForValue = CStr(band("label"))
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function SampleDesign_BandValueMatches(ByVal numericValue As Double, ByVal band As Object) As Boolean
+    Dim okStart As Boolean
+    Dim okEnd As Boolean
+
+    If CBool(band("hasStart")) Then
+        If CStr(band("startOp")) = "초과" Then
+            okStart = (numericValue > CDbl(band("startValue")))
+        Else
+            okStart = (numericValue >= CDbl(band("startValue")))
+        End If
+    Else
+        okStart = True
+    End If
+
+    If CBool(band("hasEnd")) Then
+        If CStr(band("endOp")) = "이하" Then
+            okEnd = (numericValue <= CDbl(band("endValue")))
+        Else
+            okEnd = (numericValue < CDbl(band("endValue")))
+        End If
+    Else
+        okEnd = True
+    End If
+
+    SampleDesign_BandValueMatches = okStart And okEnd
+End Function
+
+Private Function SampleDesign_BandAutoLabel(ByVal band As Object) As String
+    Dim labelText As String
+    If CBool(band("hasStart")) Then
+        labelText = SampleDesign_FormatBandNumber(CDbl(band("startValue"))) & " " & CStr(band("startOp"))
+    End If
+    If CBool(band("hasEnd")) Then
+        If Len(labelText) > 0 Then labelText = labelText & "~"
+        labelText = labelText & SampleDesign_FormatBandNumber(CDbl(band("endValue"))) & " " & CStr(band("endOp"))
+    End If
+    SampleDesign_BandAutoLabel = labelText
+End Function
+
+Private Function SampleDesign_FormatBandNumber(ByVal valueData As Double) As String
+    If valueData = Fix(valueData) Then
+        SampleDesign_FormatBandNumber = Format$(valueData, "#,##0")
+    Else
+        SampleDesign_FormatBandNumber = Format$(valueData, "#,##0.########")
+    End If
+End Function
+
+Private Function SampleDesign_LoadBandHeader(ByVal wb As Workbook, ByVal defaultHeader As String) As String
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
+    If Not ws Is Nothing Then
+        SampleDesign_LoadBandHeader = Trim$(CStr(ws.Range("B2").Value))
+    End If
+    If Len(SampleDesign_LoadBandHeader) = 0 Then SampleDesign_LoadBandHeader = defaultHeader
+End Function
+
+Private Function SampleDesign_LoadBandSpecText(ByVal wb As Workbook) As String
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
+    If ws Is Nothing Then Exit Function
+
+    Dim lastRow As Long
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    Dim r As Long
+    For r = 5 To lastRow
+        If Len(Trim$(CStr(ws.Cells(r, 1).Value))) > 0 Then
+            If Len(SampleDesign_LoadBandSpecText) > 0 Then SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & vbLf
+            SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & _
+                CStr(ws.Cells(r, 1).Value) & vbTab & _
+                CStr(ws.Cells(r, 2).Value) & vbTab & _
+                CStr(ws.Cells(r, 3).Value) & vbTab & _
+                CStr(ws.Cells(r, 4).Value) & vbTab & _
+                CStr(ws.Cells(r, 5).Value) & vbTab & _
+                CStr(ws.Cells(r, 6).Value)
+        End If
+    Next r
+End Function
+
+Private Sub SampleDesign_SaveBandSettings(ByVal wb As Workbook, ByVal outputHeader As String, ByVal specText As String)
+    Dim ws As Worksheet
+    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
+    If ws Is Nothing Then
+        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+        ws.Name = SD_BAND_SETTINGS_SHEET
+    Else
+        ws.Visible = xlSheetVisible
+        ws.Cells.Clear
+    End If
+
+    ws.Range("A1").Value = "표본설계 구간 설정"
+    ws.Range("A2").Value = "결과 헤더"
+    ws.Range("B2").Value = outputHeader
+    SampleDesign_WriteArray ws, 4, 1, Array("순서", "구간 시작값", "시작 조건", "구간 종료값", "종료 조건", "구간명")
+
+    Dim lines As Variant
+    lines = Split(Replace(CStr(specText), vbCrLf, vbLf), vbLf)
+    Dim i As Long
+    Dim outRow As Long
+    outRow = 5
+    For i = LBound(lines) To UBound(lines)
+        If Len(Trim$(CStr(lines(i)))) > 0 Then
+            Dim parts As Variant
+            parts = Split(CStr(lines(i)), vbTab)
+            Dim c As Long
+            Dim maxPart As Long
+            maxPart = UBound(parts)
+            If maxPart > 5 Then maxPart = 5
+            For c = 0 To maxPart
+                ws.Cells(outRow, c + 1).Value = parts(c)
+            Next c
+            outRow = outRow + 1
+        End If
+    Next i
+
+    ws.Columns("A:F").AutoFit
+    ws.Visible = xlSheetVeryHidden
+End Sub
 
 Private Function SampleDesign_DefaultQuotaHeaders() As Variant
     SampleDesign_DefaultQuotaHeaders = Array("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")
@@ -10626,8 +11050,9 @@ Private Sub SampleDesign_WriteGuideSheet(ByVal ws As Worksheet, ByVal setup As O
     SampleDesign_WriteArray ws, 4, 1, Array("1", "설계 시트 생성", "설정 마법사에서 입력 형태, 목표 표본수, 사용할 쿼터 변수를 먼저 정합니다.")
     SampleDesign_WriteArray ws, 5, 1, Array("2", "모집단 입력", "표본설계_입력 시트의 21행부터 쿼터값과 모집단수를 입력합니다.")
     SampleDesign_WriteArray ws, 6, 1, Array("3", "그룹 목표 입력", "상위 쿼터별 목표 표본수가 다르면 목표표본 그룹표에 조건과 목표표본수를 입력합니다.")
-    SampleDesign_WriteArray ws, 7, 1, Array("4", "할당 계산", "할당 계산 버튼을 눌러 배분 방식을 확인하고 결과/검토 시트를 생성합니다.")
-    SampleDesign_WriteArray ws, 8, 1, Array("5", "진행관리", "조사 진행 중에는 진행률 관리표 버튼으로 회수/부족/초과를 관리합니다.")
+    SampleDesign_WriteArray ws, 7, 1, Array("4", "구간 변수 생성", "매출액, 종사자수, 인구수 같은 실제 값은 구간 만들기 버튼으로 오른쪽에 구간 열을 만든 뒤 쿼터로 사용할 수 있습니다.")
+    SampleDesign_WriteArray ws, 8, 1, Array("5", "할당 계산", "할당 계산 버튼을 눌러 배분 방식을 확인하고 결과/검토 시트를 생성합니다.")
+    SampleDesign_WriteArray ws, 9, 1, Array("6", "진행관리", "조사 진행 중에는 진행률 관리표 버튼으로 회수/부족/초과를 관리합니다.")
 
     ws.Range("A11").Value = "필수 입력값"
     ws.Range("A11").Font.Bold = True
@@ -10662,8 +11087,17 @@ Private Sub SampleDesign_WriteGuideSheet(ByVal ws As Worksheet, ByVal setup As O
     SampleDesign_WriteArray ws, 40, 1, Array("목표 표본 수를 찾지 못함", "B4 또는 목표표본 그룹표의 목표표본수를 입력합니다.")
     SampleDesign_WriteArray ws, 41, 1, Array("계산할 모집단 행을 찾지 못함", "21행 이하 모집단수에 1 이상의 숫자가 있는지 확인합니다.")
     SampleDesign_WriteArray ws, 42, 1, Array("목표그룹없음", "목표표본 그룹표의 조건이 모집단 표의 쿼터값과 정확히 일치하는지 확인합니다.")
+    SampleDesign_WriteArray ws, 43, 1, Array("합계불일치", "최소/최대표본 제약 때문에 목표합계와 최종할당 합계가 다를 수 있습니다. 검토 시트의 목표그룹 검토표에서 차이를 확인합니다.")
 
-    With ws.Range("A4:C8")
+    ws.Range("A46").Value = "계산 방식 검토"
+    ws.Range("A46").Font.Bold = True
+    SampleDesign_WriteArray ws, 47, 1, Array("항목", "설명")
+    SampleDesign_WriteArray ws, 48, 1, Array("배분가중치", "단순 비례=모집단수, 제곱근 비례=SQRT(모집단수), 멱배분=모집단수^alpha, 균등=1, 사용자 지정=사용자가중치입니다.")
+    SampleDesign_WriteArray ws, 49, 1, Array("이론할당", "그룹목표표본수 x 배분가중치 / 그룹가중치합으로 계산합니다.")
+    SampleDesign_WriteArray ws, 50, 1, Array("최종할당", "이론할당을 정수화한 뒤 잔차가 큰 셀부터 보정해 목표그룹 합계를 맞춥니다.")
+    SampleDesign_WriteArray ws, 51, 1, Array("제약 검토", "최소표본/최대표본을 강하게 넣으면 목표합계를 맞출 수 없는 경우가 있으므로 검토 시트의 경고를 확인합니다.")
+
+    With ws.Range("A4:C9")
         .Borders.LineStyle = xlContinuous
     End With
     With ws.Range("A12:C17")
@@ -10675,10 +11109,13 @@ Private Sub SampleDesign_WriteGuideSheet(ByVal ws As Worksheet, ByVal setup As O
     With ws.Range("A29:B34")
         .Borders.LineStyle = xlContinuous
     End With
-    With ws.Range("A38:B42")
+    With ws.Range("A38:B43")
         .Borders.LineStyle = xlContinuous
     End With
-    ws.Range("A3:C3,A11:C12,A20:B21,A28:B28,A37:B38").Interior.Color = RGB(220, 235, 250)
+    With ws.Range("A47:B51")
+        .Borders.LineStyle = xlContinuous
+    End With
+    ws.Range("A3:C3,A11:C12,A20:B21,A28:B28,A37:B38,A46:B47").Interior.Color = RGB(220, 235, 250)
     ws.Columns("A:C").AutoFit
 End Sub
 
@@ -12389,7 +12826,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "4. 쿼터 점검" & vbCrLf & _
         "5. 모집단 구성표 리스트화(자동/직접 지정)" & vbCrLf & _
         "6. 리스트→집계표" & vbCrLf & _
-        "7. 표본설계 가이드 열기", _
+        "7. 표본설계 가이드 열기" & vbCrLf & _
+        "8. 숫자값 구간 만들기", _
         "1")
 
     Select Case choice
@@ -12400,8 +12838,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "5": SampleDesign_ListifyPopulationTable
         Case "6": SampleDesign_PivotPopulationList
         Case "7": SampleDesign_ShowGuide
+        Case "8": SampleDesign_CreateBandColumn
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~7 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~8 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -12729,6 +13168,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignShowGuide(control As IRibbonControl)
     SampleDesign_ShowGuide
+End Sub
+
+Public Sub Ribbon_SampleDesignCreateBandColumn(control As IRibbonControl)
+    SampleDesign_CreateBandColumn
 End Sub
 
 Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)

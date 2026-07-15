@@ -538,6 +538,341 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-SampleDesignBandBuilderUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = "frmSampleDesignBandBuilder"
+    $designer = $form.Designer
+    $form.Properties.Item("Caption").Value = "표본설계 구간 만들기"
+    $form.Properties.Item("Width").Value = 720
+    $form.Properties.Item("Height").Value = 640
+    $form.Properties.Item("ScrollBars").Value = 2
+
+    $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
+    $lblGuide.Caption = "선택한 숫자 열 오른쪽에 구간 열을 생성합니다. 시작/종료 조건을 확인한 뒤 실행하세요."
+    $lblGuide.Left = 12
+    $lblGuide.Top = 10
+    $lblGuide.Width = 660
+    $lblGuide.Height = 30
+    $lblGuide.WordWrap = $true
+
+    $lblHeader = $designer.Controls.Add("Forms.Label.1", "lblHeader", $true)
+    $lblHeader.Caption = "결과 열 헤더"
+    $lblHeader.Left = 18
+    $lblHeader.Top = 52
+    $lblHeader.Width = 90
+    $lblHeader.Height = 18
+
+    $txtOutputHeader = $designer.Controls.Add("Forms.TextBox.1", "txtOutputHeader", $true)
+    $txtOutputHeader.Left = 110
+    $txtOutputHeader.Top = 48
+    $txtOutputHeader.Width = 180
+    $txtOutputHeader.Height = 22
+
+    $lblCount = $designer.Controls.Add("Forms.Label.1", "lblCount", $true)
+    $lblCount.Caption = "구간 개수"
+    $lblCount.Left = 330
+    $lblCount.Top = 52
+    $lblCount.Width = 70
+    $lblCount.Height = 18
+
+    $txtBandCount = $designer.Controls.Add("Forms.TextBox.1", "txtBandCount", $true)
+    $txtBandCount.Left = 404
+    $txtBandCount.Top = 48
+    $txtBandCount.Width = 50
+    $txtBandCount.Height = 22
+
+    $lblHint = $designer.Controls.Add("Forms.Label.1", "lblHint", $true)
+    $lblHint.Caption = "마지막 구간의 시작 조건은 기본적으로 1구간의 시작 조건과 동일하게 설정됩니다."
+    $lblHint.Left = 18
+    $lblHint.Top = 82
+    $lblHint.Width = 650
+    $lblHint.Height = 18
+
+    $headers = @(
+        @("lblSeq", "구간", 18, 108, 36),
+        @("lblStart", "시작값", 62, 108, 90),
+        @("lblStartOp", "시작 조건", 158, 108, 74),
+        @("lblEnd", "종료값", 238, 108, 90),
+        @("lblEndOp", "종료 조건", 334, 108, 74),
+        @("lblBandLabel", "구간명(선택)", 418, 108, 180)
+    )
+    foreach ($item in $headers) {
+        $lbl = $designer.Controls.Add("Forms.Label.1", $item[0], $true)
+        $lbl.Caption = $item[1]
+        $lbl.Left = $item[2]
+        $lbl.Top = $item[3]
+        $lbl.Width = $item[4]
+        $lbl.Height = 16
+    }
+
+    for ($i = 1; $i -le 15; $i++) {
+        $top = 130 + (($i - 1) * 28)
+
+        $lbl = $designer.Controls.Add("Forms.Label.1", "lblBand$i", $true)
+        $lbl.Caption = "$i"
+        $lbl.Left = 26
+        $lbl.Top = $top + 4
+        $lbl.Width = 24
+        $lbl.Height = 16
+
+        $txtStart = $designer.Controls.Add("Forms.TextBox.1", "txtStart$i", $true)
+        $txtStart.Left = 62
+        $txtStart.Top = $top
+        $txtStart.Width = 86
+        $txtStart.Height = 22
+
+        $cboStart = $designer.Controls.Add("Forms.ComboBox.1", "cboStartOp$i", $true)
+        $cboStart.Left = 158
+        $cboStart.Top = $top
+        $cboStart.Width = 70
+        $cboStart.Height = 22
+
+        $txtEnd = $designer.Controls.Add("Forms.TextBox.1", "txtEnd$i", $true)
+        $txtEnd.Left = 238
+        $txtEnd.Top = $top
+        $txtEnd.Width = 86
+        $txtEnd.Height = 22
+
+        $cboEnd = $designer.Controls.Add("Forms.ComboBox.1", "cboEndOp$i", $true)
+        $cboEnd.Left = 334
+        $cboEnd.Top = $top
+        $cboEnd.Width = 70
+        $cboEnd.Height = 22
+
+        $txtLabel = $designer.Controls.Add("Forms.TextBox.1", "txtLabel$i", $true)
+        $txtLabel.Left = 418
+        $txtLabel.Top = $top
+        $txtLabel.Width = 210
+        $txtLabel.Height = 22
+    }
+
+    $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
+    $cmdOK.Caption = "구간 열 생성"
+    $cmdOK.Left = 486
+    $cmdOK.Top = 560
+    $cmdOK.Width = 100
+    $cmdOK.Height = 28
+
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "취소"
+    $cmdCancel.Left = 596
+    $cmdCancel.Top = 560
+    $cmdCancel.Width = 70
+    $cmdCancel.Height = 28
+
+    $formCode = @'
+Option Explicit
+Private Const MAX_BANDS As Long = 15
+Public Cancelled As Boolean
+Public BandSpecText As String
+
+Public Sub Configure(ByVal defaultSpecText As String, ByVal defaultHeader As String)
+    Cancelled = True
+    BandSpecText = ""
+    txtOutputHeader.Text = defaultHeader
+    InitCombos
+    ClearRows
+
+    If Len(Trim$(defaultSpecText)) > 0 Then
+        LoadSpec defaultSpecText
+    Else
+        txtBandCount.Text = "5"
+        SetupDefaultRows 5
+    End If
+
+    ApplyBandCount
+End Sub
+
+Private Sub InitCombos()
+    Dim i As Long
+    For i = 1 To MAX_BANDS
+        With Controls("cboStartOp" & CStr(i))
+            .Clear
+            .AddItem "이상"
+            .AddItem "초과"
+            .Value = "이상"
+        End With
+        With Controls("cboEndOp" & CStr(i))
+            .Clear
+            .AddItem "미만"
+            .AddItem "이하"
+            .Value = "미만"
+        End With
+    Next i
+End Sub
+
+Private Sub ClearRows()
+    Dim i As Long
+    For i = 1 To MAX_BANDS
+        Controls("txtStart" & CStr(i)).Text = ""
+        Controls("txtEnd" & CStr(i)).Text = ""
+        Controls("txtLabel" & CStr(i)).Text = ""
+        Controls("cboStartOp" & CStr(i)).Value = "이상"
+        Controls("cboEndOp" & CStr(i)).Value = "미만"
+    Next i
+End Sub
+
+Private Sub SetupDefaultRows(ByVal bandCount As Long)
+    Dim i As Long
+    For i = 1 To bandCount
+        Controls("cboStartOp" & CStr(i)).Value = "이상"
+        Controls("cboEndOp" & CStr(i)).Value = "미만"
+    Next i
+End Sub
+
+Private Sub LoadSpec(ByVal specText As String)
+    Dim lines As Variant
+    lines = Split(Replace(CStr(specText), vbCrLf, vbLf), vbLf)
+
+    Dim visibleCount As Long
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        If Len(Trim$(CStr(lines(i)))) > 0 And visibleCount < MAX_BANDS Then
+            Dim parts As Variant
+            parts = Split(CStr(lines(i)), vbTab)
+            If UBound(parts) >= 4 Then
+                visibleCount = visibleCount + 1
+                Controls("txtStart" & CStr(visibleCount)).Text = CStr(parts(1))
+                Controls("cboStartOp" & CStr(visibleCount)).Value = NormalizeStartOp(CStr(parts(2)))
+                Controls("txtEnd" & CStr(visibleCount)).Text = CStr(parts(3))
+                Controls("cboEndOp" & CStr(visibleCount)).Value = NormalizeEndOp(CStr(parts(4)))
+                If UBound(parts) >= 5 Then Controls("txtLabel" & CStr(visibleCount)).Text = CStr(parts(5))
+            End If
+        End If
+    Next i
+    If visibleCount = 0 Then visibleCount = 5
+    txtBandCount.Text = CStr(visibleCount)
+End Sub
+
+Private Function NormalizeStartOp(ByVal opText As String) As String
+    If InStr(1, opText, "초과", vbTextCompare) > 0 Then
+        NormalizeStartOp = "초과"
+    Else
+        NormalizeStartOp = "이상"
+    End If
+End Function
+
+Private Function NormalizeEndOp(ByVal opText As String) As String
+    If InStr(1, opText, "이하", vbTextCompare) > 0 Then
+        NormalizeEndOp = "이하"
+    Else
+        NormalizeEndOp = "미만"
+    End If
+End Function
+
+Private Function BandCount() As Long
+    BandCount = CLng(Val(txtBandCount.Text))
+    If BandCount < 1 Then BandCount = 1
+    If BandCount > MAX_BANDS Then BandCount = MAX_BANDS
+End Function
+
+Private Sub txtBandCount_Change()
+    ApplyBandCount
+End Sub
+
+Private Sub cboStartOp1_Change()
+    Dim cnt As Long
+    cnt = BandCount()
+    If cnt > 1 Then Controls("cboStartOp" & CStr(cnt)).Value = cboStartOp1.Value
+End Sub
+
+Private Sub ApplyBandCount()
+    Dim cnt As Long
+    cnt = BandCount()
+
+    Dim i As Long
+    For i = 1 To MAX_BANDS
+        Dim isVisible As Boolean
+        isVisible = (i <= cnt)
+        Controls("lblBand" & CStr(i)).Visible = isVisible
+        Controls("txtStart" & CStr(i)).Visible = isVisible
+        Controls("cboStartOp" & CStr(i)).Visible = isVisible
+        Controls("txtEnd" & CStr(i)).Visible = isVisible
+        Controls("cboEndOp" & CStr(i)).Visible = isVisible
+        Controls("txtLabel" & CStr(i)).Visible = isVisible
+    Next i
+
+    If cnt > 1 Then Controls("cboStartOp" & CStr(cnt)).Value = cboStartOp1.Value
+    cmdOK.Top = 142 + cnt * 28
+    cmdCancel.Top = cmdOK.Top
+    ScrollHeight = cmdOK.Top + 60
+    Height = Application.WorksheetFunction.Min(640, cmdOK.Top + 78)
+End Sub
+
+Private Sub cmdOK_Click()
+    Dim cnt As Long
+    cnt = BandCount()
+    txtBandCount.Text = CStr(cnt)
+
+    If Len(Trim$(txtOutputHeader.Text)) = 0 Then
+        MsgBox "결과 열 헤더를 입력하세요.", vbExclamation, "표본설계 구간 만들기"
+        txtOutputHeader.SetFocus
+        Exit Sub
+    End If
+
+    Dim i As Long
+    BandSpecText = ""
+    For i = 1 To cnt
+        Dim startText As String, endText As String, labelText As String
+        startText = Trim$(Controls("txtStart" & CStr(i)).Text)
+        endText = Trim$(Controls("txtEnd" & CStr(i)).Text)
+        labelText = Trim$(Controls("txtLabel" & CStr(i)).Text)
+
+        If Len(startText) = 0 And Len(endText) = 0 Then
+            MsgBox CStr(i) & "구간은 시작값 또는 종료값 중 하나 이상이 필요합니다.", vbExclamation, "표본설계 구간 만들기"
+            Controls("txtStart" & CStr(i)).SetFocus
+            Exit Sub
+        End If
+        If Len(startText) > 0 And Not IsNumeric(Replace(startText, ",", "")) Then
+            MsgBox CStr(i) & "구간 시작값은 숫자로 입력하세요.", vbExclamation, "표본설계 구간 만들기"
+            Controls("txtStart" & CStr(i)).SetFocus
+            Exit Sub
+        End If
+        If Len(endText) > 0 And Not IsNumeric(Replace(endText, ",", "")) Then
+            MsgBox CStr(i) & "구간 종료값은 숫자로 입력하세요.", vbExclamation, "표본설계 구간 만들기"
+            Controls("txtEnd" & CStr(i)).SetFocus
+            Exit Sub
+        End If
+        If Len(startText) > 0 And Len(endText) > 0 Then
+            If CDbl(Replace(startText, ",", "")) >= CDbl(Replace(endText, ",", "")) Then
+                MsgBox CStr(i) & "구간의 시작값은 종료값보다 작아야 합니다.", vbExclamation, "표본설계 구간 만들기"
+                Controls("txtStart" & CStr(i)).SetFocus
+                Exit Sub
+            End If
+        End If
+
+        If Len(BandSpecText) > 0 Then BandSpecText = BandSpecText & vbLf
+        BandSpecText = BandSpecText & CStr(i) & vbTab & startText & vbTab & _
+                       Controls("cboStartOp" & CStr(i)).Value & vbTab & _
+                       endText & vbTab & Controls("cboEndOp" & CStr(i)).Value & vbTab & labelText
+    Next i
+
+    Cancelled = False
+    Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Cancelled = True
+    BandSpecText = ""
+    Hide
+End Sub
+
+Public Property Get OutputHeader() As String
+    OutputHeader = CStr(txtOutputHeader.Text)
+End Property
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        Cancelled = True
+        BandSpecText = ""
+    End If
+End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-PopulationListifyPreviewUserForm {
     param($Workbook)
 
@@ -2772,6 +3107,7 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
+          <button id="btnSampleDesignBandColumn" label="구간 만들기" imageMso="GroupInsert" onAction="Ribbon_SampleDesignCreateBandColumn" screentip="숫자값을 표본설계용 구간 변수로 변환" supertip="매출액, 종사자수, 인구수 같은 숫자 열을 선택하고 UserForm에서 구간 시작/종료값과 포함 조건을 지정하면 오른쪽에 구간 열을 생성하고 설정을 숨김 시트에 저장합니다." />
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>
@@ -2882,7 +3218,7 @@ try {
         $publishStage = "remove old VBA components"
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
-                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmSampleDesignSetup" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
+                ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmSampleDesignSetup" -or $component.Name -eq "frmSampleDesignBandBuilder" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
@@ -2895,6 +3231,8 @@ try {
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
         $publishStage = "add frmSampleDesignSetup"
         Add-SampleDesignSetupUserForm -Workbook $workbook
+        $publishStage = "add frmSampleDesignBandBuilder"
+        Add-SampleDesignBandBuilderUserForm -Workbook $workbook
         $publishStage = "add frmPopulationListifyPreview"
         Add-PopulationListifyPreviewUserForm -Workbook $workbook
         $publishStage = "add frmDatabaseMergeSetup"
