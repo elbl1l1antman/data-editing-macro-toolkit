@@ -2757,6 +2757,7 @@ function Add-RibbonCustomUi {
           <button id="btnSpssMetadata" label="표 메타 추출" imageMso="TablePropertiesDialog" onAction="Ribbon_SPSSExtractTableMetadata" screentip="SPSS 표 메타 추출" supertip="집계표의 표 제목, 행 위치, 배너 목록, 이동 링크를 새 시트로 추출합니다." />
         </group>
         <group id="grpRosterQualityTools" label="명부 품질">
+          <button id="btnRosterValidationSheet" label="검증 시트" size="large" imageMso="TableInsert" onAction="Ribbon_RosterValidationSheet" screentip="명부 검증용 표준 시트 생성" supertip="ID, 사업체명/기업체명/이름, 연락처1~3, 주소1~3, 이메일, 직무/직책/소속부서/기타정보 헤더가 있는 표준 입력 시트를 만들거나 기존 명부를 자동 인식해 구성합니다." />
           <button id="btnRosterQuality" label="품질 진단" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_RosterQualityReport" screentip="명부 품질 진단 리포트" supertip="선택한 명부에서 빈값, 전화번호, 주소 유형, 사업자번호 상태를 요약한 리포트 시트를 만듭니다." />
           <button id="btnRosterDuplicate" label="중복 탐지" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_RosterDetectDuplicates" screentip="중복 업체 탐지" supertip="업체명, 주소, 전화번호, 사업자번호를 조합해 중복 의심 쌍과 점수를 새 시트에 생성합니다." />
           <button id="btnRosterCompanyMatch" label="업체명 매칭" imageMso="TextBoxInsert" onAction="Ribbon_RosterMatchCompanyNames" screentip="업체명 유사그룹 생성" supertip="업체명을 표준화하고 같은 표준화명을 유사그룹으로 묶는 열을 생성합니다." />
@@ -2767,7 +2768,7 @@ function Add-RibbonCustomUi {
           <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="범위를 직접 지정하면 범위 검증 후 기초통계량표를 먼저 만들고, 오른쪽에 Q1/Q3 기준값 열과 원본 검토복사 열을 추가해 조건부 서식으로 표시합니다." />
         </group>
         <group id="grpSampleDesignTools" label="표본설계">
-          <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="선택 범위 안의 여러 집계표 블록을 자동 탐지하고 미리보기 창에서 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
+          <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="자동 감지 또는 범위 직접 지정을 선택하고, 미리보기 창에서 행축/가로축/값 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />

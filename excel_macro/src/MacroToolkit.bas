@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.20"
+Public Const TOOLKIT_VERSION As String = "1.1.21"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -132,6 +132,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A47").Value = "Address_CombineDongAndRoad"
     ws.Range("A48").Value = "SampleDesign_PivotPopulationList"
     ws.Range("A49").Value = "SampleDesign_ShowGuide"
+    ws.Range("A50").Value = "Roster_CreateValidationWorkspace"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -6590,6 +6591,93 @@ ErrHandler:
     MsgBox "명부 품질 진단 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "명부 품질 진단"
 End Sub
 
+Public Sub Roster_CreateValidationWorkspace()
+    Dim choice As String
+    choice = Toolkit_ButtonMenu( _
+        "명부 검증 시트", _
+        "명부 검증용 표준 입력 시트를 만드는 방식을 선택하세요.", _
+        "1" & vbTab & "빈 표준 입력 시트 만들기" & vbLf & _
+        "2" & vbTab & "기존 명부 자동 인식해서 구성", _
+        "1")
+    If Len(choice) = 0 Then Exit Sub
+
+    Select Case choice
+        Case "1": Roster_CreateValidationTemplate
+        Case "2": Roster_CreateValidationSheetFromSelection
+    End Select
+End Sub
+
+Public Sub Roster_CreateValidationTemplate()
+    Dim wb As Workbook
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+
+    Dim ws As Worksheet
+    Set ws = Roster_CreateValidationSheetCore(wb, True)
+    ws.Activate
+
+    MsgBox "명부 검증용 표준 입력 시트를 생성했습니다." & vbCrLf & _
+           "헤더 아래에 데이터를 붙여넣은 뒤 품질 진단/중복 탐지 기능을 실행하세요.", _
+           vbInformation, "명부 검증 시트"
+End Sub
+
+Public Sub Roster_CreateValidationSheetFromSelection()
+    Dim dataRange As Range
+    If Not Toolkit_GetRangeFromUserForm("명부 검증 시트 자동 구성", _
+        "헤더가 포함된 원본 명부 범위를 선택하세요." & vbCrLf & _
+        "첫 행을 헤더로 보고 ID, 업체명, 연락처, 주소, 이메일, 직무/직책/부서 열을 자동 인식합니다.", _
+        dataRange) Then Exit Sub
+    If dataRange Is Nothing Then Exit Sub
+    Set dataRange = dataRange.Areas(1)
+
+    If dataRange.Rows.Count < 2 Then
+        MsgBox "자동 구성에는 헤더 1행과 데이터 1행 이상이 필요합니다.", vbExclamation, "명부 검증 시트"
+        Exit Sub
+    End If
+
+    Dim headerMap As Object
+    Set headerMap = Roster_BuildValidationHeaderMap(dataRange)
+
+    Dim summary As String
+    summary = Roster_ValidationMapSummary(dataRange, headerMap)
+    If MsgBox(summary & vbCrLf & vbCrLf & "이 구성으로 명부 검증용 표준 시트를 만들까요?", _
+              vbQuestion + vbYesNo, "명부 검증 시트 자동 구성") <> vbYes Then Exit Sub
+
+    Dim wb As Workbook
+    Set wb = dataRange.Worksheet.Parent
+    Dim outWs As Worksheet
+    Set outWs = Roster_CreateValidationSheetCore(wb, False)
+
+    Dim headers As Variant
+    headers = Roster_ValidationHeaders()
+
+    Dim dataRows As Long
+    dataRows = dataRange.Rows.Count - 1
+
+    Dim outData() As Variant
+    ReDim outData(1 To dataRows, 1 To UBound(headers) - LBound(headers) + 1)
+
+    Dim r As Long, targetIndex As Long, srcRelCol As Long, targetHeader As String
+    For r = 1 To dataRows
+        For targetIndex = LBound(headers) To UBound(headers)
+            targetHeader = CStr(headers(targetIndex))
+            srcRelCol = CLng(headerMap(targetHeader))
+            If srcRelCol > 0 Then
+                outData(r, targetIndex - LBound(headers) + 1) = dataRange.Cells(r + 1, srcRelCol).Value
+            ElseIf targetHeader = "ID" Then
+                outData(r, targetIndex - LBound(headers) + 1) = "AUTO_" & dataRange.Worksheet.Name & "_R" & CStr(dataRange.Row + r)
+            End If
+        Next targetIndex
+    Next r
+
+    outWs.Range(outWs.Cells(2, 1), outWs.Cells(dataRows + 1, UBound(headers) - LBound(headers) + 1)).Value = outData
+    outWs.Columns.AutoFit
+    outWs.Activate
+
+    MsgBox "원본 명부를 표준 검증 시트로 구성했습니다." & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "명부 검증 시트"
+End Sub
+
 Private Function Roster_SelectDetectionMode(ByVal title As String) As VbMsgBoxResult
     Roster_SelectDetectionMode = MsgBox( _
         "진행 방식을 선택하세요." & vbCrLf & vbCrLf & _
@@ -7047,6 +7135,167 @@ Private Function Roster_FindHeaderColumn(ByVal dataRange As Range, ByVal candida
             End If
         Next i
     Next c
+End Function
+
+Private Function Roster_ValidationHeaders() As Variant
+    Roster_ValidationHeaders = Array("ID", "사업체명", "기업체명", "이름", "연락처1", "연락처2", "연락처3", _
+                                     "주소1", "주소2", "주소3", "이메일", "직무", "직책", "소속부서", "기타정보")
+End Function
+
+Private Function Roster_ValidationExampleRow() As Variant
+    Roster_ValidationExampleRow = Array("R001", "예시상사", "예시기업", "홍길동", "02-000-0000", "010-0000-0000", "", _
+                                        "서울특별시 중구 세종대로 110", "", "", "sample@example.com", "조사 응답", "팀장", "경영지원팀", "비고")
+End Function
+
+Private Function Roster_CreateValidationSheetCore(ByVal wb As Workbook, ByVal includeExample As Boolean) As Worksheet
+    Dim ws As Worksheet
+    Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
+    ws.Name = SPSS_UniqueSheetName(wb, "명부검증_입력")
+
+    Dim headers As Variant
+    headers = Roster_ValidationHeaders()
+    Roster_WriteArray ws, 1, 1, headers
+    If includeExample Then Roster_WriteArray ws, 2, 1, Roster_ValidationExampleRow()
+
+    Dim lastCol As Long
+    lastCol = UBound(headers) - LBound(headers) + 1
+    With ws.Range(ws.Cells(1, 1), ws.Cells(1, lastCol))
+        .Font.Bold = True
+        .Interior.Color = RGB(220, 235, 250)
+        .Borders.LineStyle = xlContinuous
+    End With
+    If includeExample Then
+        With ws.Range(ws.Cells(2, 1), ws.Cells(2, lastCol))
+            .Interior.Color = RGB(245, 245, 245)
+            .Font.Color = RGB(120, 120, 120)
+        End With
+    End If
+
+    ws.Columns.AutoFit
+    Set Roster_CreateValidationSheetCore = ws
+End Function
+
+Private Function Roster_BuildValidationHeaderMap(ByVal dataRange As Range) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+
+    Dim usedColumns As Object
+    Set usedColumns = CreateObject("Scripting.Dictionary")
+
+    Dim headers As Variant
+    headers = Roster_ValidationHeaders()
+
+    Dim i As Long, targetHeader As String, relCol As Long
+    For i = LBound(headers) To UBound(headers)
+        targetHeader = CStr(headers(i))
+        relCol = Roster_FindHeaderColumnUnused(dataRange, Roster_ValidationCandidates(targetHeader), usedColumns)
+        result.Add targetHeader, relCol
+        If relCol > 0 Then usedColumns(CStr(relCol)) = True
+    Next i
+
+    Set Roster_BuildValidationHeaderMap = result
+End Function
+
+Private Function Roster_ValidationCandidates(ByVal targetHeader As String) As Variant
+    Select Case targetHeader
+        Case "ID"
+            Roster_ValidationCandidates = Array("ID", "아이디", "관리번호", "고유번호", "순번", "KEY", "키")
+        Case "사업체명"
+            Roster_ValidationCandidates = Array("사업체명", "사업장명", "업체명", "상호", "상호명", "사업자명")
+        Case "기업체명"
+            Roster_ValidationCandidates = Array("기업체명", "기업명", "회사명", "법인명", "업체명")
+        Case "이름"
+            Roster_ValidationCandidates = Array("이름", "성명", "대표자", "대표자명", "담당자", "담당자명", "응답자")
+        Case "연락처1"
+            Roster_ValidationCandidates = Array("연락처1", "전화번호1", "대표번호", "전화", "전화번호", "연락처", "TEL", "Mobile", "휴대폰", "핸드폰")
+        Case "연락처2"
+            Roster_ValidationCandidates = Array("연락처2", "전화번호2", "보조연락처", "보조전화", "휴대폰2", "팩스", "FAX")
+        Case "연락처3"
+            Roster_ValidationCandidates = Array("연락처3", "전화번호3", "기타연락처", "기타전화")
+        Case "주소1"
+            Roster_ValidationCandidates = Array("주소1", "주소", "도로명주소", "소재지", "사업장주소", "본사주소")
+        Case "주소2"
+            Roster_ValidationCandidates = Array("주소2", "지번주소", "상세주소", "주소상세", "추가주소")
+        Case "주소3"
+            Roster_ValidationCandidates = Array("주소3", "기타주소")
+        Case "이메일"
+            Roster_ValidationCandidates = Array("이메일", "메일", "전자우편", "E-mail", "Email")
+        Case "직무"
+            Roster_ValidationCandidates = Array("직무", "업무", "담당업무", "역할")
+        Case "직책"
+            Roster_ValidationCandidates = Array("직책", "직위", "직급")
+        Case "소속부서"
+            Roster_ValidationCandidates = Array("소속부서", "부서", "부서명", "소속", "팀")
+        Case Else
+            Roster_ValidationCandidates = Array("기타정보", "기타", "비고", "메모", "참고")
+    End Select
+End Function
+
+Private Function Roster_FindHeaderColumnUnused(ByVal dataRange As Range, ByVal candidates As Variant, ByVal usedColumns As Object) As Long
+    Dim passNo As Long, c As Long, i As Long
+    Dim headerKey As String, candidateKey As String
+
+    For passNo = 1 To 2
+        For c = 1 To dataRange.Columns.Count
+            If Not usedColumns.Exists(CStr(c)) Then
+                headerKey = Roster_NormalizeHeaderForMap(CStr(dataRange.Cells(1, c).Value))
+                If Len(headerKey) > 0 Then
+                    For i = LBound(candidates) To UBound(candidates)
+                        candidateKey = Roster_NormalizeHeaderForMap(CStr(candidates(i)))
+                        If Len(candidateKey) > 0 Then
+                            If (passNo = 1 And headerKey = candidateKey) _
+                               Or (passNo = 2 And InStr(1, headerKey, candidateKey, vbTextCompare) > 0) Then
+                                Roster_FindHeaderColumnUnused = c
+                                Exit Function
+                            End If
+                        End If
+                    Next i
+                End If
+            End If
+        Next c
+    Next passNo
+End Function
+
+Private Function Roster_NormalizeHeaderForMap(ByVal headerText As String) As String
+    Dim result As String
+    result = LCase$(Trim$(CStr(headerText)))
+    result = Replace(result, " ", "")
+    result = Replace(result, "_", "")
+    result = Replace(result, "-", "")
+    result = Replace(result, ".", "")
+    result = Replace(result, "/", "")
+    result = Replace(result, "\", "")
+    result = Replace(result, "(", "")
+    result = Replace(result, ")", "")
+    result = Replace(result, "[", "")
+    result = Replace(result, "]", "")
+    Roster_NormalizeHeaderForMap = result
+End Function
+
+Private Function Roster_ValidationMapSummary(ByVal dataRange As Range, ByVal headerMap As Object) As String
+    Dim headers As Variant
+    headers = Roster_ValidationHeaders()
+
+    Dim result As String
+    result = "자동 인식 결과" & vbCrLf & _
+             "원본: " & dataRange.Worksheet.Name & "!" & dataRange.Address(False, False) & vbCrLf & _
+             "데이터 행: " & CStr(dataRange.Rows.Count - 1) & vbCrLf & vbCrLf
+
+    Dim i As Long, targetHeader As String, relCol As Long
+    For i = LBound(headers) To UBound(headers)
+        targetHeader = CStr(headers(i))
+        relCol = CLng(headerMap(targetHeader))
+        If relCol > 0 Then
+            result = result & "- " & targetHeader & " <= " & CStr(dataRange.Cells(1, relCol).Value) & _
+                     " (선택범위 " & CStr(relCol) & "열)" & vbCrLf
+        ElseIf targetHeader = "ID" Then
+            result = result & "- ID <= 자동 생성" & vbCrLf
+        Else
+            result = result & "- " & targetHeader & " <= 미인식/빈 열" & vbCrLf
+        End If
+    Next i
+
+    Roster_ValidationMapSummary = result
 End Function
 
 Private Function Roster_CellText(ws As Worksheet, ByVal rowIndex As Long, ByVal dataRange As Range, ByVal relativeCol As Long) As String
@@ -7689,6 +7938,19 @@ Public Sub SampleDesign_ReviewQuota()
 End Sub
 
 Public Sub SampleDesign_ListifyPopulationTable()
+    Dim modeChoice As String
+    modeChoice = Toolkit_ButtonMenu( _
+        "모집단 구성표 리스트화", _
+        "데이터 구조 지정 방식을 선택하세요.", _
+        "1" & vbTab & "자동 감지 후 미리보기" & vbLf & _
+        "2" & vbTab & "범위 직접 지정 후 미리보기", _
+        "1")
+    If Len(modeChoice) = 0 Then Exit Sub
+    If modeChoice = "2" Then
+        SampleDesign_ListifyPopulationTableManual
+        Exit Sub
+    End If
+
     Dim sourceRange As Range
     If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화", _
         "리스트화할 집계표들이 포함된 전체 범위를 선택하세요." & vbCrLf & _
@@ -7729,6 +7991,62 @@ Public Sub SampleDesign_ListifyPopulationTable()
     outWs.Activate
 
     MsgBox blocks.Count & "개 집계표에서 " & writtenRows & "개 리스트 행을 생성했습니다." & vbCrLf & _
+           "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
+End Sub
+
+Public Sub SampleDesign_ListifyPopulationTableManual()
+    Dim rowAxisRange As Range
+    Dim columnHeaderRange As Range
+    Dim valueRange As Range
+
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화 - 행축 데이터", _
+        "세로로 반복되는 항목 범위를 선택하세요." & vbCrLf & _
+        "예: 업종, 지역, 성별처럼 행 방향으로 내려가는 항목 열입니다. 여러 열을 함께 선택할 수 있습니다.", _
+        rowAxisRange) Then Exit Sub
+    If rowAxisRange Is Nothing Then Exit Sub
+    Set rowAxisRange = rowAxisRange.Areas(1)
+
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화 - 가로 헤더", _
+        "가로축 항목 헤더 범위를 선택하세요." & vbCrLf & _
+        "예: 종사자 규모, 연령대, 성별처럼 값 영역 위에 있는 헤더 행입니다.", _
+        columnHeaderRange) Then Exit Sub
+    If columnHeaderRange Is Nothing Then Exit Sub
+    Set columnHeaderRange = columnHeaderRange.Areas(1).Rows(1)
+
+    If Not Toolkit_GetRangeFromUserForm("모집단 구성표 리스트화 - 값 영역", _
+        "숫자 값 영역을 선택하세요." & vbCrLf & _
+        "행 수는 행축 데이터 범위와 같고, 열 수는 가로 헤더 범위와 같아야 합니다.", _
+        valueRange) Then Exit Sub
+    If valueRange Is Nothing Then Exit Sub
+    Set valueRange = valueRange.Areas(1)
+
+    If Not PopList_ManualRangesValid(rowAxisRange, columnHeaderRange, valueRange) Then Exit Sub
+
+    Dim tableTitle As String
+    tableTitle = InputBox("표 제목을 입력하세요. 비워두면 시트명과 값 영역 주소를 사용합니다.", _
+                          "모집단 구성표 리스트화", _
+                          PopList_ManualDefaultTitle(rowAxisRange, valueRange))
+    If Len(Trim$(tableTitle)) = 0 Then tableTitle = PopList_ManualDefaultTitle(rowAxisRange, valueRange)
+
+    Dim columnAxisName As String
+    Dim valueName As String
+    Dim outputSheetName As String
+    columnAxisName = "가로구분"
+    valueName = "값"
+    outputSheetName = "모집단_리스트"
+
+    If Not PopList_ShowManualPreviewForm(tableTitle, rowAxisRange, columnHeaderRange, valueRange, _
+                                         columnAxisName, valueName, outputSheetName) Then Exit Sub
+
+    outputSheetName = PopList_CleanSheetName(outputSheetName, "모집단_리스트")
+    Dim outWs As Worksheet
+    Set outWs = SampleDesign_PrepareOutputSheet(rowAxisRange.Worksheet.Parent, outputSheetName)
+
+    Dim writtenRows As Long
+    writtenRows = PopList_WriteManualOutput(tableTitle, rowAxisRange, columnHeaderRange, valueRange, outWs, columnAxisName, valueName)
+    outWs.Activate
+
+    MsgBox "직접 지정한 구성표에서 " & writtenRows & "개 리스트 행을 생성했습니다." & vbCrLf & _
            "결과 시트: " & outWs.Name, vbInformation, "모집단 구성표 리스트화"
 End Sub
 
@@ -8008,6 +8326,272 @@ Fallback:
               vbQuestion + vbYesNo, "모집단 구성표 리스트화") = vbYes Then
         PopList_ShowPreviewForm = True
     End If
+End Function
+
+Private Function PopList_ShowManualPreviewForm(ByVal tableTitle As String, ByVal rowAxisRange As Range, _
+                                               ByVal columnHeaderRange As Range, ByVal valueRange As Range, _
+                                               ByRef columnAxisName As String, ByRef valueName As String, _
+                                               ByRef outputSheetName As String) As Boolean
+    On Error GoTo Fallback
+
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmPopulationListifyPreview")
+    form.Configure PopList_BuildManualSummary(tableTitle, rowAxisRange, columnHeaderRange, valueRange), _
+                   PopList_BuildManualPreview(tableTitle, rowAxisRange, columnHeaderRange, valueRange, columnAxisName, valueName, 25), _
+                   columnAxisName, valueName, outputSheetName
+    form.Show
+
+    If CBool(form.Confirmed) Then
+        columnAxisName = Trim$(CStr(form.ColumnAxisName))
+        valueName = Trim$(CStr(form.ValueName))
+        outputSheetName = Trim$(CStr(form.OutputSheetName))
+        If Len(columnAxisName) = 0 Then columnAxisName = "가로구분"
+        If Len(valueName) = 0 Then valueName = "값"
+        If Len(outputSheetName) = 0 Then outputSheetName = "모집단_리스트"
+        PopList_ShowManualPreviewForm = True
+    End If
+    Unload form
+    Exit Function
+
+Fallback:
+    On Error Resume Next
+    If Not form Is Nothing Then Unload form
+    On Error GoTo 0
+
+    If MsgBox("미리보기 창을 열지 못했습니다. 직접 지정한 구조로 바로 실행할까요?" & vbCrLf & vbCrLf & _
+              PopList_BuildManualSummary(tableTitle, rowAxisRange, columnHeaderRange, valueRange), _
+              vbQuestion + vbYesNo, "모집단 구성표 리스트화") = vbYes Then
+        PopList_ShowManualPreviewForm = True
+    End If
+End Function
+
+Private Function PopList_ManualRangesValid(ByVal rowAxisRange As Range, ByVal columnHeaderRange As Range, ByVal valueRange As Range) As Boolean
+    If Not (rowAxisRange.Worksheet Is columnHeaderRange.Worksheet) Or Not (rowAxisRange.Worksheet Is valueRange.Worksheet) Then
+        MsgBox "행축, 가로 헤더, 값 영역은 모두 같은 시트에서 선택해야 합니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If rowAxisRange.Rows.Count <> valueRange.Rows.Count Then
+        MsgBox "행축 데이터 범위의 행 수와 값 영역의 행 수가 다릅니다." & vbCrLf & _
+               "행축 행 수: " & rowAxisRange.Rows.Count & vbCrLf & _
+               "값 영역 행 수: " & valueRange.Rows.Count, vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If columnHeaderRange.Columns.Count <> valueRange.Columns.Count Then
+        MsgBox "가로 헤더 범위의 열 수와 값 영역의 열 수가 다릅니다." & vbCrLf & _
+               "가로 헤더 열 수: " & columnHeaderRange.Columns.Count & vbCrLf & _
+               "값 영역 열 수: " & valueRange.Columns.Count, vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    If rowAxisRange.Rows.Count = 0 Or rowAxisRange.Columns.Count = 0 _
+       Or columnHeaderRange.Columns.Count = 0 Or valueRange.Rows.Count = 0 Or valueRange.Columns.Count = 0 Then
+        MsgBox "선택한 범위가 비어 있습니다.", vbExclamation, "모집단 구성표 리스트화"
+        Exit Function
+    End If
+
+    PopList_ManualRangesValid = True
+End Function
+
+Private Function PopList_ManualDefaultTitle(ByVal rowAxisRange As Range, ByVal valueRange As Range) As String
+    PopList_ManualDefaultTitle = rowAxisRange.Worksheet.Name & "!" & valueRange.Address(False, False)
+End Function
+
+Private Function PopList_ManualAxisHeaders(ByVal rowAxisRange As Range) As Collection
+    Dim headers As Collection
+    Set headers = New Collection
+
+    Dim axisIndex As Long
+    For axisIndex = 1 To rowAxisRange.Columns.Count
+        Dim headerText As String
+        If rowAxisRange.Row > 1 Then
+            headerText = PopList_CellText(rowAxisRange.Worksheet.Cells(rowAxisRange.Row - 1, rowAxisRange.Column + axisIndex - 1))
+        End If
+        If Len(headerText) = 0 Then headerText = "행축" & axisIndex
+        headers.Add headerText
+    Next axisIndex
+
+    Set PopList_ManualAxisHeaders = headers
+End Function
+
+Private Function PopList_BuildManualSummary(ByVal tableTitle As String, ByVal rowAxisRange As Range, _
+                                            ByVal columnHeaderRange As Range, ByVal valueRange As Range) As String
+    Dim headers As Collection
+    Set headers = PopList_ManualAxisHeaders(rowAxisRange)
+
+    PopList_BuildManualSummary = _
+        "선택 방식: 범위 직접 지정" & vbCrLf & _
+        "표 제목: " & tableTitle & vbCrLf & _
+        "원본 시트: " & rowAxisRange.Worksheet.Name & vbCrLf & _
+        "행축 데이터: " & rowAxisRange.Address(False, False) & " (" & rowAxisRange.Rows.Count & "행 x " & rowAxisRange.Columns.Count & "열)" & vbCrLf & _
+        "행축 이름: " & PopList_JoinCollection(headers, ", ") & vbCrLf & _
+        "가로 헤더: " & columnHeaderRange.Address(False, False) & " (" & columnHeaderRange.Columns.Count & "열)" & vbCrLf & _
+        "값 영역: " & valueRange.Address(False, False) & " (" & valueRange.Rows.Count & "행 x " & valueRange.Columns.Count & "열)" & vbCrLf & _
+        "합계 행/열은 이름이 계/합계/총계/전체/TOTAL인 경우 결과에서 제외됩니다."
+End Function
+
+Private Function PopList_BuildManualPreview(ByVal tableTitle As String, ByVal rowAxisRange As Range, _
+                                            ByVal columnHeaderRange As Range, ByVal valueRange As Range, _
+                                            ByVal columnAxisName As String, ByVal valueName As String, _
+                                            ByVal maxRows As Long) As String
+    Dim headers As Collection
+    Set headers = PopList_ManualAxisHeaders(rowAxisRange)
+
+    Dim result As String
+    result = "표제목"
+
+    Dim axisIndex As Long
+    For axisIndex = 1 To headers.Count
+        result = result & vbTab & CStr(headers(axisIndex))
+    Next axisIndex
+    result = result & vbTab & columnAxisName & vbTab & valueName & vbCrLf
+
+    Dim lastSeen() As String
+    ReDim lastSeen(1 To rowAxisRange.Columns.Count)
+
+    Dim madeRows As Long
+    Dim relRow As Long
+    For relRow = 1 To valueRange.Rows.Count
+        PopList_UpdateManualLastSeen rowAxisRange, relRow, lastSeen
+        If Not PopList_ManualRowIsTotal(rowAxisRange, relRow) Then
+            Dim relCol As Long
+            For relCol = 1 To valueRange.Columns.Count
+                Dim headerText As String
+                headerText = PopList_CellText(columnHeaderRange.Cells(1, relCol))
+                If Len(headerText) > 0 And Not PopList_IsTotalLabel(headerText) Then
+                    If PopList_IsNumberLike(valueRange.Cells(relRow, relCol).Value) Then
+                        result = result & tableTitle
+                        For axisIndex = 1 To rowAxisRange.Columns.Count
+                            result = result & vbTab & lastSeen(axisIndex)
+                        Next axisIndex
+                        result = result & vbTab & headerText & vbTab & PopList_ToNumber(valueRange.Cells(relRow, relCol).Value) & vbCrLf
+                        madeRows = madeRows + 1
+                        If madeRows >= maxRows Then
+                            PopList_BuildManualPreview = result & "... (미리보기 " & maxRows & "행까지만 표시)"
+                            Exit Function
+                        End If
+                    End If
+                End If
+            Next relCol
+        End If
+    Next relRow
+
+    PopList_BuildManualPreview = result
+End Function
+
+Private Function PopList_WriteManualOutput(ByVal tableTitle As String, ByVal rowAxisRange As Range, _
+                                           ByVal columnHeaderRange As Range, ByVal valueRange As Range, _
+                                           ByVal outWs As Worksheet, ByVal columnAxisName As String, _
+                                           ByVal valueName As String) As Long
+    outWs.Cells.Clear
+    outWs.Range("A1").Value = "모집단 구성표 리스트"
+    outWs.Range("A1").Font.Bold = True
+    outWs.Range("A1").Font.Size = 14
+    outWs.Range("A2").Value = "원본 시트"
+    outWs.Range("B2").Value = rowAxisRange.Worksheet.Name
+    outWs.Range("A3").Value = "원본 범위"
+    outWs.Range("B3").Value = "행축 " & rowAxisRange.Address(False, False) & _
+                               " / 가로헤더 " & columnHeaderRange.Address(False, False) & _
+                               " / 값 " & valueRange.Address(False, False)
+
+    Dim headers As Collection
+    Set headers = PopList_ManualAxisHeaders(rowAxisRange)
+
+    Dim headerRow As Long
+    headerRow = 5
+
+    Dim outCol As Long
+    outCol = 1
+    outWs.Cells(headerRow, outCol).Value = "표제목"
+    outCol = outCol + 1
+
+    Dim axisIndex As Long
+    For axisIndex = 1 To headers.Count
+        outWs.Cells(headerRow, outCol).Value = "행축" & axisIndex & "명"
+        outWs.Cells(headerRow, outCol + 1).Value = "행축" & axisIndex & "값"
+        outCol = outCol + 2
+    Next axisIndex
+
+    Dim columnAxisCol As Long
+    Dim valueCol As Long
+    Dim sourceRowCol As Long
+    Dim sourceColCol As Long
+    columnAxisCol = outCol
+    valueCol = outCol + 1
+    sourceRowCol = outCol + 2
+    sourceColCol = outCol + 3
+    outWs.Cells(headerRow, columnAxisCol).Value = columnAxisName
+    outWs.Cells(headerRow, valueCol).Value = valueName
+    outWs.Cells(headerRow, sourceRowCol).Value = "원본행"
+    outWs.Cells(headerRow, sourceColCol).Value = "원본열"
+
+    Dim lastSeen() As String
+    ReDim lastSeen(1 To rowAxisRange.Columns.Count)
+
+    Dim outRow As Long
+    outRow = headerRow + 1
+
+    Dim relRow As Long
+    For relRow = 1 To valueRange.Rows.Count
+        PopList_UpdateManualLastSeen rowAxisRange, relRow, lastSeen
+        If Not PopList_ManualRowIsTotal(rowAxisRange, relRow) Then
+            Dim relCol As Long
+            For relCol = 1 To valueRange.Columns.Count
+                Dim headerText As String
+                headerText = PopList_CellText(columnHeaderRange.Cells(1, relCol))
+                If Len(headerText) > 0 And Not PopList_IsTotalLabel(headerText) Then
+                    If PopList_IsNumberLike(valueRange.Cells(relRow, relCol).Value) Then
+                        outWs.Cells(outRow, 1).Value = tableTitle
+
+                        outCol = 2
+                        For axisIndex = 1 To headers.Count
+                            outWs.Cells(outRow, outCol).Value = CStr(headers(axisIndex))
+                            outWs.Cells(outRow, outCol + 1).Value = lastSeen(axisIndex)
+                            outCol = outCol + 2
+                        Next axisIndex
+
+                        outWs.Cells(outRow, columnAxisCol).Value = headerText
+                        outWs.Cells(outRow, valueCol).Value = PopList_ToNumber(valueRange.Cells(relRow, relCol).Value)
+                        outWs.Cells(outRow, sourceRowCol).Value = valueRange.Row + relRow - 1
+                        outWs.Cells(outRow, sourceColCol).Value = valueRange.Column + relCol - 1
+                        outRow = outRow + 1
+                    End If
+                End If
+            Next relCol
+        End If
+    Next relRow
+
+    Dim lastCol As Long
+    lastCol = sourceColCol
+    With outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(Application.Max(headerRow, outRow - 1), lastCol))
+        .Borders.LineStyle = xlContinuous
+        .Columns.AutoFit
+    End With
+    outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(headerRow, lastCol)).Font.Bold = True
+    outWs.Range(outWs.Cells(headerRow, 1), outWs.Cells(headerRow, lastCol)).Interior.Color = RGB(220, 235, 250)
+    outWs.Columns(valueCol).NumberFormat = "#,##0"
+
+    PopList_WriteManualOutput = outRow - headerRow - 1
+End Function
+
+Private Sub PopList_UpdateManualLastSeen(ByVal rowAxisRange As Range, ByVal relRow As Long, ByRef lastSeen() As String)
+    Dim axisIndex As Long
+    For axisIndex = 1 To rowAxisRange.Columns.Count
+        Dim axisValue As String
+        axisValue = PopList_CellText(rowAxisRange.Cells(relRow, axisIndex))
+        If Len(axisValue) > 0 Then lastSeen(axisIndex) = axisValue
+    Next axisIndex
+End Sub
+
+Private Function PopList_ManualRowIsTotal(ByVal rowAxisRange As Range, ByVal relRow As Long) As Boolean
+    Dim axisIndex As Long
+    For axisIndex = 1 To rowAxisRange.Columns.Count
+        If PopList_IsTotalLabel(PopList_CellText(rowAxisRange.Cells(relRow, axisIndex))) Then
+            PopList_ManualRowIsTotal = True
+            Exit Function
+        End If
+    Next axisIndex
 End Function
 
 Private Function PopList_BuildSummary(ByVal blocks As Collection, ByVal sourceRange As Range) As String
@@ -11613,21 +12197,23 @@ Public Sub Toolkit_LaunchRosterQuality()
     choice = Toolkit_LauncherPrompt( _
         "명부 품질", _
         "실행할 명부 품질 기능을 선택하세요." & vbCrLf & vbCrLf & _
-        "1. 품질 진단" & vbCrLf & _
-        "2. 중복 탐지" & vbCrLf & _
-        "3. 업체명 매칭" & vbCrLf & _
-        "4. 전화번호 검사" & vbCrLf & _
-        "5. 사업자등록 상태조회", _
+        "1. 명부 검증 시트 만들기" & vbCrLf & _
+        "2. 품질 진단" & vbCrLf & _
+        "3. 중복 탐지" & vbCrLf & _
+        "4. 업체명 매칭" & vbCrLf & _
+        "5. 전화번호 검사" & vbCrLf & _
+        "6. 사업자등록 상태조회", _
         "1")
 
     Select Case choice
-        Case "1": Roster_QualityReport
-        Case "2": Roster_DetectDuplicates
-        Case "3": Roster_MatchCompanyNames
-        Case "4": Phone_ValidateSelection
-        Case "5": BizNo_QueryStatusForSelection
+        Case "1": Roster_CreateValidationWorkspace
+        Case "2": Roster_QualityReport
+        Case "3": Roster_DetectDuplicates
+        Case "4": Roster_MatchCompanyNames
+        Case "5": Phone_ValidateSelection
+        Case "6": BizNo_QueryStatusForSelection
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "명부 품질", "1~5 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "명부 품질", "1~6 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -11661,7 +12247,7 @@ Public Sub Toolkit_LaunchSampleDesign()
         "2. 할당 계산" & vbCrLf & _
         "3. 진행률 관리표 생성" & vbCrLf & _
         "4. 쿼터 점검" & vbCrLf & _
-        "5. 모집단 구성표 리스트화" & vbCrLf & _
+        "5. 모집단 구성표 리스트화(자동/직접 지정)" & vbCrLf & _
         "6. 리스트→집계표" & vbCrLf & _
         "7. 표본설계 가이드 열기", _
         "1")
@@ -11955,6 +12541,10 @@ End Sub
 
 Public Sub Ribbon_RosterDetectDuplicates(control As IRibbonControl)
     Roster_DetectDuplicates
+End Sub
+
+Public Sub Ribbon_RosterValidationSheet(control As IRibbonControl)
+    Roster_CreateValidationWorkspace
 End Sub
 
 Public Sub Ribbon_RosterQualityReport(control As IRibbonControl)

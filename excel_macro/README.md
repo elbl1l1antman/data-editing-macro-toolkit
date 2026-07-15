@@ -23,7 +23,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.20`
+`1.1.21`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -46,6 +46,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
 - 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용
 - 업체명 표준화 및 유사그룹 생성
+- 명부 검증용 표준 입력 시트 생성 및 기존 명부 헤더 자동 인식 구성
 - 명부 품질 진단 리포트 생성
 - 업체명/주소/전화번호/사업자번호 조합 기반 중복 업체 탐지. 업체명은 표준화명 일치, 한쪽 이름 포함, 3자 이상 공통 접두어를 같은 기업 판단 기준에 반영
 - 주소 범위 선택 후 도로명주소 또는 법정/행정동 기준 주소 여부 판별
@@ -115,10 +116,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.20/DataEditingMacroToolkit_v1.1.20.xlam`
-- `release/v1.1.20/DataEditingMacroToolkit_v1.1.20.xlsm`
-- `release/v1.1.20/MacroToolkit.bas`
-- `release/v1.1.20/manifest.json`
+- `release/v1.1.21/DataEditingMacroToolkit_v1.1.21.xlam`
+- `release/v1.1.21/DataEditingMacroToolkit_v1.1.21.xlsm`
+- `release/v1.1.21/MacroToolkit.bas`
+- `release/v1.1.21/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
@@ -136,9 +137,9 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 - `네이버 지역검색`: 인증키 설정, 행정동/법정동 기준 신규 리스트, 업체명/주소 검증, 행정동/법정동 마스터 양식 생성
 - `데이터 통합`: 시트 통합, 통합 시트 원본별 분리
 - `SPSS 표 정리`: 목차 생성, 표/배너 재구성, 세로 배너 삭제
-- `명부 품질`: 품질 진단, 중복 탐지, 업체명 매칭, 행정구역 분해, 전화번호 검사
+- `명부 품질`: 검증 시트 생성, 품질 진단, 중복 탐지, 업체명 매칭, 행정구역 분해, 전화번호 검사
 - `이상치 탐지`: 범위 선택, Q1/Q3 검토열 생성, 설정
-- `표본설계`: 구성표 리스트화, 리스트→집계표, 설계 시트 생성, 표본설계 가이드, 표본할당 계산, 진행률 관리표 생성
+- `표본설계`: 구성표 리스트화(자동 감지/범위 직접 지정), 리스트→집계표, 설계 시트 생성, 표본설계 가이드, 표본할당 계산, 진행률 관리표 생성
 - `정보`: 모든 시트 A1 선택, 버전 정보
 설치 대상 파일:
 
