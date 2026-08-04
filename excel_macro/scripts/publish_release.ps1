@@ -3077,6 +3077,7 @@ function Add-RibbonCustomUi {
           <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
           <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동/법정동 기준 업체 리스트 생성" supertip="검색 기준을 행정동 또는 법정동으로 선택하고 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
           <button id="btnNaverVerifyAddress" label="주소 검증" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_NaverLocalVerifyExistingData" screentip="업체명/주소 검증" supertip="업체명 범위와 주소 범위를 선택하면 네이버 지역검색 결과, 유사도, 검증등급 열을 추가합니다." />
+          <button id="btnNaverOfficialMall" label="공식몰 검색" size="large" imageMso="HyperlinkInsert" onAction="Ribbon_NaverOfficialMallFindLinks" screentip="자체 공식몰 링크 검색" supertip="업체명 범위를 선택하면 네이버 웹문서 API로 '업체명 공식몰'을 검색하고, 네이버 브랜드스토어/스마트스토어/오픈마켓을 제외한 자체 쇼핑몰 후보 URL을 추가합니다." />
           <button id="btnNaverDongMaster" label="행정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateDongMasterTemplate" screentip="행정동 마스터 양식 생성" supertip="현재 통합문서에 내장 행정동 마스터와 같은 양식의 행정동_마스터 시트를 생성합니다. 이 시트를 수정하면 신규 리스트 생성에 우선 사용됩니다." />
           <button id="btnNaverLegalDongMaster" label="법정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateLegalDongMasterTemplate" screentip="법정동 마스터 양식 생성" supertip="현재 통합문서에 내장 법정동 마스터와 같은 양식의 법정동_마스터 시트를 생성합니다. 이 시트를 수정하면 법정동 기준 신규 리스트 생성에 우선 사용됩니다." />
         </group>

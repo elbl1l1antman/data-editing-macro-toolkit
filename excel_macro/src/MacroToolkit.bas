@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.23"
+Public Const TOOLKIT_VERSION As String = "1.1.24"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -18,6 +18,7 @@ Private Const BIZ_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const BIZ_APP_SECTION As String = "BusinessApi"
 Private Const BIZ_APP_KEY As String = "ServiceKey"
 Private Const NAVER_API_BASE_URL As String = "https://openapi.naver.com/v1/search/local.json"
+Private Const NAVER_WEB_API_BASE_URL As String = "https://openapi.naver.com/v1/search/webkr.json"
 Private Const NAVER_APP_NAME As String = "DataEditingMacroToolkit"
 Private Const NAVER_APP_SECTION As String = "NaverLocalSearch"
 Private Const NAVER_CLIENT_ID_KEY As String = "ClientId"
@@ -29,6 +30,8 @@ Private Const NAVER_BUILD_SORT_KEY As String = "BuildSortMode"
 Private Const NAVER_BUILD_BASIS_KEY As String = "BuildDongBasis"
 Private Const NAVER_BUILD_SIDO_KEY As String = "BuildSidoFilter"
 Private Const NAVER_BUILD_SIGUNGU_KEY As String = "BuildSigunguFilter"
+Private Const NAVER_MALL_DISPLAY_KEY As String = "OfficialMallDisplayCount"
+Private Const NAVER_MALL_DELAY_KEY As String = "OfficialMallDelaySeconds"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
 Private Const NAVER_LEGAL_DONG_MASTER_SHEET As String = "_NaverLocalLegalDongMaster"
@@ -62,7 +65,7 @@ Public Sub Toolkit_About()
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
            "- SPSS 내보내기 표의 선택 배너 블록 삭제" & vbCrLf & _
            "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
-           "- 네이버 지역검색 API 기반 업체 리스트 생성/주소 검증" & vbCrLf & _
+           "- 네이버 API 기반 업체 리스트 생성/주소 검증/공식몰 링크 검색" & vbCrLf & _
            "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성" & vbCrLf & _
            "- 표본설계 시트 생성 및 표본할당 계산", _
            vbInformation, "매크로 툴킷"
@@ -133,7 +136,8 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A48").Value = "SampleDesign_PivotPopulationList"
     ws.Range("A49").Value = "SampleDesign_ShowGuide"
     ws.Range("A50").Value = "SampleDesign_CreateBandColumn"
-    ws.Range("A50").Value = "Roster_CreateValidationWorkspace"
+    ws.Range("A51").Value = "Roster_CreateValidationWorkspace"
+    ws.Range("A52").Value = "NaverOfficialMall_FindLinksForSelection"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -3201,6 +3205,518 @@ ErrHandler:
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
     MsgBox "네이버 주소 검증 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
+End Sub
+
+Public Sub NaverOfficialMall_FindLinksForSelection()
+    Const PURPOSE As String = "네이버 공식몰 링크 검색"
+
+    If Not NaverLocal_HasCredentials() Then
+        MsgBox "먼저 [네이버 인증키 설정] 버튼으로 Client ID와 Client Secret을 저장하세요.", vbExclamation, PURPOSE
+        Exit Sub
+    End If
+
+    Dim nameRange As Range
+    If Not Toolkit_GetRangeFromUserForm(PURPOSE, _
+        "공식몰 링크를 찾을 업체명/기업체명 범위를 선택하세요." & vbCrLf & _
+        "선택 범위 오른쪽에 공식몰 후보 URL과 판정 등급을 추가합니다.", _
+        nameRange) Then Exit Sub
+    If nameRange Is Nothing Then Exit Sub
+
+    Set nameRange = nameRange.Areas(1)
+    If nameRange.Columns.Count > 1 Then Set nameRange = nameRange.Columns(1)
+
+    Dim headerAnswer As VbMsgBoxResult
+    headerAnswer = MsgBox("선택 범위의 첫 행을 헤더로 볼까요?", vbQuestion + vbYesNoCancel, PURPOSE)
+    If headerAnswer = vbCancel Then Exit Sub
+    Dim hasHeader As Boolean
+    hasHeader = (headerAnswer = vbYes)
+
+    Dim defaultDisplay As Long
+    defaultDisplay = CLng(Val(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_MALL_DISPLAY_KEY, "10")))
+    If defaultDisplay < 1 Or defaultDisplay > 20 Then defaultDisplay = 10
+
+    Dim displayInput As Variant
+    displayInput = Application.InputBox("업체당 확인할 웹문서 검색 결과 수를 입력하세요." & vbCrLf & _
+                                        "권장값: 10, 허용 범위: 1~20", _
+                                        PURPOSE, defaultDisplay, Type:=1)
+    If VarType(displayInput) = vbBoolean And displayInput = False Then Exit Sub
+
+    Dim displayCount As Long
+    displayCount = CLng(displayInput)
+    If displayCount < 1 Or displayCount > 20 Then
+        MsgBox "검색 결과 수는 1~20 사이로 입력하세요.", vbExclamation, PURPOSE
+        Exit Sub
+    End If
+
+    Dim defaultDelay As Double
+    defaultDelay = CDbl(Val(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_MALL_DELAY_KEY, "0.3")))
+    If defaultDelay < 0 Then defaultDelay = 0.3
+
+    Dim delayInput As Variant
+    delayInput = Application.InputBox("네이버 API 호출 사이 지연 시간을 초 단위로 입력하세요." & vbCrLf & _
+                                      "권장값: 0.3", PURPOSE, defaultDelay, Type:=1)
+    If VarType(delayInput) = vbBoolean And delayInput = False Then Exit Sub
+
+    Dim delaySeconds As Double
+    delaySeconds = CDbl(delayInput)
+    If delaySeconds < 0 Then
+        MsgBox "호출 지연 시간은 0 이상으로 입력하세요.", vbExclamation, PURPOSE
+        Exit Sub
+    End If
+
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_MALL_DISPLAY_KEY, CStr(displayCount)
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_MALL_DELAY_KEY, CStr(delaySeconds)
+
+    Dim firstDataRow As Long
+    firstDataRow = nameRange.Row + IIf(hasHeader, 1, 0)
+
+    Dim lastRow As Long
+    lastRow = nameRange.Row + nameRange.Rows.Count - 1
+    If firstDataRow > lastRow Then
+        MsgBox "검색할 업체명 데이터가 없습니다.", vbInformation, PURPOSE
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = nameRange.Worksheet
+
+    Dim outputCol As Long
+    outputCol = nameRange.Column + nameRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 9, PURPOSE) Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = lastRow - firstDataRow + 1
+    If totalRows > 500 Then
+        If MsgBox("검색 대상이 " & totalRows & "행입니다." & vbCrLf & _
+                  "행마다 네이버 웹문서 API를 호출하므로 시간이 걸릴 수 있습니다. 계속할까요?", _
+                  vbQuestion + vbYesNo, PURPOSE) <> vbYes Then Exit Sub
+    End If
+
+    Dim outputData() As Variant
+    ReDim outputData(1 To totalRows, 1 To 9)
+
+    Dim rowIndex As Long
+    Dim outIndex As Long
+    Dim companyName As String
+    Dim queryText As String
+    Dim items As Collection
+    Dim bestItem As Object
+    Dim gradeLabel As String
+    Dim reasonText As String
+    Dim reviewUrl As String
+    Dim reviewReason As String
+    Dim requestCount As Long
+    Dim foundCount As Long
+    Dim noMallCount As Long
+    Dim errorCount As Long
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, 9).Insert Shift:=xlToRight
+    If hasHeader Then NaverOfficialMall_WriteHeaders ws, nameRange.Row, outputCol
+
+    Toolkit_ProgressShow PURPOSE, "검색 준비 중", totalRows
+
+    For rowIndex = firstDataRow To lastRow
+        outIndex = rowIndex - firstDataRow + 1
+        companyName = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value))
+        Toolkit_ProgressUpdate outIndex, totalRows, "공식몰 검색 중: " & CStr(rowIndex) & "행"
+
+        If Len(companyName) > 0 Then
+            requestCount = requestCount + 1
+            queryText = companyName & " 공식몰"
+            outputData(outIndex, 1) = queryText
+            outputData(outIndex, 9) = Now
+
+            Set items = Nothing
+            Set bestItem = Nothing
+            gradeLabel = ""
+            reasonText = ""
+            reviewUrl = ""
+            reviewReason = ""
+
+            On Error Resume Next
+            Set items = NaverOfficialMall_SearchWeb(queryText, displayCount)
+            If Err.Number <> 0 Then
+                errorCount = errorCount + 1
+                gradeLabel = "조회 실패"
+                reasonText = Err.Description
+                Toolkit_LogApiEvent ws.Parent, PURPOSE, "webkr", queryText, "ERROR", Err.Description
+                Err.Clear
+                On Error GoTo ErrHandler
+                outputData(outIndex, 5) = gradeLabel
+                outputData(outIndex, 6) = reasonText
+                NaverLocal_Delay delaySeconds
+                GoTo NextMallRow
+            End If
+            On Error GoTo ErrHandler
+
+            Set bestItem = NaverOfficialMall_FindBestCandidate(items, companyName, gradeLabel, reasonText, reviewUrl, reviewReason)
+            If bestItem Is Nothing Then
+                noMallCount = noMallCount + 1
+            Else
+                foundCount = foundCount + 1
+                outputData(outIndex, 2) = CStr(bestItem("link"))
+                outputData(outIndex, 3) = CStr(bestItem("title"))
+                outputData(outIndex, 4) = NaverOfficialMall_Domain(CStr(bestItem("link")))
+            End If
+
+            outputData(outIndex, 5) = gradeLabel
+            outputData(outIndex, 6) = reasonText
+            outputData(outIndex, 7) = reviewUrl
+            outputData(outIndex, 8) = reviewReason
+            NaverLocal_Delay delaySeconds
+        End If
+NextMallRow:
+    Next rowIndex
+
+    ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol + 8)).Value = outputData
+    If hasHeader Then ws.Range(ws.Cells(nameRange.Row, outputCol), ws.Cells(nameRange.Row, outputCol + 8)).Font.Bold = True
+
+    For rowIndex = firstDataRow To lastRow
+        NaverOfficialMall_ColorGradeCell ws.Cells(rowIndex, outputCol + 4)
+    Next rowIndex
+
+    ws.Columns(outputCol).Resize(, 9).AutoFit
+    Toolkit_ProgressClose
+    Application.ScreenUpdating = True
+
+    MsgBox "네이버 공식몰 링크 검색을 완료했습니다." & vbCrLf & _
+           "조회: " & requestCount & "건" & vbCrLf & _
+           "자체 공식몰 후보: " & foundCount & "건" & vbCrLf & _
+           "공식몰 없음/확인 필요: " & noMallCount & "건" & vbCrLf & _
+           "조회 실패: " & errorCount & "건", vbInformation, PURPOSE
+    Exit Sub
+
+ErrHandler:
+    Toolkit_ProgressClose
+    Application.ScreenUpdating = True
+    MsgBox "네이버 공식몰 링크 검색 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, PURPOSE
+End Sub
+
+Public Function NaverOfficialMall_ClassifyUrlForTest(ByVal urlValue As String, _
+                                                     ByVal titleText As String, _
+                                                     ByVal descriptionText As String, _
+                                                     ByVal companyName As String) As String
+    NaverOfficialMall_ClassifyUrlForTest = NaverOfficialMall_ClassifyUrl(urlValue, titleText, descriptionText, companyName)
+End Function
+
+Private Sub NaverOfficialMall_WriteHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
+    Dim headers As Variant
+    headers = Array("공식몰 검색어", "공식몰 후보 URL", "후보 제목", "후보 도메인", "판정등급", "판정근거", "제외/검토 URL", "제외/검토 사유", "검색일시")
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    Next i
+End Sub
+
+Private Function NaverOfficialMall_SearchWeb(ByVal queryText As String, ByVal displayCount As Long) As Collection
+    If displayCount < 1 Then displayCount = 1
+    If displayCount > 20 Then displayCount = 20
+
+    Static searchCache As Object
+    If searchCache Is Nothing Then Set searchCache = CreateObject("Scripting.Dictionary")
+
+    Dim cacheKey As String
+    cacheKey = NaverLocal_GetClientId() & "|webkr|" & queryText & "|" & CStr(displayCount)
+    If searchCache.Exists(cacheKey) Then
+        Set NaverOfficialMall_SearchWeb = searchCache(cacheKey)
+        Exit Function
+    End If
+
+    Dim url As String
+    url = NAVER_WEB_API_BASE_URL & "?query=" & NaverLocal_UrlEncode(queryText) & _
+          "&display=" & CStr(displayCount) & "&start=1"
+
+    Dim http As Object
+    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+    http.setTimeouts API_RESOLVE_TIMEOUT_MS, API_CONNECT_TIMEOUT_MS, API_SEND_TIMEOUT_MS, API_RECEIVE_TIMEOUT_MS
+    http.Open "GET", url, False
+    http.setRequestHeader "X-Naver-Client-Id", NaverLocal_GetClientId()
+    http.setRequestHeader "X-Naver-Client-Secret", NaverLocal_GetClientSecret()
+    http.setRequestHeader "Accept", "application/json"
+    http.send
+
+    If http.Status < 200 Or http.Status >= 300 Then
+        Err.Raise vbObjectError + 782, "NaverOfficialMall_SearchWeb", "HTTP " & http.Status & ": " & http.responseText
+    End If
+
+    Set NaverOfficialMall_SearchWeb = NaverOfficialMall_ExtractWebItems(CStr(http.responseText))
+    searchCache.Add cacheKey, NaverOfficialMall_SearchWeb
+End Function
+
+Private Function NaverOfficialMall_ExtractWebItems(ByVal jsonText As String) As Collection
+    Dim result As New Collection
+    Dim itemObjects As Collection
+    Set itemObjects = NaverLocal_ExtractArrayObjects(jsonText, "items")
+
+    Dim itemJson As Variant
+    Dim item As Object
+    For Each itemJson In itemObjects
+        Set item = CreateObject("Scripting.Dictionary")
+        item("title") = NaverLocal_StripHtml(Biz_JsonString(CStr(itemJson), "title"))
+        item("link") = Biz_JsonString(CStr(itemJson), "link")
+        item("description") = NaverLocal_StripHtml(Biz_JsonString(CStr(itemJson), "description"))
+        result.Add item
+    Next itemJson
+
+    Set NaverOfficialMall_ExtractWebItems = result
+End Function
+
+Private Function NaverOfficialMall_FindBestCandidate(ByVal items As Collection, ByVal companyName As String, _
+                                                     ByRef gradeLabel As String, ByRef reasonText As String, _
+                                                     ByRef reviewUrl As String, ByRef reviewReason As String) As Object
+    gradeLabel = "공식몰 없음"
+    reasonText = "검색 결과에서 자체 쇼핑몰 후보를 찾지 못했습니다."
+
+    If items Is Nothing Then
+        reasonText = "검색 결과가 없습니다."
+        Exit Function
+    End If
+    If items.Count = 0 Then
+        reasonText = "검색 결과가 없습니다."
+        Exit Function
+    End If
+
+    Dim bestScore As Double
+    bestScore = -1
+    Dim bestReason As String
+    Dim bestItem As Object
+    Dim firstUnknownUrl As String
+    Dim firstUnknownReason As String
+    Dim firstExcludedUrl As String
+    Dim firstExcludedReason As String
+
+    Dim item As Object
+    For Each item In items
+        Dim classCode As String
+        classCode = NaverOfficialMall_ClassifyUrl(CStr(item("link")), CStr(item("title")), CStr(item("description")), companyName)
+
+        If classCode = "candidate:self_mall" Then
+            Dim candidateScore As Double
+            Dim candidateReason As String
+            candidateScore = NaverOfficialMall_CandidateScore(item, companyName, candidateReason)
+            If candidateScore > bestScore Then
+                bestScore = candidateScore
+                bestReason = candidateReason
+                Set bestItem = item
+            End If
+        ElseIf classCode = "candidate:unknown_site" Then
+            If Len(firstUnknownUrl) = 0 Then
+                firstUnknownUrl = CStr(item("link"))
+                firstUnknownReason = NaverOfficialMall_ReasonForCode(classCode)
+            End If
+        Else
+            If Len(firstExcludedUrl) = 0 Then
+                firstExcludedUrl = CStr(item("link"))
+                firstExcludedReason = NaverOfficialMall_ReasonForCode(classCode)
+            End If
+        End If
+    Next item
+
+    If Not bestItem Is Nothing Then
+        If bestScore >= 80 Then
+            gradeLabel = "정상"
+        ElseIf bestScore >= 60 Then
+            gradeLabel = "가능성 높음"
+        Else
+            gradeLabel = "확인 필요"
+        End If
+        reasonText = bestReason
+        Set NaverOfficialMall_FindBestCandidate = bestItem
+    ElseIf Len(firstUnknownUrl) > 0 Then
+        gradeLabel = "확인 필요"
+        reasonText = "자체 도메인 후보는 있으나 쇼핑 기능 단서가 부족합니다."
+        reviewUrl = firstUnknownUrl
+        reviewReason = firstUnknownReason
+    ElseIf Len(firstExcludedUrl) > 0 Then
+        gradeLabel = "공식몰 없음"
+        reasonText = "자체몰 후보 없이 제외 대상 결과만 확인되었습니다."
+        reviewUrl = firstExcludedUrl
+        reviewReason = firstExcludedReason
+    End If
+End Function
+
+Private Function NaverOfficialMall_ClassifyUrl(ByVal urlValue As String, ByVal titleText As String, _
+                                               ByVal descriptionText As String, ByVal companyName As String) As String
+    Dim domain As String
+    domain = NaverOfficialMall_Domain(urlValue)
+    If Len(domain) = 0 Then
+        NaverOfficialMall_ClassifyUrl = "no_url"
+        Exit Function
+    End If
+
+    If NaverOfficialMall_DomainMatches(domain, "brand.naver.com") Then
+        NaverOfficialMall_ClassifyUrl = "exclude:naver_brand_store"
+    ElseIf NaverOfficialMall_DomainMatches(domain, "smartstore.naver.com") Then
+        NaverOfficialMall_ClassifyUrl = "exclude:naver_smartstore"
+    ElseIf NaverOfficialMall_IsOpenMarketDomain(domain) Then
+        NaverOfficialMall_ClassifyUrl = "exclude:open_market"
+    ElseIf NaverOfficialMall_IsSocialOrBlogDomain(domain) Then
+        NaverOfficialMall_ClassifyUrl = "exclude:social_or_blog"
+    ElseIf NaverOfficialMall_HasMallEvidence(urlValue, titleText, descriptionText, domain) Then
+        NaverOfficialMall_ClassifyUrl = "candidate:self_mall"
+    Else
+        NaverOfficialMall_ClassifyUrl = "candidate:unknown_site"
+    End If
+End Function
+
+Private Function NaverOfficialMall_Domain(ByVal urlValue As String) As String
+    Dim textValue As String
+    textValue = LCase$(Trim$(CStr(urlValue)))
+    If Len(textValue) = 0 Then Exit Function
+
+    Dim protocolPos As Long
+    protocolPos = InStr(1, textValue, "://", vbTextCompare)
+    If protocolPos > 0 Then textValue = Mid$(textValue, protocolPos + 3)
+
+    Dim slashPos As Long
+    slashPos = InStr(1, textValue, "/", vbTextCompare)
+    If slashPos > 0 Then textValue = Left$(textValue, slashPos - 1)
+
+    Dim questionPos As Long
+    questionPos = InStr(1, textValue, "?", vbTextCompare)
+    If questionPos > 0 Then textValue = Left$(textValue, questionPos - 1)
+
+    Dim portPos As Long
+    portPos = InStr(1, textValue, ":", vbTextCompare)
+    If portPos > 0 Then textValue = Left$(textValue, portPos - 1)
+
+    If Left$(textValue, 4) = "www." Then textValue = Mid$(textValue, 5)
+    NaverOfficialMall_Domain = textValue
+End Function
+
+Private Function NaverOfficialMall_DomainMatches(ByVal domain As String, ByVal matchDomain As String) As Boolean
+    domain = LCase$(Trim$(domain))
+    matchDomain = LCase$(Trim$(matchDomain))
+    NaverOfficialMall_DomainMatches = (domain = matchDomain Or Right$(domain, Len(matchDomain) + 1) = "." & matchDomain)
+End Function
+
+Private Function NaverOfficialMall_IsOpenMarketDomain(ByVal domain As String) As Boolean
+    Dim domains As Variant
+    domains = Array("shopping.naver.com", "search.shopping.naver.com", "coupang.com", "11st.co.kr", _
+                    "gmarket.co.kr", "auction.co.kr", "ssg.com", "lotteon.com", "tmon.co.kr", _
+                    "wemakeprice.com", "interpark.com", "danawa.com", "musinsa.com", "zigzag.kr", _
+                    "ably.co.kr", "kakaostyle.com", "store.kakao.com", "amazon.com", "aliexpress.com", _
+                    "qoo10.com", "wemakeprice.co.kr")
+
+    Dim item As Variant
+    For Each item In domains
+        If NaverOfficialMall_DomainMatches(domain, CStr(item)) Then
+            NaverOfficialMall_IsOpenMarketDomain = True
+            Exit Function
+        End If
+    Next item
+End Function
+
+Private Function NaverOfficialMall_IsSocialOrBlogDomain(ByVal domain As String) As Boolean
+    Dim domains As Variant
+    domains = Array("blog.naver.com", "cafe.naver.com", "post.naver.com", "tistory.com", "brunch.co.kr", _
+                    "instagram.com", "facebook.com", "youtube.com", "youtu.be", "twitter.com", "x.com", _
+                    "linkedin.com", "threads.net")
+
+    Dim item As Variant
+    For Each item In domains
+        If NaverOfficialMall_DomainMatches(domain, CStr(item)) Then
+            NaverOfficialMall_IsSocialOrBlogDomain = True
+            Exit Function
+        End If
+    Next item
+End Function
+
+Private Function NaverOfficialMall_HasMallEvidence(ByVal urlValue As String, ByVal titleText As String, _
+                                                   ByVal descriptionText As String, ByVal domain As String) As Boolean
+    Dim combined As String
+    combined = LCase$(CStr(urlValue) & " " & CStr(titleText) & " " & CStr(descriptionText))
+
+    If Left$(domain, 5) = "shop." Or Left$(domain, 5) = "mall." Or Left$(domain, 6) = "store." Then
+        NaverOfficialMall_HasMallEvidence = True
+        Exit Function
+    End If
+
+    Dim keywords As Variant
+    keywords = Array("공식몰", "공식 온라인몰", "공식 쇼핑몰", "자사몰", "온라인몰", "쇼핑몰", _
+                     "브랜드몰", "구매하기", "장바구니", "결제", "상품상세", "product", _
+                     "products", "goods", "shop", "mall", "store", "cart", "checkout", _
+                     "official mall", "official store", "online store")
+
+    Dim keyword As Variant
+    For Each keyword In keywords
+        If InStr(1, combined, CStr(keyword), vbTextCompare) > 0 Then
+            NaverOfficialMall_HasMallEvidence = True
+            Exit Function
+        End If
+    Next keyword
+End Function
+
+Private Function NaverOfficialMall_CandidateScore(ByVal item As Object, ByVal companyName As String, ByRef reasonText As String) As Double
+    Dim score As Double
+    score = 50
+
+    Dim titleText As String
+    Dim descriptionText As String
+    Dim linkText As String
+    titleText = CStr(item("title"))
+    descriptionText = CStr(item("description"))
+    linkText = CStr(item("link"))
+
+    Dim nameScore As Double
+    nameScore = NaverLocal_Similarity(companyName, titleText)
+    score = score + (nameScore * 0.25)
+
+    Dim domain As String
+    domain = NaverOfficialMall_Domain(linkText)
+    Dim normalizedCompany As String
+    normalizedCompany = NaverLocal_NormalizeForMatch(companyName)
+    If Len(normalizedCompany) >= 3 Then
+        If InStr(1, NaverLocal_NormalizeForMatch(domain), normalizedCompany, vbTextCompare) > 0 Then score = score + 15
+    End If
+
+    Dim combined As String
+    combined = LCase$(linkText & " " & titleText & " " & descriptionText)
+    If InStr(1, combined, "공식", vbTextCompare) > 0 Or InStr(1, combined, "official", vbTextCompare) > 0 Then score = score + 10
+    If InStr(1, combined, "장바구니", vbTextCompare) > 0 Or InStr(1, combined, "cart", vbTextCompare) > 0 Then score = score + 8
+    If InStr(1, combined, "결제", vbTextCompare) > 0 Or InStr(1, combined, "checkout", vbTextCompare) > 0 Then score = score + 8
+
+    If score > 100 Then score = 100
+    NaverOfficialMall_CandidateScore = score
+
+    reasonText = "자체몰 후보. 업체명 유사도 " & Format$(nameScore, "0.0") & _
+                 ", 판정점수 " & Format$(score, "0.0") & _
+                 ". 네이버 브랜드스토어/스마트스토어/오픈마켓은 제외했습니다."
+End Function
+
+Private Function NaverOfficialMall_ReasonForCode(ByVal classCode As String) As String
+    Select Case classCode
+        Case "exclude:naver_brand_store"
+            NaverOfficialMall_ReasonForCode = "네이버 브랜드스토어 제외: 자체 쇼핑몰로 인정하지 않음"
+        Case "exclude:naver_smartstore"
+            NaverOfficialMall_ReasonForCode = "네이버 스마트스토어 제외: 자체 쇼핑몰로 인정하지 않음"
+        Case "exclude:open_market"
+            NaverOfficialMall_ReasonForCode = "오픈마켓/입점몰 제외"
+        Case "exclude:social_or_blog"
+            NaverOfficialMall_ReasonForCode = "블로그/카페/SNS/영상 채널 제외"
+        Case "candidate:unknown_site"
+            NaverOfficialMall_ReasonForCode = "자체 도메인 가능성은 있으나 쇼핑 기능 단서가 부족함"
+        Case "no_url"
+            NaverOfficialMall_ReasonForCode = "URL 없음"
+        Case Else
+            NaverOfficialMall_ReasonForCode = classCode
+    End Select
+End Function
+
+Private Sub NaverOfficialMall_ColorGradeCell(ByVal cell As Range)
+    Select Case CStr(cell.Value)
+        Case "정상"
+            cell.Interior.Color = RGB(198, 239, 206)
+        Case "가능성 높음"
+            cell.Interior.Color = RGB(255, 235, 156)
+        Case "확인 필요"
+            cell.Interior.Color = RGB(244, 176, 132)
+        Case Else
+            cell.Interior.Color = RGB(255, 199, 206)
+    End Select
 End Sub
 
 Private Function NaverLocal_GetBuildOptions() As Object
@@ -12751,7 +13267,8 @@ Public Sub Toolkit_LaunchAddressSearch()
         "6. 네이버 신규 리스트 생성" & vbCrLf & _
         "7. 네이버 인증키 설정" & vbCrLf & _
         "8. 행정동 마스터 양식 생성" & vbCrLf & _
-        "9. 법정동 마스터 양식 생성", _
+        "9. 법정동 마스터 양식 생성" & vbCrLf & _
+        "10. 네이버 공식몰 링크 검색", _
         "1")
 
     Select Case choice
@@ -12764,8 +13281,9 @@ Public Sub Toolkit_LaunchAddressSearch()
         Case "7": NaverLocal_SetApiCredentials
         Case "8": NaverLocal_CreateDongMasterTemplate
         Case "9": NaverLocal_CreateLegalDongMasterTemplate
+        Case "10": NaverOfficialMall_FindLinksForSelection
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~9 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~10 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -13084,6 +13602,10 @@ End Sub
 
 Public Sub Ribbon_NaverLocalVerifyExistingData(control As IRibbonControl)
     NaverLocal_VerifyExistingData
+End Sub
+
+Public Sub Ribbon_NaverOfficialMallFindLinks(control As IRibbonControl)
+    NaverOfficialMall_FindLinksForSelection
 End Sub
 
 Public Sub Ribbon_NaverLocalCreateDongMasterTemplate(control As IRibbonControl)
