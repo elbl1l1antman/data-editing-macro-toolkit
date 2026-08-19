@@ -1047,7 +1047,7 @@ function Add-DatabaseMergeSetupUserForm {
     $form.Properties.Item("Height").Value = 660
 
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
-    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, ID 처리 방식, 가져올 헤더 또는 표시행 기준, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
+    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, KEY 열 지정 방식, ID 처리 방식, 가져올 헤더 또는 표시행 기준, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
     $lblGuide.Left = 12
     $lblGuide.Top = 10
     $lblGuide.Width = 720
@@ -1083,7 +1083,7 @@ function Add-DatabaseMergeSetupUserForm {
     $cmdNone.Height = 26
 
     $lblKey = $designer.Controls.Add("Forms.Label.1", "lblKey", $true)
-    $lblKey.Caption = "메인 KEY 헤더"
+    $lblKey.Caption = "결과 KEY 헤더"
     $lblKey.Left = 286
     $lblKey.Top = 54
     $lblKey.Width = 120
@@ -1092,8 +1092,15 @@ function Add-DatabaseMergeSetupUserForm {
     $txtKeyHeader = $designer.Controls.Add("Forms.TextBox.1", "txtKeyHeader", $true)
     $txtKeyHeader.Left = 410
     $txtKeyHeader.Top = 50
-    $txtKeyHeader.Width = 300
+    $txtKeyHeader.Width = 176
     $txtKeyHeader.Height = 22
+
+    $chkManualKeyColumn = $designer.Controls.Add("Forms.CheckBox.1", "chkManualKeyColumn", $true)
+    $chkManualKeyColumn.Caption = "KEY 열 직접 지정"
+    $chkManualKeyColumn.Left = 594
+    $chkManualKeyColumn.Top = 50
+    $chkManualKeyColumn.Width = 138
+    $chkManualKeyColumn.Height = 22
 
     $lblOutputName = $designer.Controls.Add("Forms.Label.1", "lblOutputName", $true)
     $lblOutputName.Caption = "결과 시트 이름"
@@ -1219,7 +1226,7 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
                      ByVal defaultOutputHeaders As String, ByVal defaultOutputSheetName As String, _
                      ByVal defaultOutputPosition As String, ByVal defaultHeaderRowSetting As String, _
                      ByVal defaultHeaderMode As String, ByVal defaultIdMode As String, _
-                     ByVal defaultUseMarkerRow As Boolean)
+                     ByVal defaultKeyMode As String, ByVal defaultUseMarkerRow As Boolean)
     Cancelled = True
     lstSheets.Clear
 
@@ -1237,6 +1244,7 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
     Next i
 
     txtKeyHeader.Text = defaultKeyHeader
+    chkManualKeyColumn.Value = (LCase$(Trim$(defaultKeyMode)) = "manual")
     txtOutputHeaders.Text = HeadersForDisplay(defaultOutputHeaders)
     txtOutputSheetName.Text = defaultOutputSheetName
     txtHeaderRow.Text = IIf(Len(Trim$(defaultHeaderRowSetting)) > 0, defaultHeaderRowSetting, "자동")
@@ -1333,6 +1341,14 @@ Public Property Get IdMode() As String
         Case Else
             IdMode = "output_auto"
     End Select
+End Property
+
+Public Property Get KeyMode() As String
+    If CBool(chkManualKeyColumn.Value) Then
+        KeyMode = "manual"
+    Else
+        KeyMode = "header"
+    End If
 End Property
 
 Public Property Get UseMarkerRow() As Boolean

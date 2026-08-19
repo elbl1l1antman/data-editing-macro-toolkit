@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.24"
+Public Const TOOLKIT_VERSION As String = "1.1.25"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -7295,6 +7295,16 @@ Public Sub Roster_CreateValidationSheetFromSelection()
     Dim headerMap As Object
     Set headerMap = Roster_BuildValidationHeaderMap(dataRange)
 
+    Dim manualIdAnswer As VbMsgBoxResult
+    manualIdAnswer = MsgBox("ID/KEY로 사용할 열을 직접 지정할까요?" & vbCrLf & _
+                            "예: 선택한 원본 범위 안에서 ID, 관리번호, 사업체 고유번호 등 기준 열을 직접 선택합니다." & vbCrLf & _
+                            "아니오: 헤더명 자동 인식 결과를 사용하고, 없으면 자동 ID를 생성합니다.", _
+                            vbQuestion + vbYesNoCancel, "명부 검증 시트 자동 구성")
+    If manualIdAnswer = vbCancel Then Exit Sub
+    If manualIdAnswer = vbYes Then
+        If Not Roster_ApplyManualIdColumn(dataRange, headerMap) Then Exit Sub
+    End If
+
     Dim summary As String
     summary = Roster_ValidationMapSummary(dataRange, headerMap)
     If MsgBox(summary & vbCrLf & vbCrLf & "이 구성으로 명부 검증용 표준 시트를 만들까요?", _
@@ -7851,6 +7861,50 @@ Private Function Roster_BuildValidationHeaderMap(ByVal dataRange As Range) As Ob
     Next i
 
     Set Roster_BuildValidationHeaderMap = result
+End Function
+
+Private Function Roster_ApplyManualIdColumn(ByVal dataRange As Range, ByVal headerMap As Object) As Boolean
+    Dim keyRange As Range
+    dataRange.Worksheet.Activate
+
+    On Error Resume Next
+    Set keyRange = Application.InputBox( _
+        "ID/KEY로 사용할 열을 선택하세요." & vbCrLf & _
+        "처음 선택한 원본 범위 안의 한 개 열만 사용할 수 있습니다.", _
+        "명부 검증 시트 - ID 열 직접 지정", Type:=8)
+    On Error GoTo 0
+
+    If keyRange Is Nothing Then Exit Function
+    Set keyRange = keyRange.Areas(1)
+
+    If Not keyRange.Worksheet Is dataRange.Worksheet Then
+        MsgBox "ID/KEY 열은 처음 선택한 원본 명부 범위와 같은 시트에서 선택해야 합니다.", vbExclamation, "명부 검증 시트"
+        Exit Function
+    End If
+    If keyRange.Columns.Count <> 1 Then
+        MsgBox "ID/KEY 열은 한 개 열만 선택하세요.", vbExclamation, "명부 검증 시트"
+        Exit Function
+    End If
+
+    Dim relCol As Long
+    relCol = Roster_RelativeColumnWithinRange(dataRange.Column, dataRange.Columns.Count, keyRange.Column)
+    If relCol = 0 Then
+        MsgBox "선택한 ID/KEY 열이 처음 선택한 원본 명부 범위 안에 없습니다.", vbExclamation, "명부 검증 시트"
+        Exit Function
+    End If
+
+    headerMap("ID") = relCol
+    Roster_ApplyManualIdColumn = True
+End Function
+
+Private Function Roster_RelativeColumnWithinRange(ByVal dataFirstCol As Long, ByVal dataColCount As Long, ByVal selectedCol As Long) As Long
+    If dataFirstCol < 1 Or dataColCount < 1 Or selectedCol < dataFirstCol Then Exit Function
+    If selectedCol > dataFirstCol + dataColCount - 1 Then Exit Function
+    Roster_RelativeColumnWithinRange = selectedCol - dataFirstCol + 1
+End Function
+
+Public Function Roster_ManualKeyRelativeColumnForTest(ByVal dataFirstCol As Long, ByVal dataColCount As Long, ByVal selectedCol As Long) As Long
+    Roster_ManualKeyRelativeColumnForTest = Roster_RelativeColumnWithinRange(dataFirstCol, dataColCount, selectedCol)
 End Function
 
 Private Function Roster_ValidationCandidates(ByVal targetHeader As String) As Variant
@@ -12091,6 +12145,7 @@ Public Sub Database_MergeSheetsByHeaders()
     Dim headerRowSetting As String
     Dim headerMode As String
     Dim idMode As String
+    Dim keyMode As String
     Dim useMarkerRow As Boolean
 
     keyHeader = "ID"
@@ -12100,12 +12155,14 @@ Public Sub Database_MergeSheetsByHeaders()
     headerRowSetting = "자동"
     headerMode = "single"
     idMode = "output_auto"
+    keyMode = "header"
     useMarkerRow = False
 
-    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, useMarkerRow) Then Exit Sub
+    If Not DBMerge_ShowSetupForm(wb, selectedSheetNames, keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, keyMode, useMarkerRow) Then Exit Sub
 
     keyHeader = Trim$(keyHeader)
     headerRowSetting = Trim$(headerRowSetting)
+    keyMode = DBMerge_NormalizeKeyMode(keyMode)
     outputSheetName = DBMerge_CleanSheetName(outputSheetName, "통합데이터")
     If Len(keyHeader) = 0 And idMode <> "existing" Then keyHeader = "ID"
     If Len(keyHeader) = 0 Then
@@ -12127,6 +12184,12 @@ Public Sub Database_MergeSheetsByHeaders()
         Exit Sub
     End If
 
+    Dim manualKeyColumns As Object
+    If keyMode = "manual" Then
+        Set manualKeyColumns = DBMerge_RequestManualKeyColumns(sheets, keyHeader)
+        If manualKeyColumns Is Nothing Then Exit Sub
+    End If
+
     Dim outputHeaders As Collection
     Set outputHeaders = DBMerge_ParseHeaderList(outputHeadersCsv, keyHeader)
     If outputHeaders.Count = 0 Or (outputHeaders.Count = 1 And Not useMarkerRow) Then
@@ -12135,7 +12198,7 @@ Public Sub Database_MergeSheetsByHeaders()
     End If
 
     Dim plan As Object
-    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders, headerRowSetting, headerMode, idMode, useMarkerRow)
+    Set plan = DBMerge_BuildPlan(sheets, keyHeader, outputHeaders, headerRowSetting, headerMode, idMode, keyMode, useMarkerRow, manualKeyColumns)
     If plan Is Nothing Then Exit Sub
 
     If Not DBMerge_ShowReviewForm(plan) Then Exit Sub
@@ -12307,12 +12370,13 @@ Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheet
                                        ByRef keyHeader As String, ByRef outputHeadersCsv As String, _
                                        ByRef outputSheetName As String, ByRef outputPosition As String, _
                                        ByRef headerRowSetting As String, ByRef headerMode As String, _
-                                       ByRef idMode As String, ByRef useMarkerRow As Boolean) As Boolean
+                                       ByRef idMode As String, ByRef keyMode As String, _
+                                       ByRef useMarkerRow As Boolean) As Boolean
     On Error GoTo ErrHandler
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmDatabaseMergeSetup")
-    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, useMarkerRow
+    form.Configure DBMerge_WorksheetNamesText(wb), keyHeader, outputHeadersCsv, outputSheetName, outputPosition, headerRowSetting, headerMode, idMode, keyMode, useMarkerRow
     form.Show
 
     If CBool(form.Cancelled) Then
@@ -12328,6 +12392,7 @@ Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheet
     headerRowSetting = CStr(form.HeaderRowSetting)
     headerMode = CStr(form.HeaderMode)
     idMode = CStr(form.IdMode)
+    keyMode = CStr(form.KeyMode)
     useMarkerRow = CBool(form.UseMarkerRow)
     Unload form
     DBMerge_ShowSetupForm = True
@@ -12494,15 +12559,101 @@ Private Sub DBMerge_AddHeader(ByVal headers As Collection, ByVal seen As Object,
     headers.Add cleaned
 End Sub
 
+Private Function DBMerge_NormalizeKeyMode(ByVal keyMode As String) As String
+    If LCase$(Trim$(keyMode)) = "manual" Then
+        DBMerge_NormalizeKeyMode = "manual"
+    Else
+        DBMerge_NormalizeKeyMode = "header"
+    End If
+End Function
+
+Private Function DBMerge_RequestManualKeyColumns(ByVal sheets As Collection, ByVal keyHeader As String) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+
+    Dim i As Long
+    For i = 1 To sheets.Count
+        Dim ws As Worksheet
+        Set ws = sheets(i)
+
+        ws.Activate
+
+        Dim keyRange As Range
+        On Error Resume Next
+        Set keyRange = Application.InputBox( _
+            ws.Name & " 시트에서 '" & keyHeader & "'로 사용할 KEY 열을 선택하세요." & vbCrLf & _
+            "헤더 셀 하나, 열 일부, 또는 전체 열을 선택할 수 있습니다.", _
+            "시트 데이터 통합 - KEY 열 직접 지정", Type:=8)
+        On Error GoTo 0
+
+        If keyRange Is Nothing Then
+            Set DBMerge_RequestManualKeyColumns = Nothing
+            Exit Function
+        End If
+        Set keyRange = keyRange.Areas(1)
+        If Not keyRange.Worksheet Is ws Then
+            MsgBox "KEY 열은 현재 지정 중인 '" & ws.Name & "' 시트에서 선택해야 합니다.", vbExclamation, "시트 데이터 통합"
+            Set DBMerge_RequestManualKeyColumns = Nothing
+            Exit Function
+        End If
+        If keyRange.Columns.Count <> 1 Then
+            MsgBox "KEY 열은 한 개 열만 선택하세요.", vbExclamation, "시트 데이터 통합"
+            Set DBMerge_RequestManualKeyColumns = Nothing
+            Exit Function
+        End If
+
+        result(ws.Name) = CLng(keyRange.Column)
+    Next i
+
+    Set DBMerge_RequestManualKeyColumns = result
+End Function
+
+Private Function DBMerge_ApplyManualKeyColumnForSheet(ByVal headerMap As Object, ByVal keyHeader As String, _
+                                                      ByVal manualKeyColumns As Object, ByVal sheetName As String) As Boolean
+    If manualKeyColumns Is Nothing Then Exit Function
+    If Not manualKeyColumns.Exists(sheetName) Then Exit Function
+
+    DBMerge_ApplyManualKeyColumnToMap headerMap, keyHeader, CLng(manualKeyColumns(sheetName))
+    DBMerge_ApplyManualKeyColumnForSheet = True
+End Function
+
+Private Sub DBMerge_ApplyManualKeyColumnToMap(ByVal headerMap As Object, ByVal keyHeader As String, ByVal keyCol As Long)
+    If keyCol < 1 Then Exit Sub
+
+    Dim keyNorm As String
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
+    If Len(keyNorm) = 0 Then Exit Sub
+
+    If headerMap.Exists(keyNorm) Then
+        headerMap(keyNorm) = keyCol
+    Else
+        headerMap.Add keyNorm, keyCol
+    End If
+End Sub
+
+Public Function DBMerge_ManualKeyColumnForTest(ByVal keyHeader As String, ByVal existingCol As Long, ByVal manualCol As Long) As Long
+    Dim headerMap As Object
+    Set headerMap = CreateObject("Scripting.Dictionary")
+
+    Dim keyNorm As String
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
+    If Len(keyNorm) > 0 And existingCol > 0 Then headerMap.Add keyNorm, existingCol
+
+    DBMerge_ApplyManualKeyColumnToMap headerMap, keyHeader, manualCol
+    If headerMap.Exists(keyNorm) Then DBMerge_ManualKeyColumnForTest = CLng(headerMap(keyNorm))
+End Function
+
 Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader As String, ByVal outputHeaders As Collection, _
                                    ByVal headerRowSetting As String, ByVal headerMode As String, _
-                                   ByVal idMode As String, ByVal useMarkerRow As Boolean) As Object
+                                   ByVal idMode As String, ByVal keyMode As String, _
+                                   ByVal useMarkerRow As Boolean, ByVal manualKeyColumns As Object) As Object
     Dim plan As Object
     Set plan = CreateObject("Scripting.Dictionary")
     plan.Add "keyHeader", keyHeader
     plan.Add "headerRowSetting", headerRowSetting
     plan.Add "headerMode", headerMode
     plan.Add "idMode", idMode
+    plan.Add "keyMode", DBMerge_NormalizeKeyMode(keyMode)
     plan.Add "useMarkerRow", useMarkerRow
 
     Dim sheetPlans As Collection
@@ -12534,6 +12685,12 @@ Private Function DBMerge_BuildPlan(ByVal sheets As Collection, ByVal keyHeader A
 
         Dim headerMap As Object
         Set headerMap = DBMerge_HeaderMap(ws, headerRow, headerMode)
+        If CStr(plan("keyMode")) = "manual" Then
+            If Not DBMerge_ApplyManualKeyColumnForSheet(headerMap, keyHeader, manualKeyColumns, ws.Name) Then
+                MsgBox ws.Name & " 시트의 수동 KEY 열 지정 정보를 찾지 못했습니다.", vbExclamation, "시트 데이터 통합"
+                Exit Function
+            End If
+        End If
         If idMode = "existing" And Not headerMap.Exists(DBMerge_NormalizeHeader(keyHeader)) Then
             MsgBox ws.Name & " 시트에서 메인 KEY 헤더 '" & keyHeader & "'를 찾지 못했습니다." & vbCrLf & _
                    "ID가 없는 시트는 ID 처리 방식을 자동 생성으로 바꾸세요.", vbExclamation, "시트 데이터 통합"
@@ -12802,6 +12959,7 @@ End Function
 Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
     Dim result As String
     result = "메인 KEY: " & CStr(plan("keyHeader")) & vbCrLf & _
+             "KEY 지정: " & DBMerge_KeyModeLabel(CStr(plan("keyMode"))) & vbCrLf & _
              "ID 처리: " & DBMerge_IdModeLabel(CStr(plan("idMode"))) & vbCrLf & _
              "열 선택: " & IIf(CBool(plan("useMarkerRow")), "통합 표시행 기준", "헤더 목록 직접 지정") & vbCrLf & _
              "헤더 구조: " & DBMerge_HeaderModeLabel(CStr(plan("headerMode"))) & vbCrLf & _
@@ -12817,6 +12975,7 @@ Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
                  " / 헤더 행: " & CStr(sheetPlan("headerRow")) & _
                  " / 데이터 시작: " & CStr(sheetPlan("dataStartRow")) & _
                  " / 마지막 행: " & CStr(sheetPlan("lastRow")) & _
+                 DBMerge_KeyColumnSummary(CStr(plan("keyMode")), CStr(plan("keyHeader")), sheetPlan("headerMap")) & _
                  " / 기존ID: " & CStr(sheetPlan("idExistingCount")) & _
                  " / 자동ID: " & CStr(sheetPlan("idGeneratedCount")) & vbCrLf
     Next i
@@ -12824,6 +12983,26 @@ Private Function DBMerge_PlanSummary(ByVal plan As Object) As String
         result = result & vbCrLf & "주의: 실행 시 원본 시트에 ID 열 또는 빈 ID 값이 생성됩니다." & vbCrLf
     End If
     DBMerge_PlanSummary = result
+End Function
+
+Private Function DBMerge_KeyModeLabel(ByVal keyMode As String) As String
+    If DBMerge_NormalizeKeyMode(keyMode) = "manual" Then
+        DBMerge_KeyModeLabel = "시트별 KEY 열 직접 지정"
+    Else
+        DBMerge_KeyModeLabel = "메인 KEY 헤더명으로 자동 매칭"
+    End If
+End Function
+
+Private Function DBMerge_KeyColumnSummary(ByVal keyMode As String, ByVal keyHeader As String, ByVal headerMap As Object) As String
+    If DBMerge_NormalizeKeyMode(keyMode) <> "manual" Then Exit Function
+
+    Dim keyNorm As String
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
+    If headerMap.Exists(keyNorm) Then
+        DBMerge_KeyColumnSummary = " / KEY 열: " & DBMerge_ColumnLetter(CLng(headerMap(keyNorm)))
+    Else
+        DBMerge_KeyColumnSummary = " / KEY 열: 없음"
+    End If
 End Function
 
 Private Function DBMerge_IdModeLabel(ByVal idMode As String) As String

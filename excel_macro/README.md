@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.24`
+`1.1.25`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -55,6 +55,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용
 - 업체명 표준화 및 유사그룹 생성
 - 명부 검증용 표준 입력 시트 생성 및 기존 명부 헤더 자동 인식 구성
+- 기존 명부 자동 구성 시 ID/KEY 열 직접 지정 지원
 - 명부 품질 진단 리포트 생성
 - 업체명/주소/전화번호/사업자번호 조합 기반 중복 업체 탐지. 업체명은 표준화명 일치, 한쪽 이름 포함, 3자 이상 공통 접두어를 같은 기업 판단 기준에 반영
 - 주소 범위 선택 후 도로명주소 또는 법정/행정동 기준 주소 여부 판별
@@ -71,6 +72,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 업체명 범위 선택 후 네이버 웹문서 API로 `업체명 공식몰`을 검색하고 자체 쇼핑몰 후보 URL을 생성. 네이버 브랜드스토어/스마트스토어/오픈마켓은 공식몰로 인정하지 않고 제외 사유로 기록
 - 네이버 지역검색/주소 검증/사업자등록 상태조회 API 작업 중 진행률 창과 Excel 상태표시줄 표시
 - 여러 시트의 데이터를 KEY와 지정 헤더 기준으로 하나의 통합 시트에 적재
+- 시트 통합 시 결과 KEY 헤더명과 별도로 시트별 KEY 열을 직접 지정 가능
 - 시트 통합 시 헤더 행 번호 지정, 자동 탐지, 2행 헤더 구조(헤더변수명/실제 헤더변수) 매칭 지원
 - 통합 전 시트별 헤더 행, 마지막 데이터 행, 컬럼 매칭 결과를 UserForm에서 확인
 - 통합 시트 1행에 원본시트/원본행/필드 관리코드를 추가해 원본시트별 재분리 지원
@@ -128,10 +130,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.24/DataEditingMacroToolkit_v1.1.24.xlam`
-- `release/v1.1.24/DataEditingMacroToolkit_v1.1.24.xlsm`
-- `release/v1.1.24/MacroToolkit.bas`
-- `release/v1.1.24/manifest.json`
+- `release/v1.1.25/DataEditingMacroToolkit_v1.1.25.xlam`
+- `release/v1.1.25/DataEditingMacroToolkit_v1.1.25.xlsm`
+- `release/v1.1.25/MacroToolkit.bas`
+- `release/v1.1.25/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
