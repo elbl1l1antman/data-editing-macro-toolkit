@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.25"
+Public Const TOOLKIT_VERSION As String = "1.1.26"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -2327,6 +2327,9 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
             Case Else
                 Exit Function
         End Select
+    ElseIf Len(digits) = 8 Then
+        ' ── 국번 없는 대표번호 (1588-1222 등) ────────────────
+        valueOut = Left$(digits, 4) & "-" & Right$(digits, 4)
     ElseIf Left$(digits, 2) = "02" Then
         ' ── 서울 지역번호 (02) ──────────────────────────────
         ' 02 포함 9자리: 02-XXX-XXXX
@@ -2414,6 +2417,39 @@ End Function
 Private Function Phone_IsSafeNumberDigits(ByVal digits As String) As Boolean
     If Len(digits) < 4 Then Exit Function
     Phone_IsSafeNumberDigits = (Left$(digits, 4) Like "050#")
+End Function
+
+Private Function Phone_IsPlaceholderZeroPattern(ByVal digits As String) As Boolean
+    If Len(digits) < 7 Then Exit Function
+
+    Dim i As Long
+    For i = 1 To Len(digits)
+        If Mid$(digits, i, 1) <> "0" Then Exit Function
+    Next i
+
+    Phone_IsPlaceholderZeroPattern = True
+End Function
+
+Private Function Phone_HasRepeatedDigitRun(ByVal digits As String, ByVal minRunLength As Long) As Boolean
+    If minRunLength < 2 Then minRunLength = 2
+
+    Dim i As Long
+    Dim previousDigit As String
+    Dim runLength As Long
+    For i = 1 To Len(digits)
+        Dim currentDigit As String
+        currentDigit = Mid$(digits, i, 1)
+        If currentDigit = previousDigit Then
+            runLength = runLength + 1
+        Else
+            previousDigit = currentDigit
+            runLength = 1
+        End If
+        If runLength >= minRunLength Then
+            Phone_HasRepeatedDigitRun = True
+            Exit Function
+        End If
+    Next i
 End Function
 
 ' ============================================================
@@ -7179,7 +7215,7 @@ Public Sub Roster_QualityReport()
     Roster_WriteArray outWs, outRow, 1, Array("전체 데이터 행", totalRows, "헤더 제외 행 수"): outRow = outRow + 1
 
     Dim blankName As Long, blankAddress As Long, blankPhone As Long, blankBiz As Long
-    Dim invalidPhone As Long, invalidBiz As Long
+    Dim invalidPhone As Long, errorPhone As Long, invalidBiz As Long
     Dim roadAddress As Long, dongAddress As Long, unknownAddress As Long
     Dim r As Long, textValue As String, phoneResult As Variant, addressResult As Variant, digits As String
 
@@ -7209,7 +7245,14 @@ Public Sub Roster_QualityReport()
                 blankPhone = blankPhone + 1
             Else
                 phoneResult = Phone_ClassifyOne(textValue)
-                If CStr(phoneResult(1)) <> "정상" Then invalidPhone = invalidPhone + 1
+                Select Case CStr(phoneResult(1))
+                    Case "오류"
+                        errorPhone = errorPhone + 1
+                    Case "정상"
+                        ' 정상 번호는 집계하지 않는다.
+                    Case Else
+                        invalidPhone = invalidPhone + 1
+                End Select
             End If
         End If
         If bizCol > 0 Then
@@ -7230,7 +7273,8 @@ Public Sub Roster_QualityReport()
     If addressCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", blankAddress, "빈값 여부"): outRow = outRow + 1
     If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 빈값", blankPhone, "빈값 여부"): outRow = outRow + 1
     If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 빈값", blankBiz, "빈값 여부"): outRow = outRow + 1
-    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 오류", errorPhone, "000-0000, 0000-0000 등 명백한 임시값/영값 패턴"): outRow = outRow + 1
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴/4회 이상 반복 숫자 기준"): outRow = outRow + 1
     If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If addressCol > 0 Then
         Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
@@ -7458,7 +7502,7 @@ Private Sub Roster_QualityReportManual()
     Dim totalRows As Long: totalRows = Application.Max(0, lastRow - firstDataRow + 1)
 
     Dim blankName As Long, blankAddress As Long
-    Dim invalidPhone As Long, invalidBiz As Long
+    Dim invalidPhone As Long, errorPhone As Long, invalidBiz As Long
     Dim roadAddress As Long, dongAddress As Long, unknownAddress As Long
     Dim r As Long, textValue As String, result As Variant, digits As String
 
@@ -7485,7 +7529,14 @@ Private Sub Roster_QualityReportManual()
             textValue = Roster_RangeTextAtRow(phoneRange, r)
             If Len(textValue) > 0 Then
                 result = Phone_ClassifyOne(textValue)
-                If CStr(result(1)) <> "정상" Then invalidPhone = invalidPhone + 1
+                Select Case CStr(result(1))
+                    Case "오류"
+                        errorPhone = errorPhone + 1
+                    Case "정상"
+                        ' 정상 번호는 집계하지 않는다.
+                    Case Else
+                        invalidPhone = invalidPhone + 1
+                End Select
             End If
         End If
         If selectedItems.Exists("4") Then
@@ -7499,7 +7550,8 @@ Private Sub Roster_QualityReportManual()
 
     If selectedItems.Exists("1") Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", blankName, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
     If selectedItems.Exists("2") Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", blankAddress, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
-    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴 기준"): outRow = outRow + 1
+    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 오류", errorPhone, "000-0000, 0000-0000 등 명백한 임시값/영값 패턴"): outRow = outRow + 1
+    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴/4회 이상 반복 숫자 기준"): outRow = outRow + 1
     If selectedItems.Exists("4") Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If selectedItems.Exists("5") Then
         Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
@@ -8371,21 +8423,51 @@ End Function
 
 Private Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     Dim digits As String: digits = Phone_DigitsForKoreanRules(phoneText)
+    Dim phoneType As String
+    Dim statusText As String
+
     If Len(digits) = 0 Then
-        Phone_ClassifyOne = Array("빈값", "확인 필요")
+        phoneType = "빈값"
+        statusText = "확인 필요"
+    ElseIf Phone_IsPlaceholderZeroPattern(digits) Then
+        phoneType = "오류 패턴"
+        statusText = "오류"
     ElseIf Phone_IsSafeNumberDigits(digits) Then
-        If Len(digits) = 11 Or Len(digits) = 12 Then Phone_ClassifyOne = Array("안심번호", "정상") Else Phone_ClassifyOne = Array("안심번호", "확인 필요")
+        phoneType = "안심번호"
+        If Len(digits) = 11 Or Len(digits) = 12 Then statusText = "정상" Else statusText = "확인 필요"
     ElseIf Left$(digits, 3) = "010" And Len(digits) = 11 Then
-        Phone_ClassifyOne = Array("휴대폰", "정상")
+        phoneType = "휴대폰"
+        statusText = "정상"
     ElseIf Left$(digits, 2) = "02" And (Len(digits) = 9 Or Len(digits) = 10) Then
-        Phone_ClassifyOne = Array("서울 지역번호", "정상")
+        phoneType = "서울 지역번호"
+        statusText = "정상"
     ElseIf Left$(digits, 2) = "15" Or Left$(digits, 2) = "16" Or Left$(digits, 2) = "18" Then
-        If Len(digits) = 8 Then Phone_ClassifyOne = Array("대표번호", "정상") Else Phone_ClassifyOne = Array("대표번호", "확인 필요")
+        phoneType = "대표번호"
+        If Len(digits) = 8 Then statusText = "정상" Else statusText = "확인 필요"
+    ElseIf Len(digits) = 8 Then
+        phoneType = "대표번호"
+        statusText = "정상"
     ElseIf Len(digits) = 10 Or Len(digits) = 11 Then
-        Phone_ClassifyOne = Array("지역/일반번호", "정상")
+        phoneType = "지역/일반번호"
+        statusText = "정상"
     Else
-        Phone_ClassifyOne = Array("알 수 없음", "확인 필요")
+        phoneType = "알 수 없음"
+        statusText = "확인 필요"
     End If
+
+    If statusText = "정상" And Phone_HasRepeatedDigitRun(digits, 4) Then statusText = "확인 필요"
+    Phone_ClassifyOne = Array(phoneType, statusText)
+End Function
+
+Public Function Phone_NormalizeForTest(ByVal phoneText As String) As String
+    Dim normalized As String
+    If NormalizeKoreanPhone(phoneText, normalized) Then Phone_NormalizeForTest = normalized
+End Function
+
+Public Function Phone_ClassifyForTest(ByVal phoneText As String) As String
+    Dim result As Variant
+    result = Phone_ClassifyOne(phoneText)
+    Phone_ClassifyForTest = CStr(result(0)) & "|" & CStr(result(1))
 End Function
 
 Private Function SPSS_CollectBannersForTable(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Collection

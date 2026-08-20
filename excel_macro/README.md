@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.25`
+`1.1.26`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -47,9 +47,9 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 - 텍스트 형식 숫자를 실제 숫자값으로 변환
 - 현재 시트의 실제 데이터 영역만 대상으로 텍스트 숫자 일괄 변환
-- 혼재된 한국 전화번호 형식 정규화. 0507 등 050X 계열 네이버 안심번호도 `0507-XXXX-XXXX` 형식으로 인식
+- 혼재된 한국 전화번호 형식 정규화. 0507 등 050X 계열 네이버 안심번호와 8자리 대표번호를 표준 형식으로 인식
 - 전화번호 정리 시 원본 오른쪽에 복사본 열을 생성한 뒤 복사본만 정규화
-- 전화번호 유형 분류 및 유효성 검사. 050X 계열 안심번호를 정상 전화번호 유형으로 분류
+- 전화번호 유형 분류 및 유효성 검사. 050X 계열 안심번호, 8자리 대표번호, 영값 오류 패턴, 4회 이상 반복 숫자 확인 필요 조건을 반영
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
 - 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용
@@ -130,10 +130,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.25/DataEditingMacroToolkit_v1.1.25.xlam`
-- `release/v1.1.25/DataEditingMacroToolkit_v1.1.25.xlsm`
-- `release/v1.1.25/MacroToolkit.bas`
-- `release/v1.1.25/manifest.json`
+- `release/v1.1.26/DataEditingMacroToolkit_v1.1.26.xlam`
+- `release/v1.1.26/DataEditingMacroToolkit_v1.1.26.xlsm`
+- `release/v1.1.26/MacroToolkit.bas`
+- `release/v1.1.26/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
