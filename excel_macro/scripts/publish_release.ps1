@@ -2605,7 +2605,7 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $form.Properties.Item("Height").Value = 430
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "분석에 사용할 데이터와 범위를 선택하세요."
+    $lblTitle.Caption = "분석에 사용할 항목을 선택하세요. 범위는 실행 후 열리는 Excel 범위 선택창에서 지정합니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 12
     $lblTitle.Width = 520
@@ -2626,7 +2626,7 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $txtNameRange.Height = 22
 
     $cmdPickName = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickName", $true)
-    $cmdPickName.Caption = "범위 선택"
+    $cmdPickName.Caption = "선택 안내"
     $cmdPickName.Left = 432
     $cmdPickName.Top = 42
     $cmdPickName.Width = 90
@@ -2647,7 +2647,7 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $txtAddressRange.Height = 22
 
     $cmdPickAddress = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickAddress", $true)
-    $cmdPickAddress.Caption = "범위 선택"
+    $cmdPickAddress.Caption = "선택 안내"
     $cmdPickAddress.Left = 432
     $cmdPickAddress.Top = 78
     $cmdPickAddress.Width = 90
@@ -2716,7 +2716,7 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $cmbSort.Height = 22
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "업체명만 또는 주소만 선택할 수 있습니다. 둘 다 선택하면 두 범위는 같은 시트와 같은 행 수여야 합니다."
+    $lblTip.Caption = "업체명만 또는 주소만 선택할 수 있습니다. 둘 다 선택하면 두 범위는 같은 시트와 같은 행 수여야 합니다. 실행 후 열리는 범위 선택창에서는 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다."
     $lblTip.Left = 12
     $lblTip.Top = 236
     $lblTip.Width = 520
@@ -2755,25 +2755,19 @@ Private Sub UserForm_Initialize()
 End Sub
 
 Private Sub cmdPickName_Click()
-    On Error Resume Next
-    Set mNameRange = Application.InputBox("업체명 범위를 선택하세요.", Me.Caption, Type:=8)
-    If Err.Number = 0 And Not mNameRange Is Nothing Then
-        txtNameRange.Value = mNameRange.Address(External:=True)
-        chkUseName.Value = True
-    End If
-    Err.Clear
-    On Error GoTo 0
+    chkUseName.Value = True
+    MsgBox "실행 버튼을 누른 뒤 업체명 범위 선택창이 열립니다." & vbCrLf & _
+           "그 창에서 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다." & vbCrLf & _
+           "범위 주소를 알고 있으면 현재 입력칸에 직접 입력해도 됩니다.", vbInformation, Me.Caption
+    txtNameRange.SetFocus
 End Sub
 
 Private Sub cmdPickAddress_Click()
-    On Error Resume Next
-    Set mAddressRange = Application.InputBox("주소 범위를 선택하세요.", Me.Caption, Type:=8)
-    If Err.Number = 0 And Not mAddressRange Is Nothing Then
-        txtAddressRange.Value = mAddressRange.Address(External:=True)
-        chkUseAddress.Value = True
-    End If
-    Err.Clear
-    On Error GoTo 0
+    chkUseAddress.Value = True
+    MsgBox "실행 버튼을 누른 뒤 주소 범위 선택창이 열립니다." & vbCrLf & _
+           "그 창에서 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다." & vbCrLf & _
+           "범위 주소를 알고 있으면 현재 입력칸에 직접 입력해도 됩니다.", vbInformation, Me.Caption
+    txtAddressRange.SetFocus
 End Sub
 
 Public Property Get QueryMode() As String
@@ -2809,6 +2803,14 @@ Public Property Get AddressRange() As Object
     Set AddressRange = mAddressRange
 End Property
 
+Public Property Get NameRangeAddress() As String
+    NameRangeAddress = Trim$(txtNameRange.Value)
+End Property
+
+Public Property Get AddressRangeAddress() As String
+    AddressRangeAddress = Trim$(txtAddressRange.Value)
+End Property
+
 Public Property Get HasHeader() As Boolean
     HasHeader = CBool(chkHeader.Value)
 End Property
@@ -2832,30 +2834,6 @@ End Property
 Private Sub cmdOK_Click()
     If Not UseName And Not UseAddress Then
         MsgBox "업체명 또는 주소 중 하나 이상을 선택하세요.", vbExclamation, Me.Caption
-        Exit Sub
-    End If
-
-    If UseName And mNameRange Is Nothing Then
-        If Len(Trim$(txtNameRange.Value)) > 0 Then
-            On Error Resume Next
-            Set mNameRange = Application.Range(Trim$(txtNameRange.Value))
-            On Error GoTo 0
-        End If
-    End If
-    If UseAddress And mAddressRange Is Nothing Then
-        If Len(Trim$(txtAddressRange.Value)) > 0 Then
-            On Error Resume Next
-            Set mAddressRange = Application.Range(Trim$(txtAddressRange.Value))
-            On Error GoTo 0
-        End If
-    End If
-
-    If UseName And mNameRange Is Nothing Then
-        MsgBox "업체명 사용을 선택했습니다. 업체명 범위를 지정하세요.", vbExclamation, Me.Caption
-        Exit Sub
-    End If
-    If UseAddress And mAddressRange Is Nothing Then
-        MsgBox "주소 사용을 선택했습니다. 주소 범위를 지정하세요.", vbExclamation, Me.Caption
         Exit Sub
     End If
 

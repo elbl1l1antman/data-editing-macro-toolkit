@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.26"
+Public Const TOOLKIT_VERSION As String = "1.1.27"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -4007,23 +4007,98 @@ Private Function NaverLocal_GetVerifyOptions() As Object
         Exit Function
     End If
 
+    Dim queryMode As String
+    Dim displayCount As Long
+    Dim delaySeconds As Double
+    Dim sortMode As String
+    Dim hasHeader As Boolean
+    Dim useName As Boolean
+    Dim useAddress As Boolean
+    Dim nameRangeAddress As String
+    Dim addressRangeAddress As String
+    Dim nameRange As Range
+    Dim addressRange As Range
+
+    queryMode = CStr(form.QueryMode)
+    displayCount = CLng(form.DisplayCount)
+    delaySeconds = CDbl(form.DelaySeconds)
+    sortMode = CStr(form.SortMode)
+    hasHeader = CBool(form.HasHeader)
+    useName = CBool(form.UseName)
+    useAddress = CBool(form.UseAddress)
+    nameRangeAddress = CStr(form.NameRangeAddress)
+    addressRangeAddress = CStr(form.AddressRangeAddress)
+    If useName Then Set nameRange = form.NameRange
+    If useAddress Then Set addressRange = form.AddressRange
+    Unload form
+
+    If useName And nameRange Is Nothing And Len(Trim$(nameRangeAddress)) > 0 Then
+        Set nameRange = NaverLocal_RangeFromAddressText(nameRangeAddress)
+        If nameRange Is Nothing Then
+            MsgBox "입력한 업체명 범위 주소를 해석하지 못했습니다." & vbCrLf & _
+                   "다음 범위 선택창에서 다시 지정하세요.", vbInformation, "네이버 지역검색"
+        End If
+    End If
+    If useAddress And addressRange Is Nothing And Len(Trim$(addressRangeAddress)) > 0 Then
+        Set addressRange = NaverLocal_RangeFromAddressText(addressRangeAddress)
+        If addressRange Is Nothing Then
+            MsgBox "입력한 주소 범위 주소를 해석하지 못했습니다." & vbCrLf & _
+                   "다음 범위 선택창에서 다시 지정하세요.", vbInformation, "네이버 지역검색"
+        End If
+    End If
+
+    If useName And nameRange Is Nothing Then
+        If Not Toolkit_GetRangeFromUserForm("네이버 주소 검증 - 업체명 범위", _
+            "업체명 또는 기업체명 범위를 선택하세요.", nameRange) Then Exit Function
+    End If
+    If useAddress And addressRange Is Nothing Then
+        If Not Toolkit_GetRangeFromUserForm("네이버 주소 검증 - 주소 범위", _
+            "주소 범위를 선택하세요.", addressRange) Then Exit Function
+    End If
+
     Dim options As Object
     Set options = CreateObject("Scripting.Dictionary")
-    options("queryMode") = CStr(form.QueryMode)
-    options("displayCount") = CLng(form.DisplayCount)
-    options("delaySeconds") = CDbl(form.DelaySeconds)
-    options("sortMode") = CStr(form.SortMode)
-    options("hasHeader") = CBool(form.HasHeader)
-    options("useName") = CBool(form.UseName)
-    options("useAddress") = CBool(form.UseAddress)
-    If CBool(form.UseName) Then Set options("nameRange") = form.NameRange
-    If CBool(form.UseAddress) Then Set options("addressRange") = form.AddressRange
-    Unload form
+    options("queryMode") = queryMode
+    options("displayCount") = displayCount
+    options("delaySeconds") = delaySeconds
+    options("sortMode") = sortMode
+    options("hasHeader") = hasHeader
+    options("useName") = useName
+    options("useAddress") = useAddress
+    If useName Then Set options("nameRange") = nameRange
+    If useAddress Then Set options("addressRange") = addressRange
     Set NaverLocal_GetVerifyOptions = options
     Exit Function
 
 Fallback:
+    On Error Resume Next
+    If Not form Is Nothing Then Unload form
+    On Error GoTo 0
     MsgBox "주소 검증 옵션창을 열 수 없습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
+End Function
+
+Private Function NaverLocal_RangeFromAddressText(ByVal addressText As String) As Range
+    Dim cleaned As String
+    cleaned = Trim$(addressText)
+    If Len(cleaned) = 0 Then Exit Function
+
+    On Error Resume Next
+    Set NaverLocal_RangeFromAddressText = Application.Range(cleaned)
+    On Error GoTo 0
+End Function
+
+Private Function NaverLocal_VerifyPromptList(ByVal useName As Boolean, ByVal useAddress As Boolean, _
+                                             ByVal nameRangeAddress As String, ByVal addressRangeAddress As String) As String
+    If useName And Len(Trim$(nameRangeAddress)) = 0 Then NaverLocal_VerifyPromptList = "name"
+    If useAddress And Len(Trim$(addressRangeAddress)) = 0 Then
+        If Len(NaverLocal_VerifyPromptList) > 0 Then NaverLocal_VerifyPromptList = NaverLocal_VerifyPromptList & ","
+        NaverLocal_VerifyPromptList = NaverLocal_VerifyPromptList & "address"
+    End If
+End Function
+
+Public Function NaverLocal_VerifyPromptListForTest(ByVal useName As Boolean, ByVal useAddress As Boolean, _
+                                                   ByVal nameRangeAddress As String, ByVal addressRangeAddress As String) As String
+    NaverLocal_VerifyPromptListForTest = NaverLocal_VerifyPromptList(useName, useAddress, nameRangeAddress, addressRangeAddress)
 End Function
 
 Private Function NaverLocal_HasCredentials() As Boolean
