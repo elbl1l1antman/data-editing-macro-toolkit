@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.29`
+`1.1.30`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -70,7 +70,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 기존 업체명/주소 범위 선택 후 네이버 지역검색 결과, 유사도, 검증등급 열 생성
 - 네이버 주소 검증 옵션창에서 업체명만/주소만/업체명+주소 분석 여부를 지정하고, 실행 후 공통 범위 선택창에서 업체명/주소 범위를 키보드 또는 마우스로 지정
 - 업체명 범위 선택 후 네이버 웹문서 API로 `업체명 공식몰`을 검색하고 자체 쇼핑몰 후보 URL을 생성. 네이버 브랜드스토어/스마트스토어/오픈마켓은 공식몰로 인정하지 않고 제외 사유로 기록
-- 네이버 지역검색/주소 검증/사업자등록 상태조회 API 작업 중 진행률 창과 Excel 상태표시줄 표시
+- 네이버 지역검색/주소 검증/사업자등록 상태조회 API 작업 중 진행률 창, 작업 취소 버튼, Excel 상태표시줄 표시
 - 여러 시트의 데이터를 KEY와 지정 헤더 기준으로 하나의 통합 시트에 적재
 - 시트 통합 시 결과 KEY 헤더명과 별도로 시트별 KEY 열을 직접 지정 가능
 - 시트 통합 시 헤더 행 번호 지정, 자동 탐지, 2행 헤더 구조(헤더변수명/실제 헤더변수) 매칭 지원
@@ -81,7 +81,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 숫자 변환과 전화번호 정리를 UserForm 기반 범위 선택 GUI로 실행
 - UserForm 버튼/목록 배치 여백 개선 및 리본 아이콘 누락 점검
 - 범위 선택 시 Excel 시트에서 Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그로 선택 후 실행 가능
-- 1천 행 초과 기업명 정리, 주소 분리/판별/통합, 행정구역 분해, 전화번호 검사, 명부 품질/중복/업체명 매칭 작업에서 진행률 팝업 표시 및 500행 단위 응답 갱신
+- 장시간 반복 작업에서 진행률 팝업과 `작업 취소` 버튼 표시. 값 정리, 기업명 정리, 주소 분리/판별/통합, 행정구역 분해, 전화번호 검사, 명부 품질/중복/업체명 매칭, API 작업은 처리 단위마다 취소 요청을 확인
 - 이상치 탐지 및 대체 결과 시트 생성
 - 이상치 실행 전 2차 자료/전년도 자료 대체 여부 확인 및 작업 안내 시트 생성
 - 이상치 확인 실행 시 범위 검증 후 기초통계량표를 먼저 생성
@@ -130,10 +130,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.29/DataEditingMacroToolkit_v1.1.29.xlam`
-- `release/v1.1.29/DataEditingMacroToolkit_v1.1.29.xlsm`
-- `release/v1.1.29/MacroToolkit.bas`
-- `release/v1.1.29/manifest.json`
+- `release/v1.1.30/DataEditingMacroToolkit_v1.1.30.xlam`
+- `release/v1.1.30/DataEditingMacroToolkit_v1.1.30.xlsm`
+- `release/v1.1.30/MacroToolkit.bas`
+- `release/v1.1.30/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

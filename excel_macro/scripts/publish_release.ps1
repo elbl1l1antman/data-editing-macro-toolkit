@@ -2953,7 +2953,7 @@ function Add-ProgressStatusUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "작업 진행 현황"
     $form.Properties.Item("Width").Value = 420
-    $form.Properties.Item("Height").Value = 180
+    $form.Properties.Item("Height").Value = 210
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "작업을 준비 중입니다."
@@ -3001,16 +3001,27 @@ function Add-ProgressStatusUserForm {
     $lblWait.Width = 210
     $lblWait.Height = 18
 
+    $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
+    $cmdCancel.Caption = "작업 취소"
+    $cmdCancel.Left = 294
+    $cmdCancel.Top = 142
+    $cmdCancel.Width = 86
+    $cmdCancel.Height = 26
+
     $formCode = @'
 Option Explicit
 
 Private mTotal As Long
 Private Const BAR_MAX_WIDTH As Single = 360
+Public CancelRequested As Boolean
 
 Public Sub Configure(ByVal title As String, ByVal totalCount As Long, ByVal message As String)
     Me.Caption = title
     lblTitle.Caption = title
     mTotal = totalCount
+    CancelRequested = False
+    cmdCancel.Enabled = True
+    cmdCancel.Caption = "작업 취소"
     UpdateProgress 0, totalCount, message
 End Sub
 
@@ -3030,9 +3041,26 @@ Public Sub UpdateProgress(ByVal currentCount As Long, ByVal totalCount As Long, 
     Repaint
 End Sub
 
+Public Property Get IsCancelled() As Boolean
+    IsCancelled = CancelRequested
+End Property
+
+Private Sub cmdCancel_Click()
+    CancelRequested = True
+    cmdCancel.Enabled = False
+    cmdCancel.Caption = "취소 요청됨"
+    lblWait.Caption = "현재 처리 단위가 끝나면 중단합니다."
+    Repaint
+End Sub
+
 Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
     If CloseMode = 0 Then
+        CancelRequested = True
         Cancel = True
+        cmdCancel.Enabled = False
+        cmdCancel.Caption = "취소 요청됨"
+        lblWait.Caption = "현재 처리 단위가 끝나면 중단합니다."
+        Repaint
     End If
 End Sub
 '@

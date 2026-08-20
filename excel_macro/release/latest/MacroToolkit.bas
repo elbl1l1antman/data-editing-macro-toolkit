@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.29"
+Public Const TOOLKIT_VERSION As String = "1.1.30"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -43,6 +43,7 @@ Private Const API_RECEIVE_TIMEOUT_MS As Long = 30000
 Private Const TOOLKIT_PROGRESS_ROW_THRESHOLD As Long = 1000
 Private Const TOOLKIT_PROGRESS_BATCH_ROWS As Long = 500
 Private Const TOOLKIT_PROGRESS_PAIR_BATCH As Long = 10000
+Private Const TOOLKIT_CANCEL_ERROR_NUMBER As Long = vbObjectError + 9130
 
 Private mToolkitOperationDepth As Long
 Private mToolkitPrevScreenUpdating As Boolean
@@ -52,6 +53,7 @@ Private mToolkitPrevCalculation As XlCalculation
 Private mToolkitPrevStatusBar As Variant
 
 Private gProgressForm As Object
+Private mToolkitCancelRequested As Boolean
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -188,6 +190,7 @@ End Sub
 
 Private Sub Toolkit_ProgressShow(ByVal title As String, ByVal message As String, ByVal totalCount As Long)
     On Error Resume Next
+    mToolkitCancelRequested = False
     Set gProgressForm = VBA.UserForms.Add("frmProgressStatus")
     If Not gProgressForm Is Nothing Then
         gProgressForm.Configure title, totalCount, message
@@ -199,16 +202,22 @@ Private Sub Toolkit_ProgressShow(ByVal title As String, ByVal message As String,
 End Sub
 
 Private Sub Toolkit_ProgressUpdate(ByVal currentCount As Long, ByVal totalCount As Long, ByVal message As String)
+    Dim cancelRequested As Boolean
+
     On Error Resume Next
     If Not gProgressForm Is Nothing Then
         gProgressForm.UpdateProgress currentCount, totalCount, message
+        cancelRequested = CBool(gProgressForm.IsCancelled)
     End If
 
     Dim percentValue As Double
     If totalCount > 0 Then percentValue = currentCount / totalCount
     Application.StatusBar = Format(percentValue, "0%") & " - " & message & " (" & currentCount & "/" & totalCount & ")"
     DoEvents
+    If Not gProgressForm Is Nothing Then cancelRequested = cancelRequested Or CBool(gProgressForm.IsCancelled)
     On Error GoTo 0
+    If cancelRequested Then mToolkitCancelRequested = True
+    Toolkit_RaiseIfCancelled
 End Sub
 
 Private Sub Toolkit_ProgressClose()
@@ -219,11 +228,12 @@ Private Sub Toolkit_ProgressClose()
     End If
     Application.StatusBar = False
     DoEvents
+    mToolkitCancelRequested = False
     On Error GoTo 0
 End Sub
 
 Private Function Toolkit_ShouldShowRowProgress(ByVal totalRows As Long) As Boolean
-    Toolkit_ShouldShowRowProgress = (totalRows > TOOLKIT_PROGRESS_ROW_THRESHOLD)
+    Toolkit_ShouldShowRowProgress = (totalRows > 0)
 End Function
 
 Private Sub Toolkit_RowProgressStart(ByVal title As String, ByVal totalRows As Long, ByVal message As String)
@@ -232,15 +242,38 @@ End Sub
 
 Private Sub Toolkit_RowProgressUpdate(ByVal processedRows As Long, ByVal totalRows As Long, ByVal message As String)
     If Not Toolkit_ShouldShowRowProgress(totalRows) Then Exit Sub
-    If processedRows <= 1 _
-       Or processedRows >= totalRows _
-       Or processedRows Mod TOOLKIT_PROGRESS_BATCH_ROWS = 0 Then
-        Toolkit_ProgressUpdate processedRows, totalRows, message
-    End If
+    Toolkit_ProgressUpdate processedRows, totalRows, message
 End Sub
 
 Private Sub Toolkit_RowProgressClose(ByVal totalRows As Long)
     If Toolkit_ShouldShowRowProgress(totalRows) Then Toolkit_ProgressClose
+End Sub
+
+Private Function Toolkit_ProgressCancelRequested() As Boolean
+    Dim formCancelled As Boolean
+
+    On Error Resume Next
+    If Not gProgressForm Is Nothing Then formCancelled = CBool(gProgressForm.IsCancelled)
+    On Error GoTo 0
+
+    If formCancelled Then mToolkitCancelRequested = True
+    Toolkit_ProgressCancelRequested = mToolkitCancelRequested
+End Function
+
+Private Function Toolkit_IsCancelError(ByVal errorNumber As Long) As Boolean
+    Toolkit_IsCancelError = (errorNumber = TOOLKIT_CANCEL_ERROR_NUMBER)
+End Function
+
+Private Function Toolkit_ShowCancelMessage(ByVal title As String) As Boolean
+    If Not Toolkit_IsCancelError(Err.Number) Then Exit Function
+    MsgBox "작업이 취소되었습니다.", vbInformation, title
+    Toolkit_ShowCancelMessage = True
+End Function
+
+Private Sub Toolkit_RaiseIfCancelled()
+    If Toolkit_ProgressCancelRequested() Then
+        Err.Raise TOOLKIT_CANCEL_ERROR_NUMBER, "DataEditingMacroToolkit", "사용자가 작업을 취소했습니다."
+    End If
 End Sub
 
 Public Sub Toolkit_SelectA1OnAllSheets()
@@ -644,10 +677,14 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
     Dim convertedCount As Long   ' 변환 성공 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
     Dim newValue As Variant      ' 변환된 숫자 값을 임시 저장
+    Dim processedCells As Long
+    Dim totalCells As Long
+    totalCells = target.Cells.CountLarge
 
     On Error GoTo ErrHandler
     ' 화면 갱신 중지: 셀 업데이트마다 화면을 다시 그리지 않아 속도 향상
     Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "텍스트 숫자 변환", totalCells, "변환 준비 중"
     For Each cell In target.Cells
         If cell.HasFormula Then
             ' 수식 셀은 값을 덮어쓰면 수식이 사라지므로 건너뜀
@@ -657,8 +694,11 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
             cell.Value = newValue
             convertedCount = convertedCount + 1
         End If
+        processedCells = processedCells + 1
+        Toolkit_RowProgressUpdate processedCells, totalCells, "텍스트 숫자 변환 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
     Next cell
 
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
     MsgBox convertedCount & "개 셀이 변환되었습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다.", _
@@ -666,7 +706,9 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
     Exit Sub
 
 ErrHandler:
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("텍스트 숫자 변환") Then Exit Sub
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
            vbExclamation, "텍스트 숫자 변환"
 End Sub
@@ -704,9 +746,13 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
     Dim changedCount As Long         ' 실제 변경된 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
     Dim normalized As String         ' 정규화된 전화번호 문자열
+    Dim processedCells As Long
+    Dim totalCells As Long
+    totalCells = target.Cells.CountLarge
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_RowProgressStart resultTitle, totalCells, "전화번호 정리 준비 중"
     For Each cell In target.Cells
         If cell.HasFormula Then
             skippedFormulaCount = skippedFormulaCount + 1
@@ -720,8 +766,11 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
                 changedCount = changedCount + 1
             End If
         End If
+        processedCells = processedCells + 1
+        Toolkit_RowProgressUpdate processedCells, totalCells, "전화번호 정리 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
     Next cell
 
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
     MsgBox changedCount & "개 전화번호가 정규화되었습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
@@ -730,7 +779,9 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
     Exit Sub
 
 ErrHandler:
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage(resultTitle) Then Exit Sub
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
            vbExclamation, resultTitle
 End Sub
@@ -792,9 +843,13 @@ Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle 
     Dim changedCount As Long
     Dim skippedFormulaCount As Long
     Dim digits As String
+    Dim processedCells As Long
+    Dim totalCells As Long
+    totalCells = outputRange.Cells.CountLarge
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
+    Toolkit_RowProgressStart resultTitle, totalCells, "구분기호 제거 준비 중"
     For Each cell In outputRange.Cells
         If cell.HasFormula Then
             skippedFormulaCount = skippedFormulaCount + 1
@@ -810,8 +865,11 @@ Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle 
                 changedCount = changedCount + 1
             End If
         End If
+        processedCells = processedCells + 1
+        Toolkit_RowProgressUpdate processedCells, totalCells, "구분기호 제거 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
     Next cell
 
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
     MsgBox changedCount & "개 셀에서 대시/구분기호를 제거했습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
@@ -819,7 +877,9 @@ Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle 
     Exit Sub
 
 ErrHandler:
+    Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage(resultTitle) Then Exit Sub
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, resultTitle
 End Sub
 
@@ -958,6 +1018,7 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("기업체명 정리") Then Exit Sub
     MsgBox "기업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업체명 정리"
 End Sub
 
@@ -1530,6 +1591,7 @@ Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("주소 유형 판별") Then Exit Sub
     MsgBox "주소 유형 판별 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 유형 판별"
 End Sub
 
@@ -1620,6 +1682,7 @@ Private Sub Address_SplitRangeDongAndRoad(ByVal addressRange As Range)
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("주소 체계 분리") Then Exit Sub
     MsgBox "주소 체계 분리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 체계 분리"
 End Sub
 
@@ -1737,6 +1800,7 @@ Private Sub Address_CombineRangeDongAndRoad(ByVal dongRange As Range, ByVal road
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("주소 통합") Then Exit Sub
     MsgBox "주소 통합 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "주소 통합"
 End Sub
 
@@ -1848,6 +1912,7 @@ Private Sub Address_ConvertRangeWithMapping(ByVal addressRange As Range, ByVal m
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("도로명주소 변환") Then Exit Sub
     MsgBox "도로명주소 변환 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "도로명주소 변환"
 End Sub
 
@@ -2654,6 +2719,7 @@ Public Sub BizNo_QueryStatusForSelection()
 CleanFail:
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("사업자등록 상태조회") Then Exit Sub
     MsgBox "조회 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "사업자등록 상태조회"
 End Sub
 
@@ -3039,6 +3105,7 @@ Public Sub NaverLocal_BuildListByDong()
 ErrHandler:
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("네이버 지역검색") Then Exit Sub
     MsgBox "네이버 지역검색 신규 리스트 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Sub
 
@@ -3252,6 +3319,7 @@ NextVerifyRow:
 ErrHandler:
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("네이버 지역검색") Then Exit Sub
     MsgBox "네이버 주소 검증 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Sub
 
@@ -3439,6 +3507,7 @@ NextMallRow:
 ErrHandler:
     Toolkit_ProgressClose
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage(PURPOSE) Then Exit Sub
     MsgBox "네이버 공식몰 링크 검색 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, PURPOSE
 End Sub
 
@@ -4407,6 +4476,7 @@ Private Sub NaverLocal_Delay(ByVal seconds As Double)
     endTime = Timer + seconds
     Do While Timer < endTime
         DoEvents
+        Toolkit_RaiseIfCancelled
     Loop
 End Sub
 
@@ -7242,6 +7312,7 @@ Public Sub Roster_DetectDuplicates()
             If Toolkit_ShouldShowRowProgress(totalRows) And pairPulseCount >= TOOLKIT_PROGRESS_PAIR_BATCH Then
                 pairPulseCount = 0
                 DoEvents
+                Toolkit_RaiseIfCancelled
             End If
             If score >= 55 Then
                 grade = Roster_DuplicateGrade(score)
@@ -7265,6 +7336,7 @@ Public Sub Roster_DetectDuplicates()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("중복 업체 탐지") Then Exit Sub
     MsgBox "중복 업체 탐지 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "중복 업체 탐지"
 End Sub
 
@@ -7376,6 +7448,7 @@ Public Sub Roster_QualityReport()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("명부 품질 진단") Then Exit Sub
     MsgBox "명부 품질 진단 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "명부 품질 진단"
 End Sub
 
@@ -7653,6 +7726,7 @@ Private Sub Roster_QualityReportManual()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("명부 품질 진단") Then Exit Sub
     MsgBox "수동 선택 기반 명부 품질 진단 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "명부 품질 진단"
 End Sub
 
@@ -7729,6 +7803,7 @@ Private Sub Roster_DetectDuplicatesManual()
             If Toolkit_ShouldShowRowProgress(totalRows) And pairPulseCount >= TOOLKIT_PROGRESS_PAIR_BATCH Then
                 pairPulseCount = 0
                 DoEvents
+                Toolkit_RaiseIfCancelled
             End If
             If score >= 55 Then
                 grade = Roster_DuplicateGrade(score)
@@ -7752,6 +7827,7 @@ Private Sub Roster_DetectDuplicatesManual()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("중복 업체 탐지") Then Exit Sub
     MsgBox "수동 선택 기반 중복 업체 탐지 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "중복 업체 탐지"
 End Sub
 
@@ -7811,6 +7887,7 @@ Public Sub Roster_MatchCompanyNames()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("업체명 유사도 매칭") Then Exit Sub
     MsgBox "업체명 유사도 매칭 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "업체명 유사도 매칭"
 End Sub
 
@@ -7855,6 +7932,7 @@ Public Sub Address_SplitAdministrativeParts()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("행정구역 분해") Then Exit Sub
     MsgBox "행정구역 분해 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "행정구역 분해"
 End Sub
 
@@ -7899,6 +7977,7 @@ Public Sub Phone_ValidateSelection()
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("전화번호 유효성 검사") Then Exit Sub
     MsgBox "전화번호 유효성 검사 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "전화번호 유효성 검사"
 End Sub
 
