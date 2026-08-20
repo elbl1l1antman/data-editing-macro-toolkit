@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.27"
+Public Const TOOLKIT_VERSION As String = "1.1.28"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1243,10 +1243,10 @@ Private Function CompanyName_IsNameCharacter(ByVal ch As String) As Boolean
         ((codeValue >= 48 And codeValue <= 57) Or _
          (codeValue >= 65 And codeValue <= 90) Or _
          (codeValue >= 97 And codeValue <= 122) Or _
-         (codeValue >= &HAC00 And codeValue <= &HD7A3) Or _
-         (codeValue >= &H1100 And codeValue <= &H11FF) Or _
-         (codeValue >= &H3130 And codeValue <= &H318F) Or _
-         (codeValue >= &H4E00 And codeValue <= &H9FFF) Or _
+         (codeValue >= &HAC00& And codeValue <= &HD7A3&) Or _
+         (codeValue >= &H1100& And codeValue <= &H11FF&) Or _
+         (codeValue >= &H3130& And codeValue <= &H318F&) Or _
+         (codeValue >= &H4E00& And codeValue <= &H9FFF&) Or _
          ch = " ")
 End Function
 
