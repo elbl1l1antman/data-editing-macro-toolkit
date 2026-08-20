@@ -42,6 +42,7 @@ $procedureNames = @(
     "CompanyName_RemoveSpaces",
     "CompanyName_HasCorpMarker",
     "CompanyName_RemoveCorpMarkers",
+    "CompanyName_RemoveParentheticalText",
     "CompanyName_RemoveBranchMarkers",
     "CompanyName_RemoveLegalEntityMarkers",
     "CompanyName_RemoveKoreanLegalEntityMarkers",
@@ -83,6 +84,12 @@ Public Function CompanyNameRulesPassed() As String
 
     options("removeSpecialChars") = True
     resultText = CheckCase(resultText, "special char removal keeps Hangul around number", CompanyName_CleanOne("A4-" & KoSystem(), options), KoA() & "4" & KoSystem())
+
+    Set options = CompanyName_DefaultOptions()
+    options("removeParentheticalText") = True
+    resultText = CheckCase(resultText, "remove halfwidth parenthetical publisher prefix", CompanyName_CleanOne("(" & KoBookPublisher() & ")" & KoYongYongDragon(), options), KoYongYongDragon())
+    resultText = CheckCase(resultText, "remove fullwidth parenthetical publisher prefix", CompanyName_CleanOne(FullLeftParen() & KoBookPublisher() & FullRightParen() & KoLifeTree(), options), KoLifeTree())
+    resultText = CheckCase(resultText, "remove fullwidth short publisher prefix", CompanyName_CleanOne(FullLeftParen() & KoDoShort() & FullRightParen() & KoSpring(), options), KoSpring())
 
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText
@@ -130,6 +137,34 @@ End Function
 
 Private Function KoBranchPoint() As String
     KoBranchPoint = ChrW(&HC810)
+End Function
+
+Private Function FullLeftParen() As String
+    FullLeftParen = ChrW(&HFF08)
+End Function
+
+Private Function FullRightParen() As String
+    FullRightParen = ChrW(&HFF09)
+End Function
+
+Private Function KoBookPublisher() As String
+    KoBookPublisher = ChrW(&HB3C4) & ChrW(&HC11C) & ChrW(&HCD9C) & ChrW(&HD310)
+End Function
+
+Private Function KoDoShort() As String
+    KoDoShort = ChrW(&HB3C4)
+End Function
+
+Private Function KoYongYongDragon() As String
+    KoYongYongDragon = ChrW(&HC6A9) & ChrW(&HC6A9) & ChrW(&HB4DC) & ChrW(&HB798) & ChrW(&HACE4)
+End Function
+
+Private Function KoLifeTree() As String
+    KoLifeTree = ChrW(&HC0DD) & ChrW(&HBA85) & ChrW(&HB098) & ChrW(&HBB34)
+End Function
+
+Private Function KoSpring() As String
+    KoSpring = ChrW(&HBD04)
 End Function
 '@
 

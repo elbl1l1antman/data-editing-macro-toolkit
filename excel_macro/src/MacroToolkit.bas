@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.28"
+Public Const TOOLKIT_VERSION As String = "1.1.29"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -862,6 +862,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
     options("removeBranchMarkers") = CBool(form.RemoveBranchMarkers)
     options("removeLegalEntityMarkers") = CBool(form.RemoveLegalEntityMarkers)
+    options("removeParentheticalText") = CBool(form.RemoveParentheticalText)
     options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
@@ -889,6 +890,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("cutBeforePossessive") = False
     options("removeBranchMarkers") = False
     options("removeLegalEntityMarkers") = False
+    options("removeParentheticalText") = False
     options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
@@ -970,6 +972,7 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     End If
 
     If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
+    If CBool(options("removeParentheticalText")) Then textValue = CompanyName_RemoveParentheticalText(textValue)
     If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
     If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
     If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
@@ -1014,6 +1017,15 @@ Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As Str
     re.IgnoreCase = True
     re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
     CompanyName_RemoveCorpMarkers = Trim$(re.Replace(textValue, ""))
+End Function
+
+Private Function CompanyName_RemoveParentheticalText(ByVal textValue As String) As String
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "[\(（][^\)）]*[\)）]"
+    CompanyName_RemoveParentheticalText = Trim$(re.Replace(textValue, ""))
 End Function
 
 Private Function CompanyName_RemoveBranchMarkers(ByVal textValue As String) As String
