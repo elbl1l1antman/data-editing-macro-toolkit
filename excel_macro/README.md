@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.30`
+`1.1.31`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -42,6 +42,9 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - `.xlam`: Excel 추가 기능 설치용 파일입니다. 사용자는 이 파일을 설치합니다.
 - `.xlsm`: 개발/검토용 통합문서입니다. 설명 시트와 소스 미리보기를 확인할 때 사용합니다.
 - `.bas`: Git에서 관리하는 VBA 원본 소스입니다.
+- API 인증키는 기본적으로 Windows 사용자 설정(`SaveSetting/GetSetting`)에 저장되며 Git 소스나 버전별 릴리스에 넣지 않습니다.
+- `release/latest` 산출물은 로컬 설치/업데이트용 최신본으로, 워크북 내부 저장소에 API 키가 있는 경우 이를 유지할 수 있습니다.
+- `release/v*` 버전별 산출물은 저장 전에 워크북 내부 API 키/토큰/자격증명 저장소를 자동 정리합니다.
 
 ## 현재 기능
 
@@ -130,10 +133,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.30/DataEditingMacroToolkit_v1.1.30.xlam`
-- `release/v1.1.30/DataEditingMacroToolkit_v1.1.30.xlsm`
-- `release/v1.1.30/MacroToolkit.bas`
-- `release/v1.1.30/manifest.json`
+- `release/v1.1.31/DataEditingMacroToolkit_v1.1.31.xlam`
+- `release/v1.1.31/DataEditingMacroToolkit_v1.1.31.xlsm`
+- `release/v1.1.31/MacroToolkit.bas`
+- `release/v1.1.31/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

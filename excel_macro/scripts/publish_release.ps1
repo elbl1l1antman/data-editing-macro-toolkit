@@ -34,6 +34,82 @@ function Get-ZipTextEntry {
     try { return $reader.ReadToEnd() } finally { $reader.Dispose() }
 }
 
+function Test-ApiSecretStorageName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
+    $normalized = $Name.ToLowerInvariant() -replace '[\s_\-\.]', ''
+    if ($normalized -match '(apikey|servicekey|clientsecret|clientid|credential|secret|accesstoken|refreshtoken|authtoken|authkey)') {
+        return $true
+    }
+    return ($Name -match '(인증키|서비스키|비밀키|토큰)')
+}
+
+function Test-ApiSecretWorksheetName {
+    param([string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name)) { return $false }
+    $normalized = $Name.ToLowerInvariant() -replace '[\s_\-\.]', ''
+    return ($normalized -match '^(macrotk|macrotoolkit|toolkit|api)?(credentials|secrets|apikeys|tokens)$' -or
+        $Name -match '^_(MacroToolkit_)?(Credentials|Secrets|ApiKeys|Tokens)$')
+}
+
+function Clear-ComNamedValues {
+    param($Collection)
+
+    if ($null -eq $Collection) { return }
+    try {
+        for ($i = $Collection.Count; $i -ge 1; $i--) {
+            $item = $Collection.Item($i)
+            $itemName = ""
+            try { $itemName = [string]$item.Name } catch { $itemName = "" }
+            if (Test-ApiSecretStorageName $itemName) {
+                try { $item.Delete() | Out-Null } catch {
+                    try { $item.Value = "" } catch {}
+                }
+            }
+        }
+    } catch {}
+}
+
+function Clear-WorkbookStoredApiSecrets {
+    param($Workbook)
+
+    if ($null -eq $Workbook) { return }
+
+    Clear-ComNamedValues -Collection $Workbook.Names
+    try { Clear-ComNamedValues -Collection $Workbook.CustomDocumentProperties } catch {}
+    try { Clear-ComNamedValues -Collection $Workbook.Variables } catch {}
+
+    try {
+        foreach ($worksheet in @($Workbook.Worksheets)) {
+            if (Test-ApiSecretWorksheetName $worksheet.Name) {
+                $worksheet.Delete() | Out-Null
+            }
+        }
+    } catch {}
+}
+
+function Clear-WorkbookFileStoredApiSecrets {
+    param(
+        $Excel,
+        [string]$Path
+    )
+
+    if ($null -eq $Excel -or -not (Test-Path -LiteralPath $Path)) { return }
+    $sanitizingWorkbook = $null
+    try {
+        $sanitizingWorkbook = $Excel.Workbooks.Open($Path)
+        Clear-WorkbookStoredApiSecrets -Workbook $sanitizingWorkbook
+        $sanitizingWorkbook.Save()
+    }
+    finally {
+        if ($null -ne $sanitizingWorkbook) {
+            try { $sanitizingWorkbook.Close($false) | Out-Null } catch {}
+        }
+    }
+}
+
 function Add-ToolkitButtonMenuUserForm {
     param($Workbook)
 
@@ -3225,6 +3301,8 @@ $ReleaseAddin = Join-Path $VersionDir $ReleaseAddinName
 $LatestWorkbook = Join-Path $LatestDir $LatestWorkbookName
 $LatestAddin = Join-Path $LatestDir $LatestAddinName
 $ImportModulePath = Join-Path $VersionDir "_tmp_MacroToolkit_cp949.bas"
+$tempLatestAddin = $null
+$tempReleaseAddin = $null
 
 Copy-Item -Path $DevWorkbook -Destination $ReleaseWorkbook -Force
 Copy-Item -Path $DevWorkbook -Destination $LatestWorkbook -Force
@@ -3241,6 +3319,9 @@ $excel.DisplayAlerts = $false
 $workbook = $null
 $publishStage = "start"
 try {
+    $publishStage = "sanitize versioned workbook API credentials"
+    Clear-WorkbookFileStoredApiSecrets -Excel $excel -Path $ReleaseWorkbook
+
     $workbook = $excel.Workbooks.Open($DevWorkbook)
     try {
         $publishStage = "remove old VBA components"
@@ -3289,29 +3370,55 @@ try {
     }
 
     $workbook.IsAddin = $true
-    $tempAddin = Join-Path $VersionDir ("_tmp_" + $ReleaseAddinName)
-    if (Test-Path -LiteralPath $tempAddin) { Remove-Item -LiteralPath $tempAddin -Force }
+    $tempLatestAddin = Join-Path $LatestDir ("_tmp_" + $LatestAddinName)
+    $tempReleaseAddin = Join-Path $VersionDir ("_tmp_" + $ReleaseAddinName)
+    if (Test-Path -LiteralPath $tempLatestAddin) { Remove-Item -LiteralPath $tempLatestAddin -Force }
+    if (Test-Path -LiteralPath $tempReleaseAddin) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 
-    $workbook.SaveAs($tempAddin, 55)
+    $publishStage = "save latest add-in with local credentials"
+    $workbook.SaveAs($tempLatestAddin, 55)
+    Add-RibbonCustomUi -PackagePath $tempLatestAddin
+    Copy-Item -Path $tempLatestAddin -Destination $LatestAddin -Force
+
+    $publishStage = "sanitize versioned add-in API credentials"
+    Clear-WorkbookStoredApiSecrets -Workbook $workbook
+
+    $publishStage = "save sanitized versioned add-in"
+    $workbook.SaveAs($tempReleaseAddin, 55)
     $workbook.Close($false)
     $workbook = $null
 
-    Add-RibbonCustomUi -PackagePath $tempAddin
+    Add-RibbonCustomUi -PackagePath $tempReleaseAddin
 
-    Copy-Item -Path $tempAddin -Destination $ReleaseAddin -Force
-    Copy-Item -Path $tempAddin -Destination $LatestAddin -Force
-    Remove-Item -LiteralPath $tempAddin -Force
+    Copy-Item -Path $tempReleaseAddin -Destination $ReleaseAddin -Force
+    Remove-Item -LiteralPath $tempLatestAddin -Force
+    Remove-Item -LiteralPath $tempReleaseAddin -Force
 }
 finally {
     if ($null -ne $workbook) { try { $workbook.Close($false) | Out-Null } catch {} }
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
     if (Test-Path -LiteralPath $ImportModulePath) { Remove-Item -LiteralPath $ImportModulePath -Force }
+    if ($tempLatestAddin -and (Test-Path -LiteralPath $tempLatestAddin)) { Remove-Item -LiteralPath $tempLatestAddin -Force }
+    if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 }
 
 if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
 
-$manifest = [ordered]@{
+function Copy-OrderedDictionary {
+    param($Source)
+
+    $copy = [ordered]@{}
+    foreach ($key in $Source.Keys) {
+        $copy[$key] = $Source[$key]
+    }
+    return $copy
+}
+
+$versionedArtifactsSanitized = $true
+$latestMayContainLocalCredentials = $true
+
+$baseManifest = [ordered]@{
     name = "Data Editing Macro Toolkit"
     repository = "data-editing-macro-toolkit"
     license = "data-editing-macro-toolkit Non-Commercial Software Use License"
@@ -3331,11 +3438,26 @@ $manifest = [ordered]@{
     ribbonTab = "데이터 툴킷"
     ribbonInsertAfter = "보기"
     vbaImportEncoding = "CP949"
+    apiKeyStorage = "API credentials are read from the current Windows user profile via VBA SaveSetting/GetSetting."
+    apiKeyReleasePolicy = "Only release/latest artifacts may keep workbook-scoped local API credentials. Versioned release artifacts are sanitized before save."
     notes = "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View."
 }
 
-$manifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $VersionDir "manifest.json")
-$manifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $LatestDir "manifest.json")
+$versionManifest = Copy-OrderedDictionary $baseManifest
+$versionManifest["credentialMode"] = "sanitized-versioned"
+$versionManifest["versionedArtifactsSanitized"] = $versionedArtifactsSanitized
+$versionManifest["latestMayContainLocalCredentials"] = $false
+
+$latestManifest = Copy-OrderedDictionary $baseManifest
+$latestManifest["addin"] = $LatestAddinName
+$latestManifest["workbook"] = $LatestWorkbookName
+$latestManifest["installFile"] = $LatestAddinName
+$latestManifest["credentialMode"] = "latest-local"
+$latestManifest["versionedArtifactsSanitized"] = $false
+$latestManifest["latestMayContainLocalCredentials"] = $latestMayContainLocalCredentials
+
+$versionManifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $VersionDir "manifest.json")
+$latestManifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $LatestDir "manifest.json")
 
 Write-Output "Published add-in: $ReleaseAddin"
 Write-Output "Published workbook: $ReleaseWorkbook"
