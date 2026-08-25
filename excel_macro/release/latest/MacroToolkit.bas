@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.31"
+Public Const TOOLKIT_VERSION As String = "1.1.32"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -366,7 +366,10 @@ Public Sub NormalizePhonesInSelection()
         MsgBox "전화번호 셀을 먼저 선택하세요.", vbExclamation, "매크로 툴킷"
         Exit Sub
     End If
-    NormalizePhonesToCopiedColumns Selection
+
+    Dim options As Object
+    Set options = Phone_GetNormalizeOptionsFromUser()
+    NormalizePhonesToCopiedColumns Selection, options
 End Sub
 
 ' ============================================================
@@ -382,7 +385,10 @@ Public Sub NormalizePhonesInColumns()
     If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
         "엑셀 시트에서 전화번호 범위를 먼저 선택하세요. Ctrl+Shift+방향키, Shift+방향키, 마우스 드래그를 모두 사용할 수 있습니다.", _
         targetRange) Then Exit Sub
-    NormalizePhonesToCopiedColumns targetRange
+
+    Dim options As Object
+    Set options = Phone_GetNormalizeOptionsFromUser()
+    NormalizePhonesToCopiedColumns targetRange, options
 End Sub
 
 Public Sub NormalizePhonesWithForm()
@@ -390,7 +396,10 @@ Public Sub NormalizePhonesWithForm()
     If Not Toolkit_GetRangeFromUserForm("전화번호 정리", _
         "한국 전화번호 형식을 하이픈 포함 표준 형식으로 정리합니다. 정리할 셀/열/범위를 선택하세요.", _
         targetRange) Then Exit Sub
-    NormalizePhonesToCopiedColumns targetRange
+
+    Dim options As Object
+    Set options = Phone_GetNormalizeOptionsFromUser()
+    NormalizePhonesToCopiedColumns targetRange, options
 End Sub
 
 Public Sub RemovePhoneDashesToCopiedColumns()
@@ -718,8 +727,38 @@ End Sub
 ' 설  명  : 선택 범위를 오른쪽 새 열에 복사한 뒤 복사본만 전화번호
 '           표준 형식으로 정규화한다.
 ' ============================================================
-Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range)
+Private Function Phone_GetNormalizeOptionsFromUser() As Object
+    Dim options As Object
+    Set options = Phone_DefaultNormalizeOptions()
+
+    Dim optionsText As String
+    optionsText = "prepend_zero" & vbTab & "앞자리가 0이 아니면 0을 붙인 후 정리 (우선 실행)" & vbLf & _
+                  "repeat_review" & vbTab & "같은 숫자 4개 이상 반복 시 번호 대신 '확인 필요' 입력" & vbLf & _
+                  "mobile_010" & vbTab & "8자리 값을 휴대폰 개인전화 010-XXXX-XXXX 형식으로 정리"
+
+    Dim selectedKeys As String
+    selectedKeys = Toolkit_CheckListMenu( _
+        "전화번호 정리 옵션", _
+        "필요한 옵션을 선택하세요. 선택하지 않으면 기존 방식으로 복사본 열을 정리합니다.", _
+        optionsText, "")
+
+    selectedKeys = "," & selectedKeys & ","
+    If InStr(1, selectedKeys, ",prepend_zero,", vbTextCompare) > 0 Then options("prependLeadingZero") = True
+    If InStr(1, selectedKeys, ",repeat_review,", vbTextCompare) > 0 Then options("repeatRunAsReview") = True
+    If InStr(1, selectedKeys, ",mobile_010,", vbTextCompare) > 0 Then options("eightDigitAsMobile010") = True
+
+    Set Phone_GetNormalizeOptionsFromUser = options
+End Function
+
+Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range, Optional ByVal normalizeOptions As Variant)
     Dim workRange As Range
+    Dim options As Object
+    If IsObject(normalizeOptions) Then
+        Set options = normalizeOptions
+    Else
+        Set options = Phone_DefaultNormalizeOptions()
+    End If
+
     Set workRange = Toolkit_TrimRangeToActualData(target)
     If workRange Is Nothing Then
         MsgBox "선택한 범위에서 처리할 데이터를 찾지 못했습니다.", vbInformation, "전화번호 정리"
@@ -730,7 +769,7 @@ Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range)
     Set outputRange = CopyRangeToAdjacentColumns(workRange, "전화번호_정리")
     If outputRange Is Nothing Then Exit Sub
 
-    NormalizePhonesInRange outputRange, "전화번호 정리 복사본"
+    NormalizePhonesInRange outputRange, "전화번호 정리 복사본", options
 End Sub
 
 ' ============================================================
@@ -741,14 +780,20 @@ End Sub
 '           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
 ' 파라미터 : target - 정규화 대상 Range
 ' ============================================================
-Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화")
+Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화", Optional ByVal normalizeOptions As Variant)
     Dim cell As Range
     Dim changedCount As Long         ' 실제 변경된 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
     Dim normalized As String         ' 정규화된 전화번호 문자열
     Dim processedCells As Long
     Dim totalCells As Long
+    Dim options As Object
     totalCells = target.Cells.CountLarge
+    If IsObject(normalizeOptions) Then
+        Set options = normalizeOptions
+    Else
+        Set options = Phone_DefaultNormalizeOptions()
+    End If
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
@@ -756,7 +801,7 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
     For Each cell In target.Cells
         If cell.HasFormula Then
             skippedFormulaCount = skippedFormulaCount + 1
-        ElseIf NormalizeKoreanPhone(CStr(cell.Value), normalized) Then
+        ElseIf NormalizeKoreanPhoneWithOptions(CStr(cell.Value), normalized, options) Then
             ' 값이 실제로 바뀐 경우에만 셀을 업데이트
             If CStr(cell.Value) <> normalized Then
                 ' 텍스트 서식으로 설정해야 "010-..."처럼 하이픈이 포함된
@@ -2379,8 +2424,88 @@ End Function
 ' 반환값  : 정규화 성공 시 True, 인식 불가 형식이면 False
 ' ============================================================
 Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As String) As Boolean
+    Dim options As Object
+    Set options = Phone_DefaultNormalizeOptions()
+    NormalizeKoreanPhone = NormalizeKoreanPhoneWithOptions(valueIn, valueOut, options)
+End Function
+
+Private Function Phone_DefaultNormalizeOptions() As Object
+    Dim options As Object
+    Set options = CreateObject("Scripting.Dictionary")
+    options("prependLeadingZero") = False
+    options("repeatRunAsReview") = False
+    options("eightDigitAsMobile010") = False
+    Set Phone_DefaultNormalizeOptions = options
+End Function
+
+Private Function Phone_NormalizeOptionEnabled(ByVal options As Object, ByVal key As String) As Boolean
+    On Error GoTo SafeExit
+    If Not options Is Nothing Then
+        If options.Exists(key) Then Phone_NormalizeOptionEnabled = CBool(options(key))
+    End If
+SafeExit:
+End Function
+
+Private Function Phone_ApplyLeadingZeroOption(ByVal digits As String, ByVal options As Object) As String
+    Phone_ApplyLeadingZeroOption = digits
+    If Not Phone_NormalizeOptionEnabled(options, "prependLeadingZero") Then Exit Function
+    If Len(digits) = 0 Then Exit Function
+    If Left$(digits, 1) = "0" Then Exit Function
+    If Left$(digits, 4) = "0082" Or Left$(digits, 2) = "82" Then Exit Function
+    Phone_ApplyLeadingZeroOption = "0" & digits
+End Function
+
+Private Function Phone_ShouldWriteReviewInstead(ByVal digits As String, ByVal options As Object) As Boolean
+    If Not Phone_NormalizeOptionEnabled(options, "repeatRunAsReview") Then Exit Function
+    Phone_ShouldWriteReviewInstead = Phone_HasRepeatedDigitRun(digits, 4)
+End Function
+
+Private Function Phone_SubscriberDigitsForSequenceCheck(ByVal digits As String) As String
+    If Len(digits) = 0 Then Exit Function
+
+    If Phone_IsSafeNumberDigits(digits) And (Len(digits) = 11 Or Len(digits) = 12) Then
+        Phone_SubscriberDigitsForSequenceCheck = Mid$(digits, 5)
+    ElseIf Left$(digits, 2) = "02" And (Len(digits) = 9 Or Len(digits) = 10) Then
+        Phone_SubscriberDigitsForSequenceCheck = Mid$(digits, 3)
+    ElseIf Left$(digits, 3) Like "01#" And (Len(digits) = 10 Or Len(digits) = 11) Then
+        Phone_SubscriberDigitsForSequenceCheck = Mid$(digits, 4)
+    ElseIf Left$(digits, 3) Like "0##" And (Len(digits) = 10 Or Len(digits) = 11) Then
+        Phone_SubscriberDigitsForSequenceCheck = Mid$(digits, 4)
+    Else
+        Phone_SubscriberDigitsForSequenceCheck = digits
+    End If
+End Function
+
+Private Function Phone_IsSequentialRun(ByVal digits As String) As Boolean
+    If Len(digits) < 7 Then Exit Function
+
+    Dim i As Long
+    Dim prevDigit As Long
+    Dim currentDigit As Long
+    Dim ascending As Boolean
+    Dim descending As Boolean
+
+    ascending = True
+    descending = True
+    prevDigit = CLng(Left$(digits, 1))
+    For i = 2 To Len(digits)
+        currentDigit = CLng(Mid$(digits, i, 1))
+        If currentDigit <> ((prevDigit + 1) Mod 10) Then ascending = False
+        If currentDigit <> ((prevDigit + 9) Mod 10) Then descending = False
+        prevDigit = currentDigit
+    Next i
+
+    Phone_IsSequentialRun = (ascending Or descending)
+End Function
+
+Private Function Phone_IsSequentialPlaceholderDigits(ByVal digits As String) As Boolean
+    Phone_IsSequentialPlaceholderDigits = Phone_IsSequentialRun(Phone_SubscriberDigitsForSequenceCheck(digits))
+End Function
+
+Private Function NormalizeKoreanPhoneWithOptions(ByVal valueIn As String, ByRef valueOut As String, ByVal options As Object) As Boolean
     Dim source As String
     Dim digits As String  ' 숫자만 추출한 문자열
+    Dim rawDigits As String
 
     source = Trim$(valueIn)
     If Len(source) = 0 Then Exit Function
@@ -2389,10 +2514,17 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
     ' 예: 02)123-4567, (031)1234-5678, +82-10-1234-5678
     source = Replace(source, "(", "")
     source = Replace(source, ")", "")
-    digits = Phone_DigitsForKoreanRules(source)
+    rawDigits = DigitsOnly(source)
+    If Len(rawDigits) = 0 Then Exit Function
+    rawDigits = Phone_ApplyLeadingZeroOption(rawDigits, options)
+    digits = Phone_DigitsForKoreanRules(rawDigits)
     If Len(digits) = 0 Then Exit Function
 
-    If Phone_IsSafeNumberDigits(digits) Then
+    If Phone_IsSequentialPlaceholderDigits(digits) Then
+        valueOut = ""
+    ElseIf Phone_ShouldWriteReviewInstead(digits, options) Then
+        valueOut = "확인 필요"
+    ElseIf Phone_IsSafeNumberDigits(digits) Then
         ' ── 안심번호 (0507 등 050X 계열) ─────────────────────
         ' 11자리: 050X-XXX-XXXX
         ' 12자리: 050X-XXXX-XXXX
@@ -2404,6 +2536,9 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
             Case Else
                 Exit Function
         End Select
+    ElseIf Len(digits) = 8 And Phone_NormalizeOptionEnabled(options, "eightDigitAsMobile010") Then
+        ' ── 휴대폰 본문 8자리만 있는 경우 사용자가 선택하면 010을 붙여 처리
+        valueOut = "010-" & Left$(digits, 4) & "-" & Right$(digits, 4)
     ElseIf Len(digits) = 8 Then
         ' ── 국번 없는 대표번호 (1588-1222 등) ────────────────
         valueOut = Left$(digits, 4) & "-" & Right$(digits, 4)
@@ -2457,7 +2592,7 @@ Private Function NormalizeKoreanPhone(ByVal valueIn As String, ByRef valueOut As
         Exit Function
     End If
 
-    NormalizeKoreanPhone = True
+    NormalizeKoreanPhoneWithOptions = True
 End Function
 
 ' ============================================================
@@ -8598,6 +8733,9 @@ Private Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     ElseIf Phone_IsPlaceholderZeroPattern(digits) Then
         phoneType = "오류 패턴"
         statusText = "오류"
+    ElseIf Phone_IsSequentialPlaceholderDigits(digits) Then
+        phoneType = "오류 패턴"
+        statusText = "오류"
     ElseIf Phone_IsSafeNumberDigits(digits) Then
         phoneType = "안심번호"
         If Len(digits) = 11 Or Len(digits) = 12 Then statusText = "정상" Else statusText = "확인 필요"
@@ -8628,6 +8766,29 @@ End Function
 Public Function Phone_NormalizeForTest(ByVal phoneText As String) As String
     Dim normalized As String
     If NormalizeKoreanPhone(phoneText, normalized) Then Phone_NormalizeForTest = normalized
+End Function
+
+Public Function Phone_NormalizeResultForTest(ByVal phoneText As String) As String
+    Dim normalized As String
+    If NormalizeKoreanPhone(phoneText, normalized) Then
+        Phone_NormalizeResultForTest = "TRUE|" & normalized
+    Else
+        Phone_NormalizeResultForTest = "FALSE|"
+    End If
+End Function
+
+Public Function Phone_NormalizeForTestWithOptions(ByVal phoneText As String, _
+                                                  ByVal prependLeadingZero As Boolean, _
+                                                  ByVal repeatRunAsReview As Boolean, _
+                                                  ByVal eightDigitAsMobile010 As Boolean) As String
+    Dim options As Object
+    Set options = Phone_DefaultNormalizeOptions()
+    options("prependLeadingZero") = prependLeadingZero
+    options("repeatRunAsReview") = repeatRunAsReview
+    options("eightDigitAsMobile010") = eightDigitAsMobile010
+
+    Dim normalized As String
+    If NormalizeKoreanPhoneWithOptions(phoneText, normalized, options) Then Phone_NormalizeForTestWithOptions = normalized
 End Function
 
 Public Function Phone_ClassifyForTest(ByVal phoneText As String) As String

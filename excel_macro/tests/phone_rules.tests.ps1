@@ -38,8 +38,18 @@ function Get-VbaBlock {
 
 $procedureNames = @(
     "Phone_NormalizeForTest",
+    "Phone_NormalizeForTestWithOptions",
+    "Phone_NormalizeResultForTest",
     "Phone_ClassifyForTest",
     "NormalizeKoreanPhone",
+    "NormalizeKoreanPhoneWithOptions",
+    "Phone_DefaultNormalizeOptions",
+    "Phone_NormalizeOptionEnabled",
+    "Phone_ApplyLeadingZeroOption",
+    "Phone_ShouldWriteReviewInstead",
+    "Phone_IsSequentialPlaceholderDigits",
+    "Phone_SubscriberDigitsForSequenceCheck",
+    "Phone_IsSequentialRun",
     "Phone_ClassifyOne",
     "Phone_IsPlaceholderZeroPattern",
     "Phone_HasRepeatedDigitRun",
@@ -60,6 +70,13 @@ Public Function PhoneRulesPassed() As String
     resultText = CheckCase(resultText, "classify 0000-0000 as error", Phone_ClassifyForTest("0000-0000"), KoErrorPattern() & "|" & KoError())
     resultText = CheckCase(resultText, "flag four repeated digits for review", Phone_ClassifyForTest("02-231-4444"), KoSeoulArea() & "|" & KoReview())
     resultText = CheckCase(resultText, "keep ordinary 8-digit representative number normal", Phone_ClassifyForTest("1588-1222"), KoRepresentative() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "prepend zero option repairs missing Seoul prefix", Phone_NormalizeForTestWithOptions("221345678", True, False, False), "02-2134-5678")
+    resultText = CheckCase(resultText, "repeated run option writes review text instead of number", Phone_NormalizeForTestWithOptions("02-231-4444", False, True, False), KoReview())
+    resultText = CheckCase(resultText, "mobile option treats 8 digits as 010 personal phone", Phone_NormalizeForTestWithOptions("24681357", False, False, True), "010-2468-1357")
+    resultText = CheckCase(resultText, "default keeps 8 digits as representative number", Phone_NormalizeForTestWithOptions("24681357", False, False, False), "2468-1357")
+    resultText = CheckCase(resultText, "delete sequential local phone during normalization", Phone_NormalizeResultForTest("02-123-4567"), "TRUE|")
+    resultText = CheckCase(resultText, "delete sequential 8 digit placeholder during normalization", Phone_NormalizeResultForTest("12345678"), "TRUE|")
+    resultText = CheckCase(resultText, "classify sequential local phone as error", Phone_ClassifyForTest("02-123-4567"), KoErrorPattern() & "|" & KoError())
 
     If Len(resultText) = 0 Then resultText = "PASS"
     PhoneRulesPassed = resultText
