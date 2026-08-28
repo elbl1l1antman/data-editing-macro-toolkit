@@ -901,24 +901,6 @@ Private Sub cmdOK_Click()
             Controls("txtStart" & CStr(i)).SetFocus
             Exit Sub
         End If
-        If Len(startText) > 0 And Not IsNumeric(Replace(startText, ",", "")) Then
-            MsgBox CStr(i) & "구간 시작값은 숫자로 입력하세요.", vbExclamation, "표본설계 구간 만들기"
-            Controls("txtStart" & CStr(i)).SetFocus
-            Exit Sub
-        End If
-        If Len(endText) > 0 And Not IsNumeric(Replace(endText, ",", "")) Then
-            MsgBox CStr(i) & "구간 종료값은 숫자로 입력하세요.", vbExclamation, "표본설계 구간 만들기"
-            Controls("txtEnd" & CStr(i)).SetFocus
-            Exit Sub
-        End If
-        If Len(startText) > 0 And Len(endText) > 0 Then
-            If CDbl(Replace(startText, ",", "")) >= CDbl(Replace(endText, ",", "")) Then
-                MsgBox CStr(i) & "구간의 시작값은 종료값보다 작아야 합니다.", vbExclamation, "표본설계 구간 만들기"
-                Controls("txtStart" & CStr(i)).SetFocus
-                Exit Sub
-            End If
-        End If
-
         If Len(BandSpecText) > 0 Then BandSpecText = BandSpecText & vbLf
         BandSpecText = BandSpecText & CStr(i) & vbTab & startText & vbTab & _
                        Controls("cboStartOp" & CStr(i)).Value & vbTab & _

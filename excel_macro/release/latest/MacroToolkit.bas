@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.32"
+Public Const TOOLKIT_VERSION As String = "1.1.33"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -2355,7 +2355,7 @@ End Function
 '             - 앞의 작은따옴표(') 제거  → '1234  =>  1234
 '             - 비표시 공백(NBSP, U+00A0) 제거
 '             - 천 단위 쉼표 제거          → 1,234  =>  1234
-'             - 원화 기호(\, ₩) 제거       → \1000  =>  1000
+'             - 원화 기호(\, U+20A9) 제거  → \1000  =>  1000
 '             - 괄호 음수 처리             → (500)  =>  -500
 '             - 퍼센트 처리               → 75%    =>  0.75
 ' 파라미터 : valueIn  - 원본 셀 값 (Variant)
@@ -2383,9 +2383,9 @@ Private Function TryNumberFromText(ByVal valueIn As Variant, ByRef valueOut As V
     textValue = Replace(textValue, " ", "")
     ' 천 단위 구분 쉼표 제거
     textValue = Replace(textValue, ",", "")
-    ' 원화 기호 두 종류 모두 제거 (역슬래시형 \, 유니코드 ₩)
+    ' 원화 기호 두 종류 모두 제거 (역슬래시형 \, 유니코드 U+20A9)
     textValue = Replace(textValue, "\", "")
-    textValue = Replace(textValue, "₩", "")
+    textValue = Replace(textValue, ChrW$(8361), "")
 
     ' "(500)" 형태의 괄호 음수 처리
     If Left$(textValue, 1) = "(" And Right$(textValue, 1) = ")" Then
@@ -9137,41 +9137,24 @@ Public Sub SampleDesign_CreateBandColumn()
 
     Dim rowCount As Long
     rowCount = lastRow - firstDataRow + 1
-    Dim outputData() As Variant
-    ReDim outputData(1 To rowCount, 1 To 1)
+    Dim formulaData() As Variant
+    ReDim formulaData(1 To rowCount, 1 To 1)
 
     Dim r As Long
     Dim outIndex As Long
-    Dim numericCount As Long
-    Dim unmatchedCount As Long
-    Dim nonNumericCount As Long
     For r = firstDataRow To lastRow
         outIndex = r - firstDataRow + 1
-        Dim numericValue As Double
-        If SampleDesign_BandTryNumber(ws.Cells(r, sourceRange.Column).Value, numericValue) Then
-            numericCount = numericCount + 1
-            outputData(outIndex, 1) = SampleDesign_BandLabelForValue(numericValue, bands)
-            If Len(CStr(outputData(outIndex, 1))) = 0 Then
-                outputData(outIndex, 1) = "미분류"
-                unmatchedCount = unmatchedCount + 1
-            End If
-        ElseIf Len(Trim$(CStr(ws.Cells(r, sourceRange.Column).Value))) = 0 Then
-            outputData(outIndex, 1) = ""
-        Else
-            outputData(outIndex, 1) = "숫자아님"
-            nonNumericCount = nonNumericCount + 1
-        End If
+        formulaData(outIndex, 1) = SampleDesign_BandFormulaForAddress(ws.Cells(r, sourceRange.Column).Address(False, False), bands)
     Next r
 
-    ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol)).Value = outputData
+    ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol)).Formula = formulaData
     ws.Columns(outputCol).AutoFit
     SampleDesign_SaveBandSettings wb, outputHeader, specText
     Application.ScreenUpdating = True
 
     MsgBox "구간 열을 생성했습니다." & vbCrLf & _
-           "숫자 처리: " & numericCount & "행" & vbCrLf & _
-           "미분류: " & unmatchedCount & "행" & vbCrLf & _
-           "숫자 아님: " & nonNumericCount & "행" & vbCrLf & _
+           "수식 입력: " & rowCount & "행" & vbCrLf & _
+           "결과 열에는 IFS 수식이 입력되어 기준을 직접 확인하고 수정할 수 있습니다." & vbCrLf & _
            "설정은 숨김 시트에 임시 저장되었습니다.", _
            vbInformation, "표본설계 구간 만들기"
     Exit Sub
@@ -10560,12 +10543,115 @@ End Function
 Private Function SampleDesign_BandTryNumber(ByVal valueData As Variant, ByRef valueOut As Double) As Boolean
     If IsError(valueData) Then Exit Function
     Dim textValue As String
-    textValue = Replace(Trim$(CStr(valueData)), ",", "")
+
+    If IsNumeric(valueData) And VarType(valueData) <> vbString Then
+        valueOut = CDbl(valueData)
+        SampleDesign_BandTryNumber = True
+        Exit Function
+    End If
+
+    textValue = Trim$(CStr(valueData))
     If Len(textValue) = 0 Then Exit Function
+
+    If Left$(textValue, 1) = "'" Then textValue = Mid$(textValue, 2)
+    textValue = Replace(textValue, ChrW(160), "")
+    textValue = Replace(textValue, " ", "")
+    textValue = Replace(textValue, ",", "")
+    textValue = Replace(textValue, "\", "")
+    textValue = Replace(textValue, ChrW$(8361), "")
+    textValue = SampleDesign_StripBandNumberUnitSuffix(textValue)
+
+    If Left$(textValue, 1) = "(" And Right$(textValue, 1) = ")" Then
+        textValue = "-" & Mid$(textValue, 2, Len(textValue) - 2)
+    End If
+
+    Dim percentValue As Boolean
+    If Right$(textValue, 1) = "%" Then
+        percentValue = True
+        textValue = Left$(textValue, Len(textValue) - 1)
+    End If
+
     If IsNumeric(textValue) Then
         valueOut = CDbl(textValue)
+        If percentValue Then valueOut = valueOut / 100
         SampleDesign_BandTryNumber = True
     End If
+End Function
+
+Private Function SampleDesign_StripBandNumberUnitSuffix(ByVal textValue As String) As String
+    Do While Len(textValue) > 0
+        Dim lastChar As String
+        lastChar = Right$(textValue, 1)
+        If (lastChar >= "0" And lastChar <= "9") Or lastChar = "." Or lastChar = "-" Or lastChar = ")" Or lastChar = "%" Then
+            Exit Do
+        End If
+        textValue = Left$(textValue, Len(textValue) - 1)
+    Loop
+
+    SampleDesign_StripBandNumberUnitSuffix = textValue
+End Function
+
+Private Function SampleDesign_BandFormulaForAddress(ByVal sourceAddress As String, ByVal bands As Collection) As String
+    Dim q As String
+    q = Chr$(34)
+
+    Dim valueExpr As String
+    valueExpr = SampleDesign_BandValueFormula(sourceAddress)
+
+    Dim formulaText As String
+    formulaText = "=IF(" & sourceAddress & "=" & q & q & "," & q & q & ",IFERROR(IFS("
+
+    Dim i As Long
+    For i = 1 To bands.Count
+        If i > 1 Then formulaText = formulaText & ","
+        formulaText = formulaText & SampleDesign_BandConditionFormula(valueExpr, bands(i)) & "," & _
+                      SampleDesign_FormulaStringLiteral(CStr(bands(i)("label")))
+    Next i
+
+    formulaText = formulaText & ")," & SampleDesign_FormulaStringLiteral("미분류") & "))"
+    SampleDesign_BandFormulaForAddress = formulaText
+End Function
+
+Private Function SampleDesign_BandConditionFormula(ByVal valueExpr As String, ByVal band As Object) As String
+    Dim conditionText As String
+    Dim clauseCount As Long
+
+    If CBool(band("hasStart")) Then
+        clauseCount = clauseCount + 1
+        conditionText = valueExpr & IIf(CStr(band("startOp")) = "초과", ">", ">=") & _
+                        SampleDesign_FormulaNumberLiteral(CDbl(band("startValue")))
+    End If
+
+    If CBool(band("hasEnd")) Then
+        If clauseCount > 0 Then conditionText = conditionText & ","
+        clauseCount = clauseCount + 1
+        conditionText = conditionText & valueExpr & IIf(CStr(band("endOp")) = "이하", "<=", "<") & _
+                        SampleDesign_FormulaNumberLiteral(CDbl(band("endValue")))
+    End If
+
+    If clauseCount > 1 Then
+        SampleDesign_BandConditionFormula = "AND(" & conditionText & ")"
+    Else
+        SampleDesign_BandConditionFormula = conditionText
+    End If
+End Function
+
+Private Function SampleDesign_BandValueFormula(ByVal sourceAddress As String) As String
+    SampleDesign_BandValueFormula = sourceAddress
+End Function
+
+Private Function SampleDesign_FormulaNumberLiteral(ByVal numberValue As Double) As String
+    Dim textValue As String
+    textValue = Trim$(Str$(numberValue))
+    If Left$(textValue, 1) = "." Then textValue = "0" & textValue
+    If Left$(textValue, 2) = "-." Then textValue = "-0" & Mid$(textValue, 2)
+    SampleDesign_FormulaNumberLiteral = textValue
+End Function
+
+Private Function SampleDesign_FormulaStringLiteral(ByVal textValue As String) As String
+    Dim q As String
+    q = Chr$(34)
+    SampleDesign_FormulaStringLiteral = q & Replace(CStr(textValue), q, q & q) & q
 End Function
 
 Private Function SampleDesign_NormalizeBandStartOp(ByVal opText As String) As String

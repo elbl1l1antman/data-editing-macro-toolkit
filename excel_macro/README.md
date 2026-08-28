@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.32`
+`1.1.33`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -106,7 +106,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 표본설계 입력 시트에서 동적 쿼터 열과 복합 목표표본 그룹표 지원
 - 단순 비례/제곱근 비례/멱배분/균등/사용자 지정 가중 기반 표본할당 결과 및 검토 시트 생성
 - 표본할당 결과에 목표그룹, 그룹목표표본수, 배분가중치, 그룹가중치합, 이론할당, 잔차, 최종할당 검토 열 표시
-- 매출액, 종사자 수, 인구수 등 숫자 열을 UserForm에서 지정한 구간 기준으로 오른쪽 구간 열에 변환
+- 매출액, 종사자 수, 인구수 등 숫자 열 오른쪽에 UserForm에서 지정한 구간 기준의 `IFS` 수식 열 생성
 - 표본설계 구간 설정을 통합문서 내 숨김 시트에 임시 저장해 다음 실행 시 재사용
 - 리스트화 결과 또는 할당결과를 표제목별 집계표 블록으로 되돌리는 리스트→집계표 변환
 - 표본할당 결과 기반 진행률 관리표 생성
@@ -135,10 +135,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.32/DataEditingMacroToolkit_v1.1.32.xlam`
-- `release/v1.1.32/DataEditingMacroToolkit_v1.1.32.xlsm`
-- `release/v1.1.32/MacroToolkit.bas`
-- `release/v1.1.32/manifest.json`
+- `release/v1.1.33/DataEditingMacroToolkit_v1.1.33.xlam`
+- `release/v1.1.33/DataEditingMacroToolkit_v1.1.33.xlsm`
+- `release/v1.1.33/MacroToolkit.bas`
+- `release/v1.1.33/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
