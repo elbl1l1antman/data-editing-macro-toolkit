@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.33"
+Public Const TOOLKIT_VERSION As String = "1.1.34"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1395,15 +1395,58 @@ Private Function CompanyName_PronounceEnglishWords(ByVal textValue As String) As
             token = token & ch
         Else
             If Len(token) > 0 Then
-                result = result & CompanyName_EnglishWordKorean(token)
+                result = result & CompanyName_PronounceEnglishToken(token)
                 token = ""
             End If
             result = result & ch
         End If
     Next i
 
-    If Len(token) > 0 Then result = result & CompanyName_EnglishWordKorean(token)
+    If Len(token) > 0 Then result = result & CompanyName_PronounceEnglishToken(token)
     CompanyName_PronounceEnglishWords = result
+End Function
+
+Private Function CompanyName_PronounceEnglishToken(ByVal tokenText As String) As String
+    Dim directKorean As String
+    If CompanyName_TryEnglishWordKorean(tokenText, directKorean) Then
+        CompanyName_PronounceEnglishToken = directKorean
+        Exit Function
+    End If
+
+    Dim result As String
+    Dim pos As Long
+    pos = 1
+    Do While pos <= Len(tokenText)
+        Dim matchLen As Long
+        Dim matchKorean As String
+        If CompanyName_LongestEnglishWordKorean(tokenText, pos, matchLen, matchKorean) Then
+            result = result & matchKorean
+            pos = pos + matchLen
+        Else
+            result = result & Mid$(tokenText, pos, 1)
+            pos = pos + 1
+        End If
+    Loop
+
+    CompanyName_PronounceEnglishToken = result
+End Function
+
+Private Function CompanyName_LongestEnglishWordKorean(ByVal tokenText As String, ByVal startPos As Long, ByRef matchLen As Long, ByRef koreanOut As String) As Boolean
+    Dim candidateLen As Long
+    For candidateLen = Len(tokenText) - startPos + 1 To 2 Step -1
+        Dim candidate As String
+        candidate = Mid$(tokenText, startPos, candidateLen)
+        If CompanyName_TryEnglishWordKorean(candidate, koreanOut) Then
+            matchLen = candidateLen
+            CompanyName_LongestEnglishWordKorean = True
+            Exit Function
+        End If
+    Next candidateLen
+End Function
+
+Private Function CompanyName_TryEnglishWordKorean(ByVal wordText As String, ByRef koreanOut As String) As Boolean
+    koreanOut = CompanyName_EnglishWordKorean(wordText)
+    CompanyName_TryEnglishWordKorean = (StrComp(koreanOut, wordText, vbBinaryCompare) <> 0)
 End Function
 
 Private Function CompanyName_IsAsciiLetter(ByVal ch As String) As Boolean
@@ -1416,41 +1459,64 @@ End Function
 Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As String
     Select Case LCase$(wordText)
         Case "ai": CompanyName_EnglishWordKorean = "에이아이"
+        Case "academy": CompanyName_EnglishWordKorean = "아카데미"
         Case "app": CompanyName_EnglishWordKorean = "앱"
+        Case "auto": CompanyName_EnglishWordKorean = "오토"
         Case "bank": CompanyName_EnglishWordKorean = "뱅크"
+        Case "beauty": CompanyName_EnglishWordKorean = "뷰티"
         Case "bio": CompanyName_EnglishWordKorean = "바이오"
+        Case "book": CompanyName_EnglishWordKorean = "북"
+        Case "business": CompanyName_EnglishWordKorean = "비즈니스"
+        Case "care": CompanyName_EnglishWordKorean = "케어"
+        Case "center", "centre": CompanyName_EnglishWordKorean = "센터"
+        Case "chemical", "chemicals": CompanyName_EnglishWordKorean = "케미컬"
         Case "cloud": CompanyName_EnglishWordKorean = "클라우드"
         Case "commerce": CompanyName_EnglishWordKorean = "커머스"
         Case "communication", "communications": CompanyName_EnglishWordKorean = "커뮤니케이션"
         Case "company": CompanyName_EnglishWordKorean = "컴퍼니"
+        Case "construction": CompanyName_EnglishWordKorean = "컨스트럭션"
         Case "consulting": CompanyName_EnglishWordKorean = "컨설팅"
         Case "contents", "content": CompanyName_EnglishWordKorean = "콘텐츠"
+        Case "creative": CompanyName_EnglishWordKorean = "크리에이티브"
+        Case "culture": CompanyName_EnglishWordKorean = "컬처"
         Case "data": CompanyName_EnglishWordKorean = "데이터"
+        Case "delivery": CompanyName_EnglishWordKorean = "딜리버리"
         Case "design": CompanyName_EnglishWordKorean = "디자인"
         Case "digital": CompanyName_EnglishWordKorean = "디지털"
         Case "edu", "education": CompanyName_EnglishWordKorean = "에듀"
+        Case "electric": CompanyName_EnglishWordKorean = "일렉트릭"
+        Case "electronics": CompanyName_EnglishWordKorean = "일렉트로닉스"
         Case "energy": CompanyName_EnglishWordKorean = "에너지"
+        Case "engineering": CompanyName_EnglishWordKorean = "엔지니어링"
         Case "entertainment": CompanyName_EnglishWordKorean = "엔터테인먼트"
+        Case "environment": CompanyName_EnglishWordKorean = "인바이런먼트"
         Case "factory": CompanyName_EnglishWordKorean = "팩토리"
+        Case "fashion": CompanyName_EnglishWordKorean = "패션"
         Case "finance", "financial": CompanyName_EnglishWordKorean = "파이낸스"
         Case "food": CompanyName_EnglishWordKorean = "푸드"
         Case "game", "games", "gaming": CompanyName_EnglishWordKorean = "게임"
         Case "global": CompanyName_EnglishWordKorean = "글로벌"
+        Case "green": CompanyName_EnglishWordKorean = "그린"
         Case "group": CompanyName_EnglishWordKorean = "그룹"
         Case "health", "healthcare": CompanyName_EnglishWordKorean = "헬스케어"
+        Case "home": CompanyName_EnglishWordKorean = "홈"
         Case "holdings", "holding": CompanyName_EnglishWordKorean = "홀딩스"
         Case "hotel": CompanyName_EnglishWordKorean = "호텔"
         Case "inc": CompanyName_EnglishWordKorean = "인크"
+        Case "industry", "industries": CompanyName_EnglishWordKorean = "인더스트리"
         Case "innovation": CompanyName_EnglishWordKorean = "이노베이션"
         Case "international": CompanyName_EnglishWordKorean = "인터내셔널"
         Case "investment": CompanyName_EnglishWordKorean = "인베스트먼트"
         Case "it": CompanyName_EnglishWordKorean = "아이티"
+        Case "kakao": CompanyName_EnglishWordKorean = "카카오"
         Case "korea": CompanyName_EnglishWordKorean = "코리아"
         Case "lab", "labs": CompanyName_EnglishWordKorean = "랩"
         Case "life": CompanyName_EnglishWordKorean = "라이프"
         Case "logistics": CompanyName_EnglishWordKorean = "로지스틱스"
         Case "mall": CompanyName_EnglishWordKorean = "몰"
         Case "marketing": CompanyName_EnglishWordKorean = "마케팅"
+        Case "market": CompanyName_EnglishWordKorean = "마켓"
+        Case "materials": CompanyName_EnglishWordKorean = "머티리얼즈"
         Case "media": CompanyName_EnglishWordKorean = "미디어"
         Case "medical": CompanyName_EnglishWordKorean = "메디컬"
         Case "mobility": CompanyName_EnglishWordKorean = "모빌리티"

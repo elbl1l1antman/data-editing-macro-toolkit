@@ -61,6 +61,9 @@ $procedureNames = @(
     "CompanyName_IsNameCharacter",
     "CompanyName_MoveCorpMarker",
     "CompanyName_PronounceEnglishWords",
+    "CompanyName_PronounceEnglishToken",
+    "CompanyName_LongestEnglishWordKorean",
+    "CompanyName_TryEnglishWordKorean",
     "CompanyName_IsAsciiLetter",
     "CompanyName_EnglishWordKorean",
     "CompanyName_SpellAlphabetKorean",
@@ -91,6 +94,12 @@ Public Function CompanyNameRulesPassed() As String
     resultText = CheckCase(resultText, "remove fullwidth parenthetical publisher prefix", CompanyName_CleanOne(FullLeftParen() & KoBookPublisher() & FullRightParen() & KoLifeTree(), options), KoLifeTree())
     resultText = CheckCase(resultText, "remove fullwidth short publisher prefix", CompanyName_CleanOne(FullLeftParen() & KoDoShort() & FullRightParen() & KoSpring(), options), KoSpring())
 
+    Set options = CompanyName_DefaultOptions()
+    options("pronounceEnglishWords") = True
+    options("spellAlphabetKorean") = True
+    resultText = CheckCase(resultText, "known English suffix is transliterated before alphabet spelling", CompanyName_CleanOne("AIsystem", options), KoAI() & KoSystem())
+    resultText = CheckCase(resultText, "acronym prefix and known English suffix both survive combined conversion", CompanyName_CleanOne("KTmobile", options), KoKT() & KoMobile())
+
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText
 End Function
@@ -105,6 +114,18 @@ End Function
 
 Private Function KoA() As String
     KoA = ChrW(&HC5D0) & ChrW(&HC774)
+End Function
+
+Private Function KoAI() As String
+    KoAI = KoA() & ChrW(&HC544) & ChrW(&HC774)
+End Function
+
+Private Function KoKT() As String
+    KoKT = ChrW(&HCF00) & ChrW(&HC774) & ChrW(&HD2F0)
+End Function
+
+Private Function KoMobile() As String
+    KoMobile = ChrW(&HBAA8) & ChrW(&HBC14) & ChrW(&HC77C)
 End Function
 
 Private Function KoS() As String
