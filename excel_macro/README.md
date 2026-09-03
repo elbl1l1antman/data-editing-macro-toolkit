@@ -31,7 +31,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.35`
+`1.1.36`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -57,7 +57,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 전화번호 유형 분류 및 유효성 검사. 050X 계열 안심번호, 8자리 대표번호, 영값 오류 패턴, 4회 이상 반복 숫자 확인 필요 조건을 반영
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
-- 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, 괄호 안 문구, '의 ' 앞부분, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용. 영어 단어 변환과 알파벳 읽기를 함께 켜면 영어 단어/약어 조합을 먼저 분리해 단어 음차를 우선 적용. IT, 금융, 부동산, 의료, 교육, 제조, 물류, 식음료, 문화/관광, 생활서비스 계열 영어 단어 사전 확장
+- 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, 괄호 안 문구, '의 ' 앞부분, 한글/영문 중복 병기 제거, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용. 영어 단어 변환과 알파벳 읽기를 함께 켜면 영어 단어/약어 조합을 먼저 분리해 단어 음차를 우선 적용. IT, 금융, 부동산, 의료, 교육, 제조, 물류, 식음료, 문화/관광, 생활서비스 계열 영어 단어 사전 확장
 - 업체명 표준화 및 유사그룹 생성
 - 명부 검증용 표준 입력 시트 생성 및 기존 명부 헤더 자동 인식 구성
 - 기존 명부 자동 구성 시 ID/KEY 열 직접 지정 지원
@@ -135,10 +135,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.35/DataEditingMacroToolkit_v1.1.35.xlam`
-- `release/v1.1.35/DataEditingMacroToolkit_v1.1.35.xlsm`
-- `release/v1.1.35/MacroToolkit.bas`
-- `release/v1.1.35/manifest.json`
+- `release/v1.1.36/DataEditingMacroToolkit_v1.1.36.xlam`
+- `release/v1.1.36/DataEditingMacroToolkit_v1.1.36.xlsm`
+- `release/v1.1.36/MacroToolkit.bas`
+- `release/v1.1.36/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

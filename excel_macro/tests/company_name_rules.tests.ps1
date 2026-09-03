@@ -60,6 +60,17 @@ $procedureNames = @(
     "CompanyName_RemoveSpecialChars",
     "CompanyName_IsNameCharacter",
     "CompanyName_MoveCorpMarker",
+    "CompanyName_RemoveBilingualDuplicates",
+    "CompanyName_BilingualBlocksMatch",
+    "CompanyName_KoreanComparable",
+    "CompanyName_EnglishBlockKoreanComparable",
+    "CompanyName_ReadKoreanBlockEnd",
+    "CompanyName_ReadEnglishBlockEnd",
+    "CompanyName_SkipBilingualSeparators",
+    "CompanyName_NextNonBilingualSeparatorPos",
+    "CompanyName_ReadTrailingBilingualSeparators",
+    "CompanyName_IsBilingualSeparator",
+    "CompanyName_IsHangulLetter",
     "CompanyName_PronounceEnglishWords",
     "CompanyName_PronounceEnglishToken",
     "CompanyName_LongestEnglishWordKorean",
@@ -105,6 +116,14 @@ Public Function CompanyNameRulesPassed() As String
     resultText = CheckCase(resultText, "security sector word is transliterated inside combined token", CompanyName_CleanOne("Websecurity", options), KoWeb() & KoSecurity())
     resultText = CheckCase(resultText, "food service sector words are transliterated inside combined token", CompanyName_CleanOne("Coffeehouse", options), KoCoffee() & KoHouse())
 
+    Set options = CompanyName_DefaultOptions()
+    options("pronounceEnglishWords") = False
+    options("spellAlphabetKorean") = False
+    options("removeBilingualDuplicates") = True
+    resultText = CheckCase(resultText, "remove Korean then English duplicate company name", CompanyName_CleanOne(KoK() & KoIndustry() & "Kindustry", options), KoK() & KoIndustry())
+    resultText = CheckCase(resultText, "remove English then Korean duplicate company name", CompanyName_CleanOne("Kindustry" & KoK() & KoIndustry(), options), KoK() & KoIndustry())
+    resultText = CheckCase(resultText, "keep non-equivalent Korean and English mixed company name", CompanyName_CleanOne(KoK() & KoIndustry() & "Korea", options), KoK() & KoIndustry() & "Korea")
+
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText
 End Function
@@ -127,6 +146,14 @@ End Function
 
 Private Function KoKT() As String
     KoKT = ChrW(&HCF00) & ChrW(&HC774) & ChrW(&HD2F0)
+End Function
+
+Private Function KoK() As String
+    KoK = ChrW(&HCF00) & ChrW(&HC774)
+End Function
+
+Private Function KoIndustry() As String
+    KoIndustry = ChrW(&HC778) & ChrW(&HB354) & ChrW(&HC2A4) & ChrW(&HD2B8) & ChrW(&HB9AC)
 End Function
 
 Private Function KoMobile() As String

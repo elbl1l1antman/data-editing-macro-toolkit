@@ -2017,7 +2017,8 @@ function Add-CompanyNameOptionsUserForm {
         @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false),
         @("chkRemoveBranchMarkers", "본점/지점/점포명 제거", 250, 224, $false),
         @("chkRemoveLegalEntityMarkers", "Co.,Ltd./유한회사 등 법인표기 삭제", 250, 250, $false),
-        @("chkRemoveParentheticalText", "괄호 안 문구까지 삭제", 250, 276, $false)
+        @("chkRemoveParentheticalText", "괄호 안 문구까지 삭제", 250, 276, $false),
+        @("chkRemoveBilingualDuplicates", "한글/영문 중복 병기 제거", 250, 302, $true)
     )
 
     foreach ($item in $labels) {
@@ -2122,6 +2123,10 @@ End Property
 
 Public Property Get SpellAlphabetKorean() As Boolean
     SpellAlphabetKorean = CBool(chkSpellAlphabetKorean.Value)
+End Property
+
+Public Property Get RemoveBilingualDuplicates() As Boolean
+    RemoveBilingualDuplicates = CBool(chkRemoveBilingualDuplicates.Value)
 End Property
 
 Private Sub cmdOK_Click()

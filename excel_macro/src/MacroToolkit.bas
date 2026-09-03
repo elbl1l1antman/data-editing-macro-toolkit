@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.35"
+Public Const TOOLKIT_VERSION As String = "1.1.36"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -971,6 +971,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
+    options("removeBilingualDuplicates") = CBool(form.RemoveBilingualDuplicates)
 
     Unload form
     Set CompanyName_GetOptionsFromUser = options
@@ -999,6 +1000,7 @@ Private Function CompanyName_DefaultOptions() As Object
     options("removeSpecialChars") = False
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
+    options("removeBilingualDuplicates") = True
     Set CompanyName_DefaultOptions = options
 End Function
 
@@ -1079,6 +1081,7 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
 
     If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
     If CBool(options("removeParentheticalText")) Then textValue = CompanyName_RemoveParentheticalText(textValue)
+    If CBool(options("removeBilingualDuplicates")) Then textValue = CompanyName_RemoveBilingualDuplicates(textValue)
     If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
     If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
     If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
@@ -1381,6 +1384,179 @@ Private Function CompanyName_MoveCorpMarker(ByVal textValue As String, ByVal mov
     Else
         CompanyName_MoveCorpMarker = baseName & "(주)"
     End If
+End Function
+
+Private Function CompanyName_RemoveBilingualDuplicates(ByVal textValue As String) As String
+    Dim result As String
+    result = CStr(textValue)
+
+    Dim changed As Boolean
+    Do
+        changed = False
+
+        Dim i As Long
+        i = 1
+        Do While i <= Len(result)
+            Dim ch As String
+            ch = Mid$(result, i, 1)
+
+            If CompanyName_IsHangulLetter(ch) Then
+                Dim koreanStart As Long, koreanEnd As Long
+                koreanStart = i
+                koreanEnd = CompanyName_ReadKoreanBlockEnd(result, koreanStart)
+
+                Dim englishStart As Long
+                englishStart = CompanyName_SkipBilingualSeparators(result, koreanEnd + 1)
+                If englishStart <= Len(result) And CompanyName_IsAsciiLetter(Mid$(result, englishStart, 1)) Then
+                    Dim englishEnd As Long
+                    englishEnd = CompanyName_ReadEnglishBlockEnd(result, englishStart)
+                    If CompanyName_BilingualBlocksMatch(Mid$(result, koreanStart, koreanEnd - koreanStart + 1), _
+                                                        Mid$(result, englishStart, englishEnd - englishStart + 1)) Then
+                        result = Left$(result, koreanEnd) & Mid$(result, CompanyName_ReadTrailingBilingualSeparators(result, englishEnd) + 1)
+                        changed = True
+                        Exit Do
+                    End If
+                End If
+
+                i = koreanEnd + 1
+            ElseIf CompanyName_IsAsciiLetter(ch) Then
+                Dim engStart As Long, engEnd As Long
+                engStart = i
+                engEnd = CompanyName_ReadEnglishBlockEnd(result, engStart)
+
+                Dim korStart As Long
+                korStart = CompanyName_SkipBilingualSeparators(result, engEnd + 1)
+                If korStart <= Len(result) And CompanyName_IsHangulLetter(Mid$(result, korStart, 1)) Then
+                    Dim korEnd As Long
+                    korEnd = CompanyName_ReadKoreanBlockEnd(result, korStart)
+                    If CompanyName_BilingualBlocksMatch(Mid$(result, korStart, korEnd - korStart + 1), _
+                                                        Mid$(result, engStart, engEnd - engStart + 1)) Then
+                        result = Left$(result, engStart - 1) & Mid$(result, korStart)
+                        changed = True
+                        Exit Do
+                    End If
+                End If
+
+                i = engEnd + 1
+            Else
+                i = i + 1
+            End If
+        Loop
+    Loop While changed
+
+    CompanyName_RemoveBilingualDuplicates = Trim$(result)
+End Function
+
+Private Function CompanyName_BilingualBlocksMatch(ByVal koreanBlock As String, ByVal englishBlock As String) As Boolean
+    Dim koreanText As String
+    Dim englishKoreanText As String
+    koreanText = CompanyName_KoreanComparable(koreanBlock)
+    englishKoreanText = CompanyName_EnglishBlockKoreanComparable(englishBlock)
+
+    If Len(koreanText) < 2 Or Len(englishKoreanText) < 2 Then Exit Function
+    CompanyName_BilingualBlocksMatch = (StrComp(koreanText, englishKoreanText, vbTextCompare) = 0)
+End Function
+
+Private Function CompanyName_KoreanComparable(ByVal textValue As String) As String
+    Dim result As String
+    Dim i As Long
+    For i = 1 To Len(textValue)
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsHangulLetter(ch) Then result = result & ch
+    Next i
+    CompanyName_KoreanComparable = result
+End Function
+
+Private Function CompanyName_EnglishBlockKoreanComparable(ByVal textValue As String) As String
+    Dim result As String
+    Dim token As String
+    Dim i As Long
+
+    For i = 1 To Len(textValue)
+        Dim ch As String
+        ch = Mid$(textValue, i, 1)
+        If CompanyName_IsAsciiLetter(ch) Then
+            token = token & ch
+        ElseIf Len(token) > 0 Then
+            result = result & CompanyName_SpellAlphabetKorean(CompanyName_PronounceEnglishToken(token))
+            token = ""
+        End If
+    Next i
+
+    If Len(token) > 0 Then result = result & CompanyName_SpellAlphabetKorean(CompanyName_PronounceEnglishToken(token))
+    CompanyName_EnglishBlockKoreanComparable = CompanyName_KoreanComparable(result)
+End Function
+
+Private Function CompanyName_ReadKoreanBlockEnd(ByVal textValue As String, ByVal startPos As Long) As Long
+    Dim pos As Long
+    pos = startPos
+    Do While pos <= Len(textValue)
+        If CompanyName_IsHangulLetter(Mid$(textValue, pos, 1)) Then
+            CompanyName_ReadKoreanBlockEnd = pos
+            pos = pos + 1
+        ElseIf CompanyName_IsBilingualSeparator(Mid$(textValue, pos, 1)) And _
+               CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1) <= Len(textValue) And _
+               CompanyName_IsHangulLetter(Mid$(textValue, CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1), 1)) Then
+            pos = pos + 1
+        Else
+            Exit Do
+        End If
+    Loop
+End Function
+
+Private Function CompanyName_ReadEnglishBlockEnd(ByVal textValue As String, ByVal startPos As Long) As Long
+    Dim pos As Long
+    pos = startPos
+    Do While pos <= Len(textValue)
+        If CompanyName_IsAsciiLetter(Mid$(textValue, pos, 1)) Then
+            CompanyName_ReadEnglishBlockEnd = pos
+            pos = pos + 1
+        ElseIf CompanyName_IsBilingualSeparator(Mid$(textValue, pos, 1)) And _
+               CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1) <= Len(textValue) And _
+               CompanyName_IsAsciiLetter(Mid$(textValue, CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1), 1)) Then
+            pos = pos + 1
+        Else
+            Exit Do
+        End If
+    Loop
+End Function
+
+Private Function CompanyName_SkipBilingualSeparators(ByVal textValue As String, ByVal startPos As Long) As Long
+    Dim pos As Long
+    pos = startPos
+    Do While pos <= Len(textValue) And CompanyName_IsBilingualSeparator(Mid$(textValue, pos, 1))
+        pos = pos + 1
+    Loop
+    CompanyName_SkipBilingualSeparators = pos
+End Function
+
+Private Function CompanyName_NextNonBilingualSeparatorPos(ByVal textValue As String, ByVal startPos As Long) As Long
+    CompanyName_NextNonBilingualSeparatorPos = CompanyName_SkipBilingualSeparators(textValue, startPos)
+End Function
+
+Private Function CompanyName_ReadTrailingBilingualSeparators(ByVal textValue As String, ByVal endPos As Long) As Long
+    Dim pos As Long
+    pos = endPos + 1
+    Do While pos <= Len(textValue) And CompanyName_IsBilingualSeparator(Mid$(textValue, pos, 1))
+        pos = pos + 1
+    Loop
+    CompanyName_ReadTrailingBilingualSeparators = pos - 1
+End Function
+
+Private Function CompanyName_IsBilingualSeparator(ByVal ch As String) As Boolean
+    CompanyName_IsBilingualSeparator = (ch = " " Or ch = vbTab Or ch = "-" Or ch = "_" Or ch = "." Or _
+                                       ch = "/" Or ch = "(" Or ch = ")" Or ch = "（" Or ch = "）")
+End Function
+
+Private Function CompanyName_IsHangulLetter(ByVal ch As String) As Boolean
+    If Len(ch) <> 1 Then Exit Function
+    Dim codeValue As Long
+    codeValue = AscW(ch)
+    If codeValue < 0 Then codeValue = codeValue + 65536
+    CompanyName_IsHangulLetter = ((codeValue >= &HAC00& And codeValue <= &HD7A3&) Or _
+                                  (codeValue >= &H1100& And codeValue <= &H11FF&) Or _
+                                  (codeValue >= &H3130& And codeValue <= &H318F&))
 End Function
 
 Private Function CompanyName_PronounceEnglishWords(ByVal textValue As String) As String
