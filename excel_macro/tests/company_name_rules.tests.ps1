@@ -99,6 +99,11 @@ Public Function CompanyNameRulesPassed() As String
     options("spellAlphabetKorean") = True
     resultText = CheckCase(resultText, "known English suffix is transliterated before alphabet spelling", CompanyName_CleanOne("AIsystem", options), KoAI() & KoSystem())
     resultText = CheckCase(resultText, "acronym prefix and known English suffix both survive combined conversion", CompanyName_CleanOne("KTmobile", options), KoKT() & KoMobile())
+    resultText = CheckCase(resultText, "medical sector word is transliterated inside combined token", CompanyName_CleanOne("Smartclinic", options), KoSmart() & KoClinic())
+    resultText = CheckCase(resultText, "agriculture sector word is transliterated inside combined token", CompanyName_CleanOne("Greenfarm", options), KoGreen() & KoFarm())
+    resultText = CheckCase(resultText, "real estate sector word is transliterated inside combined token", CompanyName_CleanOne("Cityrealty", options), KoCity() & KoRealty())
+    resultText = CheckCase(resultText, "security sector word is transliterated inside combined token", CompanyName_CleanOne("Websecurity", options), KoWeb() & KoSecurity())
+    resultText = CheckCase(resultText, "food service sector words are transliterated inside combined token", CompanyName_CleanOne("Coffeehouse", options), KoCoffee() & KoHouse())
 
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText
@@ -126,6 +131,46 @@ End Function
 
 Private Function KoMobile() As String
     KoMobile = ChrW(&HBAA8) & ChrW(&HBC14) & ChrW(&HC77C)
+End Function
+
+Private Function KoSmart() As String
+    KoSmart = ChrW(&HC2A4) & ChrW(&HB9C8) & ChrW(&HD2B8)
+End Function
+
+Private Function KoClinic() As String
+    KoClinic = ChrW(&HD074) & ChrW(&HB9AC) & ChrW(&HB2C9)
+End Function
+
+Private Function KoGreen() As String
+    KoGreen = ChrW(&HADF8) & ChrW(&HB9B0)
+End Function
+
+Private Function KoFarm() As String
+    KoFarm = ChrW(&HD31C)
+End Function
+
+Private Function KoCity() As String
+    KoCity = ChrW(&HC2DC) & ChrW(&HD2F0)
+End Function
+
+Private Function KoRealty() As String
+    KoRealty = ChrW(&HB9AC) & ChrW(&HC5BC) & ChrW(&HD2F0)
+End Function
+
+Private Function KoWeb() As String
+    KoWeb = ChrW(&HC6F9)
+End Function
+
+Private Function KoSecurity() As String
+    KoSecurity = ChrW(&HC2DC) & ChrW(&HD050) & ChrW(&HB9AC) & ChrW(&HD2F0)
+End Function
+
+Private Function KoCoffee() As String
+    KoCoffee = ChrW(&HCEE4) & ChrW(&HD53C)
+End Function
+
+Private Function KoHouse() As String
+    KoHouse = ChrW(&HD558) & ChrW(&HC6B0) & ChrW(&HC2A4)
 End Function
 
 Private Function KoS() As String
