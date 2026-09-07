@@ -77,6 +77,33 @@ $procedureNames = @(
     "CompanyName_TryEnglishWordKorean",
     "CompanyName_IsAsciiLetter",
     "CompanyName_EnglishWordKorean",
+    "CompanyName_KRDictLoanwordKorean",
+    "CompanyName_KRDictLoanwordKorean_A",
+    "CompanyName_KRDictLoanwordKorean_B",
+    "CompanyName_KRDictLoanwordKorean_C",
+    "CompanyName_KRDictLoanwordKorean_D",
+    "CompanyName_KRDictLoanwordKorean_E",
+    "CompanyName_KRDictLoanwordKorean_F",
+    "CompanyName_KRDictLoanwordKorean_G",
+    "CompanyName_KRDictLoanwordKorean_H",
+    "CompanyName_KRDictLoanwordKorean_I",
+    "CompanyName_KRDictLoanwordKorean_J",
+    "CompanyName_KRDictLoanwordKorean_K",
+    "CompanyName_KRDictLoanwordKorean_L",
+    "CompanyName_KRDictLoanwordKorean_M",
+    "CompanyName_KRDictLoanwordKorean_N",
+    "CompanyName_KRDictLoanwordKorean_O",
+    "CompanyName_KRDictLoanwordKorean_P",
+    "CompanyName_KRDictLoanwordKorean_Q",
+    "CompanyName_KRDictLoanwordKorean_R",
+    "CompanyName_KRDictLoanwordKorean_S",
+    "CompanyName_KRDictLoanwordKorean_T",
+    "CompanyName_KRDictLoanwordKorean_U",
+    "CompanyName_KRDictLoanwordKorean_V",
+    "CompanyName_KRDictLoanwordKorean_W",
+    "CompanyName_KRDictLoanwordKorean_X",
+    "CompanyName_KRDictLoanwordKorean_Y",
+    "CompanyName_KRDictLoanwordKorean_Z",
     "CompanyName_SpellAlphabetKorean",
     "CompanyName_AlphabetKorean"
 )
@@ -115,6 +142,9 @@ Public Function CompanyNameRulesPassed() As String
     resultText = CheckCase(resultText, "real estate sector word is transliterated inside combined token", CompanyName_CleanOne("Cityrealty", options), KoCity() & KoRealty())
     resultText = CheckCase(resultText, "security sector word is transliterated inside combined token", CompanyName_CleanOne("Websecurity", options), KoWeb() & KoSecurity())
     resultText = CheckCase(resultText, "food service sector words are transliterated inside combined token", CompanyName_CleanOne("Coffeehouse", options), KoCoffee() & KoHouse())
+    resultText = CheckCase(resultText, "KRDict English loanword maps computer inside combined token", CompanyName_CleanOne("Computeracademy", options), KoComputer() & KoAcademy())
+    resultText = CheckCase(resultText, "KRDict English loanword maps laptop inside combined token", CompanyName_CleanOne("Laptopservice", options), KoLaptop() & KoService())
+    resultText = CheckCase(resultText, "KRDict English loanword maps keyboard inside combined token", CompanyName_CleanOne("Keyboardcenter", options), KoKeyboard() & KoCenter())
 
     Set options = CompanyName_DefaultOptions()
     options("pronounceEnglishWords") = False
@@ -146,6 +176,22 @@ End Function
 
 Private Function KoKT() As String
     KoKT = ChrW(&HCF00) & ChrW(&HC774) & ChrW(&HD2F0)
+End Function
+
+Private Function KoAcademy() As String
+    KoAcademy = ChrW(&HC544) & ChrW(&HCE74) & ChrW(&HB370) & ChrW(&HBBF8)
+End Function
+
+Private Function KoComputer() As String
+    KoComputer = ChrW(&HCEF4) & ChrW(&HD4E8) & ChrW(&HD130)
+End Function
+
+Private Function KoLaptop() As String
+    KoLaptop = ChrW(&HB7A9) & ChrW(&HD1B1)
+End Function
+
+Private Function KoKeyboard() As String
+    KoKeyboard = ChrW(&HD0A4) & ChrW(&HBCF4) & ChrW(&HB4DC)
 End Function
 
 Private Function KoK() As String
@@ -190,6 +236,14 @@ End Function
 
 Private Function KoSecurity() As String
     KoSecurity = ChrW(&HC2DC) & ChrW(&HD050) & ChrW(&HB9AC) & ChrW(&HD2F0)
+End Function
+
+Private Function KoService() As String
+    KoService = ChrW(&HC11C) & ChrW(&HBE44) & ChrW(&HC2A4)
+End Function
+
+Private Function KoCenter() As String
+    KoCenter = ChrW(&HC13C) & ChrW(&HD130)
 End Function
 
 Private Function KoCoffee() As String
