@@ -57,6 +57,7 @@ $procedureNames = @(
     "CompanyName_IsBranchSuffix",
     "CompanyName_VisibleLength",
     "CompanyName_NormalizeCorpSymbol",
+    "CompanyName_ReplaceBusinessSymbols",
     "CompanyName_RemoveSpecialChars",
     "CompanyName_IsNameCharacter",
     "CompanyName_MoveCorpMarker",
@@ -128,6 +129,13 @@ Public Function CompanyNameRulesPassed() As String
 
     options("removeSpecialChars") = True
     resultText = CheckCase(resultText, "special char removal keeps Hangul around number", CompanyName_CleanOne("A4-" & KoSystem(), options), KoA() & "4" & KoSystem())
+    resultText = CheckCase(resultText, "business ampersand is pronounced instead of removed", CompanyName_CleanOne("A&B", options), KoA() & KoAnd() & KoB())
+    resultText = CheckCase(resultText, "business co dot is pronounced instead of removed", CompanyName_CleanOne("ABC Co.", options), KoA() & KoB() & KoC() & KoCompanyRequested())
+
+    Set options = CompanyName_DefaultOptions()
+    options("removeLegalEntityMarkers") = True
+    options("removeSpecialChars") = True
+    resultText = CheckCase(resultText, "foreign legal suffix removal takes precedence over co dot pronunciation", CompanyName_CleanOne("ABC Co., Ltd.", options), KoA() & KoB() & KoC())
 
     Set options = CompanyName_DefaultOptions()
     options("removeParentheticalText") = True
@@ -177,8 +185,24 @@ Private Function KoA() As String
     KoA = ChrW(&HC5D0) & ChrW(&HC774)
 End Function
 
+Private Function KoB() As String
+    KoB = ChrW(&HBE44)
+End Function
+
+Private Function KoC() As String
+    KoC = ChrW(&HC528)
+End Function
+
 Private Function KoAI() As String
     KoAI = KoA() & ChrW(&HC544) & ChrW(&HC774)
+End Function
+
+Private Function KoAnd() As String
+    KoAnd = ChrW(&HC564)
+End Function
+
+Private Function KoCompanyRequested() As String
+    KoCompanyRequested = ChrW(&HCEF4) & ChrW(&HD328) & ChrW(&HB2C8)
 End Function
 
 Private Function KoKT() As String

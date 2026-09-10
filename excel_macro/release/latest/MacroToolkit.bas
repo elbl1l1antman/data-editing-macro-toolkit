@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.39"
+Public Const TOOLKIT_VERSION As String = "1.1.40"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1082,6 +1082,7 @@ Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As 
     If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
     If CBool(options("removeParentheticalText")) Then textValue = CompanyName_RemoveParentheticalText(textValue)
     If CBool(options("removeBilingualDuplicates")) Then textValue = CompanyName_RemoveBilingualDuplicates(textValue)
+    If CBool(options("removeSpecialChars")) And Not CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_ReplaceBusinessSymbols(textValue)
     If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
     If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
     If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
@@ -1344,7 +1345,30 @@ Private Function CompanyName_NormalizeCorpSymbol(ByVal textValue As String) As S
     CompanyName_NormalizeCorpSymbol = textValue
 End Function
 
+Private Function CompanyName_ReplaceBusinessSymbols(ByVal textValue As String) As String
+    Dim result As String
+    result = CStr(textValue)
+
+    result = Replace(result, "&", "앤")
+    result = Replace(result, "＆", "앤")
+
+    Dim re As Object
+    Set re = CreateObject("VBScript.RegExp")
+    re.Global = True
+    re.IgnoreCase = True
+    re.Pattern = "(^|[^A-Za-z])co\.(?=$|[^A-Za-z])"
+    result = re.Replace(result, "$1컴패니")
+
+    re.IgnoreCase = False
+    re.Pattern = "(Co|CO)\.$"
+    result = re.Replace(result, "컴패니")
+
+    CompanyName_ReplaceBusinessSymbols = result
+End Function
+
 Private Function CompanyName_RemoveSpecialChars(ByVal textValue As String) As String
+    textValue = CompanyName_ReplaceBusinessSymbols(textValue)
+
     Dim result As String
     Dim i As Long
     For i = 1 To Len(textValue)
