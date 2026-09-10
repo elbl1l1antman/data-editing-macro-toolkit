@@ -76,6 +76,9 @@ $procedureNames = @(
     "CompanyName_LongestEnglishWordKorean",
     "CompanyName_TryEnglishWordKorean",
     "CompanyName_IsAsciiLetter",
+    "CompanyName_IsAsciiDigit",
+    "CompanyName_IsAsciiLetterOrDigit",
+    "CompanyName_DigitKorean",
     "CompanyName_EnglishWordKorean",
     "CompanyName_KRDictLoanwordKorean",
     "CompanyName_KRDictLoanwordKorean_A",
@@ -152,6 +155,8 @@ Public Function CompanyNameRulesPassed() As String
     options("removeBilingualDuplicates") = True
     resultText = CheckCase(resultText, "remove Korean then English duplicate company name", CompanyName_CleanOne(KoK() & KoIndustry() & "Kindustry", options), KoK() & KoIndustry())
     resultText = CheckCase(resultText, "remove English then Korean duplicate company name", CompanyName_CleanOne("Kindustry" & KoK() & KoIndustry(), options), KoK() & KoIndustry())
+    resultText = CheckCase(resultText, "remove Korean and digit-bearing English duplicate company name", CompanyName_CleanOne(KoForward() & KoThreeD() & KoKorea() & "FORWARD3DKOREA", options), KoForward() & KoThreeD() & KoKorea())
+    resultText = CheckCase(resultText, "remove Korean and compact brand English duplicate company name", CompanyName_CleanOne(KoTvaSoft() & "TVASOFT", options), KoTvaSoft())
     resultText = CheckCase(resultText, "keep non-equivalent Korean and English mixed company name", CompanyName_CleanOne(KoK() & KoIndustry() & "Korea", options), KoK() & KoIndustry() & "Korea")
 
     If Len(resultText) = 0 Then resultText = "PASS"
@@ -200,6 +205,22 @@ End Function
 
 Private Function KoIndustry() As String
     KoIndustry = ChrW(&HC778) & ChrW(&HB354) & ChrW(&HC2A4) & ChrW(&HD2B8) & ChrW(&HB9AC)
+End Function
+
+Private Function KoForward() As String
+    KoForward = ChrW(&HD3EC) & ChrW(&HC6CC) & ChrW(&HB4DC)
+End Function
+
+Private Function KoThreeD() As String
+    KoThreeD = ChrW(&HC4F0) & ChrW(&HB9AC) & ChrW(&HB514)
+End Function
+
+Private Function KoKorea() As String
+    KoKorea = ChrW(&HCF54) & ChrW(&HB9AC) & ChrW(&HC544)
+End Function
+
+Private Function KoTvaSoft() As String
+    KoTvaSoft = ChrW(&HD2F0) & ChrW(&HBC14) & ChrW(&HC18C) & ChrW(&HD504) & ChrW(&HD2B8)
 End Function
 
 Private Function KoMobile() As String

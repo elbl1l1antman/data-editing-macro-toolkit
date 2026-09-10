@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.37"
+Public Const TOOLKIT_VERSION As String = "1.1.38"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1407,7 +1407,7 @@ Private Function CompanyName_RemoveBilingualDuplicates(ByVal textValue As String
 
                 Dim englishStart As Long
                 englishStart = CompanyName_SkipBilingualSeparators(result, koreanEnd + 1)
-                If englishStart <= Len(result) And CompanyName_IsAsciiLetter(Mid$(result, englishStart, 1)) Then
+                If englishStart <= Len(result) And CompanyName_IsAsciiLetterOrDigit(Mid$(result, englishStart, 1)) Then
                     Dim englishEnd As Long
                     englishEnd = CompanyName_ReadEnglishBlockEnd(result, englishStart)
                     If CompanyName_BilingualBlocksMatch(Mid$(result, koreanStart, koreanEnd - koreanStart + 1), _
@@ -1419,7 +1419,7 @@ Private Function CompanyName_RemoveBilingualDuplicates(ByVal textValue As String
                 End If
 
                 i = koreanEnd + 1
-            ElseIf CompanyName_IsAsciiLetter(ch) Then
+            ElseIf CompanyName_IsAsciiLetterOrDigit(ch) Then
                 Dim engStart As Long, engEnd As Long
                 engStart = i
                 engEnd = CompanyName_ReadEnglishBlockEnd(result, engStart)
@@ -1478,6 +1478,12 @@ Private Function CompanyName_EnglishBlockKoreanComparable(ByVal textValue As Str
         ch = Mid$(textValue, i, 1)
         If CompanyName_IsAsciiLetter(ch) Then
             token = token & ch
+        ElseIf CompanyName_IsAsciiDigit(ch) Then
+            If Len(token) > 0 Then
+                result = result & CompanyName_SpellAlphabetKorean(CompanyName_PronounceEnglishToken(token))
+                token = ""
+            End If
+            result = result & CompanyName_DigitKorean(ch)
         ElseIf Len(token) > 0 Then
             result = result & CompanyName_SpellAlphabetKorean(CompanyName_PronounceEnglishToken(token))
             token = ""
@@ -1509,12 +1515,12 @@ Private Function CompanyName_ReadEnglishBlockEnd(ByVal textValue As String, ByVa
     Dim pos As Long
     pos = startPos
     Do While pos <= Len(textValue)
-        If CompanyName_IsAsciiLetter(Mid$(textValue, pos, 1)) Then
+        If CompanyName_IsAsciiLetterOrDigit(Mid$(textValue, pos, 1)) Then
             CompanyName_ReadEnglishBlockEnd = pos
             pos = pos + 1
         ElseIf CompanyName_IsBilingualSeparator(Mid$(textValue, pos, 1)) And _
                CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1) <= Len(textValue) And _
-               CompanyName_IsAsciiLetter(Mid$(textValue, CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1), 1)) Then
+               CompanyName_IsAsciiLetterOrDigit(Mid$(textValue, CompanyName_NextNonBilingualSeparatorPos(textValue, pos + 1), 1)) Then
             pos = pos + 1
         Else
             Exit Do
@@ -1632,6 +1638,33 @@ Private Function CompanyName_IsAsciiLetter(ByVal ch As String) As Boolean
     CompanyName_IsAsciiLetter = ((codeValue >= 65 And codeValue <= 90) Or (codeValue >= 97 And codeValue <= 122))
 End Function
 
+Private Function CompanyName_IsAsciiDigit(ByVal ch As String) As Boolean
+    If Len(ch) <> 1 Then Exit Function
+    Dim codeValue As Long
+    codeValue = AscW(ch)
+    CompanyName_IsAsciiDigit = (codeValue >= 48 And codeValue <= 57)
+End Function
+
+Private Function CompanyName_IsAsciiLetterOrDigit(ByVal ch As String) As Boolean
+    CompanyName_IsAsciiLetterOrDigit = (CompanyName_IsAsciiLetter(ch) Or CompanyName_IsAsciiDigit(ch))
+End Function
+
+Private Function CompanyName_DigitKorean(ByVal ch As String) As String
+    Select Case ch
+        Case "0": CompanyName_DigitKorean = "제로"
+        Case "1": CompanyName_DigitKorean = "원"
+        Case "2": CompanyName_DigitKorean = "투"
+        Case "3": CompanyName_DigitKorean = "쓰리"
+        Case "4": CompanyName_DigitKorean = "포"
+        Case "5": CompanyName_DigitKorean = "파이브"
+        Case "6": CompanyName_DigitKorean = "식스"
+        Case "7": CompanyName_DigitKorean = "세븐"
+        Case "8": CompanyName_DigitKorean = "에이트"
+        Case "9": CompanyName_DigitKorean = "나인"
+        Case Else: CompanyName_DigitKorean = ch
+    End Select
+End Function
+
 Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As String
     Select Case LCase$(wordText)
         Case "ai": CompanyName_EnglishWordKorean = "에이아이"
@@ -1706,6 +1739,7 @@ Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As Stri
         Case "fashion": CompanyName_EnglishWordKorean = "패션"
         Case "finance", "financial": CompanyName_EnglishWordKorean = "파이낸스"
         Case "food": CompanyName_EnglishWordKorean = "푸드"
+        Case "forward": CompanyName_EnglishWordKorean = "포워드"
         Case "fresh": CompanyName_EnglishWordKorean = "프레시"
         Case "furniture": CompanyName_EnglishWordKorean = "퍼니처"
         Case "game", "games", "gaming": CompanyName_EnglishWordKorean = "게임"
@@ -1797,6 +1831,8 @@ Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As Stri
         Case "trade", "trading": CompanyName_EnglishWordKorean = "트레이딩"
         Case "transport": CompanyName_EnglishWordKorean = "트랜스포트"
         Case "travel": CompanyName_EnglishWordKorean = "트래블"
+        Case "tva": CompanyName_EnglishWordKorean = "티바"
+        Case "tvasoft": CompanyName_EnglishWordKorean = "티바소프트"
         Case "venture", "ventures": CompanyName_EnglishWordKorean = "벤처스"
         Case "vision": CompanyName_EnglishWordKorean = "비전"
         Case "web": CompanyName_EnglishWordKorean = "웹"
