@@ -140,6 +140,8 @@ Public Function CompanyNameRulesPassed() As String
     options("spellAlphabetKorean") = True
     resultText = CheckCase(resultText, "known English suffix is transliterated before alphabet spelling", CompanyName_CleanOne("AIsystem", options), KoAI() & KoSystem())
     resultText = CheckCase(resultText, "acronym prefix and known English suffix both survive combined conversion", CompanyName_CleanOne("KTmobile", options), KoKT() & KoMobile())
+    resultText = CheckCase(resultText, "soft is transliterated as soft not software", CompanyName_CleanOne("SOFT", options), KoSoft())
+    resultText = CheckCase(resultText, "software is transliterated as software", CompanyName_CleanOne("SOFTWARE", options), KoSoftware())
     resultText = CheckCase(resultText, "medical sector word is transliterated inside combined token", CompanyName_CleanOne("Smartclinic", options), KoSmart() & KoClinic())
     resultText = CheckCase(resultText, "agriculture sector word is transliterated inside combined token", CompanyName_CleanOne("Greenfarm", options), KoGreen() & KoFarm())
     resultText = CheckCase(resultText, "real estate sector word is transliterated inside combined token", CompanyName_CleanOne("Cityrealty", options), KoCity() & KoRealty())
@@ -261,6 +263,14 @@ End Function
 
 Private Function KoService() As String
     KoService = ChrW(&HC11C) & ChrW(&HBE44) & ChrW(&HC2A4)
+End Function
+
+Private Function KoSoft() As String
+    KoSoft = ChrW(&HC18C) & ChrW(&HD504) & ChrW(&HD2B8)
+End Function
+
+Private Function KoSoftware() As String
+    KoSoftware = KoSoft() & ChrW(&HC6E8) & ChrW(&HC5B4)
 End Function
 
 Private Function KoCenter() As String

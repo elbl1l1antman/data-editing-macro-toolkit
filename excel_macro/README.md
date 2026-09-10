@@ -32,7 +32,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.1.38`
+`1.1.39`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -58,7 +58,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 전화번호 유형 분류 및 유효성 검사. 050X 계열 안심번호, 8자리 대표번호, 영값 오류 패턴, 4회 이상 반복 숫자 확인 필요 조건을 반영
 - 전화번호/사업자등록번호의 하이픈 제거 복사본 열 생성
 - 사업자등록 상태조회 시 체크박스로 반환받을 값 선택, 모두 포함 선택 지원
-- 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, 괄호 안 문구, '의 ' 앞부분, 한글/영문 중복 병기 제거, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용. 숫자가 섞인 영문 병기와 `FORWARD3DKOREA`, `TVASOFT` 같은 붙임형 영문 병기도 한글 음차와 비교해 중복이면 제거. 영어 단어 변환과 알파벳 읽기를 함께 켜면 영어 단어/약어 조합을 먼저 분리해 단어 음차를 우선 적용. 수기 업무 사전과 한국어기초사전 XML에서 추출한 영어 외래어 보조 사전을 함께 사용
+- 기업체명/사업체명 정리: 공백, 회사형태 표기, 괄호·특수문자, 괄호 안 문구, '의 ' 앞부분, 한글/영문 중복 병기 제거, 영어 단어 한글 발음, 알파벳 한글 읽기 규칙을 선택 적용. 숫자가 섞인 영문 병기와 `FORWARD3DKOREA`, `TVASOFT` 같은 붙임형 영문 병기도 한글 음차와 비교해 중복이면 제거. `SOFT`는 `소프트`, `SOFTWARE`는 `소프트웨어`로 구분. 영어 단어 변환과 알파벳 읽기를 함께 켜면 영어 단어/약어 조합을 먼저 분리해 단어 음차를 우선 적용. 수기 업무 사전과 한국어기초사전 XML에서 추출한 영어 외래어 보조 사전을 함께 사용
 - 업체명 표준화 및 유사그룹 생성
 - 명부 검증용 표준 입력 시트 생성 및 기존 명부 헤더 자동 인식 구성
 - 기존 명부 자동 구성 시 ID/KEY 열 직접 지정 지원
@@ -136,10 +136,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.38/DataEditingMacroToolkit_v1.1.38.xlam`
-- `release/v1.1.38/DataEditingMacroToolkit_v1.1.38.xlsm`
-- `release/v1.1.38/MacroToolkit.bas`
-- `release/v1.1.38/manifest.json`
+- `release/v1.1.39/DataEditingMacroToolkit_v1.1.39.xlam`
+- `release/v1.1.39/DataEditingMacroToolkit_v1.1.39.xlsm`
+- `release/v1.1.39/MacroToolkit.bas`
+- `release/v1.1.39/manifest.json`
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 

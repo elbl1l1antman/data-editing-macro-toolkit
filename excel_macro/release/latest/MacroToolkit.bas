@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.38"
+Public Const TOOLKIT_VERSION As String = "1.1.39"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -1814,7 +1814,8 @@ Private Function CompanyName_EnglishWordKorean(ByVal wordText As String) As Stri
         Case "shipping": CompanyName_EnglishWordKorean = "쉬핑"
         Case "shop": CompanyName_EnglishWordKorean = "샵"
         Case "smart": CompanyName_EnglishWordKorean = "스마트"
-        Case "soft", "software": CompanyName_EnglishWordKorean = "소프트웨어"
+        Case "soft": CompanyName_EnglishWordKorean = "소프트"
+        Case "software": CompanyName_EnglishWordKorean = "소프트웨어"
         Case "solution", "solutions": CompanyName_EnglishWordKorean = "솔루션"
         Case "space": CompanyName_EnglishWordKorean = "스페이스"
         Case "sports": CompanyName_EnglishWordKorean = "스포츠"
