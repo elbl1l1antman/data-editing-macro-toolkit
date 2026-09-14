@@ -134,6 +134,7 @@ Public Function CompanyNameRulesPassed() As String
     options("removeSpecialChars") = True
     resultText = CheckCase(resultText, "special char removal keeps Hangul around number", CompanyName_CleanOne("A4-" & KoSystem(), options), KoA() & "4" & KoSystem())
     resultText = CheckCase(resultText, "business ampersand is pronounced instead of removed", CompanyName_CleanOne("A&B", options), KoA() & KoAnd() & KoB())
+    resultText = CheckCase(resultText, "business plus is pronounced instead of removed", CompanyName_CleanOne("A+B", options), KoA() & KoPlus() & KoB())
     resultText = CheckCase(resultText, "business co dot is pronounced instead of removed", CompanyName_CleanOne("ABC Co.", options), KoA() & KoB() & KoC() & KoCompanyRequested())
 
     Set options = CompanyName_DefaultOptions()
@@ -220,6 +221,10 @@ End Function
 
 Private Function KoAnd() As String
     KoAnd = ChrW(&HC564)
+End Function
+
+Private Function KoPlus() As String
+    KoPlus = ChrW(&HD50C&) & ChrW(&HB7EC&) & ChrW(&HC2A4&)
 End Function
 
 Private Function KoCompanyRequested() As String

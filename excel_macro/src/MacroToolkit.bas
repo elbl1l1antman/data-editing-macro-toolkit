@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.42"
+Public Const TOOLKIT_VERSION As String = "1.1.44"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -142,6 +142,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A51").Value = "Roster_CreateValidationWorkspace"
     ws.Range("A52").Value = "NaverOfficialMall_FindLinksForSelection"
     ws.Range("A53").Value = "NaverBusinessSearch_SearchSelection"
+    ws.Range("A54").Value = "DataCheck_CreateCharacterCheckFormula"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1094,6 +1095,79 @@ ErrHandler:
     MsgBox "기업/사업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업/사업체명 정리"
 End Sub
 
+' ============================================================
+' 프로시저 : DataCheck_CreateCharacterCheckFormula
+' 설  명  : 선택한 데이터 범위 오른쪽에 문자 구성 검진 수식을 생성한다.
+'           Excel 365의 SEQUENCE를 우선 사용하고, 구버전에서는 Formula로 재시도한다.
+' ============================================================
+Public Sub DataCheck_CreateCharacterCheckFormula()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("문자 검진 함수 생성", _
+        "검진할 데이터 셀 범위를 선택하세요. 헤더가 있으면 제외하고 실제 데이터만 선택합니다." & vbCrLf & _
+        "선택 범위 오른쪽에 알파벳/특수기호/정상 판정 수식 열이 생성됩니다.", _
+        targetRange) Then Exit Sub
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(targetRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 검진할 데이터를 찾지 못했습니다.", vbInformation, "문자 검진 함수 생성"
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "문자검진")
+    If outputRange Is Nothing Then Exit Sub
+
+    Dim alphaChars As String
+    alphaChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    Dim specialChars As String
+    specialChars = "!@#$%^&*()_+-=[]{}|\" & Chr$(34) & "<>,.?/~" & Chr$(96)
+
+    Dim sourceCell As Range
+    Dim outputCell As Range
+    Dim formulaText As String
+    Dim q As String
+    q = Chr$(34)
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "문자 검진 함수 생성", workRange.Rows.Count, "수식 생성 준비 중"
+
+    Dim relRow As Long
+    Dim relCol As Long
+    For relRow = 1 To workRange.Rows.Count
+        For relCol = 1 To workRange.Columns.Count
+            Set sourceCell = workRange.Cells(relRow, relCol)
+            Set outputCell = outputRange.Cells(relRow, relCol)
+            formulaText = "=IF(" & sourceCell.Address(False, False) & "=" & q & q & "," & q & q & _
+                ",IF(SUMPRODUCT(--ISNUMBER(FIND(MID(" & sourceCell.Address(False, False) & ",SEQUENCE(LEN(" & sourceCell.Address(False, False) & ")),1)," & q & alphaChars & q & ")))>0," & _
+                q & "알파벳 포함" & q & ",IF(SUMPRODUCT(--ISNUMBER(FIND(MID(" & sourceCell.Address(False, False) & ",SEQUENCE(LEN(" & sourceCell.Address(False, False) & ")),1)," & q & specialChars & q & ")))>0," & _
+                q & "특수기호 포함" & q & "," & q & "정상" & q & ")))"
+            On Error Resume Next
+            outputCell.Formula2 = formulaText
+            If Err.Number <> 0 Then
+                Err.Clear
+                outputCell.Formula = formulaText
+            End If
+            On Error GoTo ErrHandler
+        Next relCol
+        Toolkit_RowProgressUpdate relRow, workRange.Rows.Count, "문자 검진 수식 생성 중: " & CStr(relRow) & "/" & CStr(workRange.Rows.Count) & "행"
+    Next relRow
+
+    outputRange.Columns.AutoFit
+    Toolkit_RowProgressClose workRange.Rows.Count
+    Application.ScreenUpdating = True
+    MsgBox "문자 검진 수식을 " & CStr(outputRange.Cells.Count) & "개 생성했습니다." & vbCrLf & _
+           "결과 열에서 알파벳 포함, 특수기호 포함, 정상 여부를 확인하세요.", vbInformation, "문자 검진 함수 생성"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose workRange.Rows.Count
+    Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("문자 검진 함수 생성") Then Exit Sub
+    MsgBox "문자 검진 수식 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "문자 검진 함수 생성"
+End Sub
+
 Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As Object) As String
     Dim textValue As String
     textValue = CStr(valueIn)
@@ -1414,6 +1488,8 @@ Private Function CompanyName_ReplaceBusinessSymbols(ByVal textValue As String) A
 
     result = Replace(result, "&", "앤")
     result = Replace(result, "＆", "앤")
+    result = Replace(result, "+", "플러스")
+    result = Replace(result, "＋", "플러스")
 
     Dim re As Object
     Set re = CreateObject("VBScript.RegExp")
@@ -16403,7 +16479,8 @@ Public Sub Toolkit_LaunchDataCleanup()
         "4. 전화번호 숫자만 남기기" & vbCrLf & _
         "5. 사업자등록번호 숫자만 남기기" & vbCrLf & _
         "6. 사업자등록번호 3열 병합" & vbCrLf & _
-        "7. 기업/사업체명 정리", _
+        "7. 기업/사업체명 정리" & vbCrLf & _
+        "8. 문자 검진 함수 생성", _
         "1")
 
     Select Case choice
@@ -16414,8 +16491,9 @@ Public Sub Toolkit_LaunchDataCleanup()
         Case "5": RemoveBizNoDashesToCopiedColumns
         Case "6": BizNo_MergeThreeColumns
         Case "7": CompanyName_CleanWithOptions
+        Case "8": DataCheck_CreateCharacterCheckFormula
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~7 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~8 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -16729,6 +16807,10 @@ End Sub
 
 Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)
     CompanyName_CleanWithOptions
+End Sub
+
+Public Sub Ribbon_DataCheckCreateCharacterFormula(control As IRibbonControl)
+    DataCheck_CreateCharacterCheckFormula
 End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)

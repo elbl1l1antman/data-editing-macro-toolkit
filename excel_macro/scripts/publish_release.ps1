@@ -1995,7 +1995,7 @@ function Add-CompanyNameOptionsUserForm {
     $form.Properties.Item("Height").Value = 560
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
+    $lblTitle.Caption = "적용할 정리 규칙을 선택하세요. 체크를 누른 순서대로 실행됩니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 10
     $lblTitle.Width = 540
@@ -2046,7 +2046,7 @@ function Add-CompanyNameOptionsUserForm {
     $cboOrderPreset.Style = 2
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "결과는 원본 오른쪽 복사본 열에 생성됩니다. 순서에 따라 괄호 안 문구 삭제와 특수문자 제거 결과가 달라질 수 있습니다."
+    $lblTip.Caption = "결과는 원본 오른쪽 복사본 열에 생성됩니다. 순서를 바꾸려면 규칙을 해제한 뒤 원하는 순서로 다시 클릭하세요."
     $lblTip.Left = 12
     $lblTip.Top = 366
     $lblTip.Width = 540
@@ -2070,12 +2070,15 @@ function Add-CompanyNameOptionsUserForm {
 Option Explicit
 
 Public Cancelled As Boolean
+Private mManualOrder As String
 
 Private Sub UserForm_Initialize()
     Cancelled = True
+    mManualOrder = "removeBilingualDuplicates,removeSpaces,removeCorpMarkers,spellAlphabetKorean"
     cboOrderPreset.AddItem "기본 순서"
     cboOrderPreset.AddItem "공백 제거 > 한글/영문 병기 제거 > (주) 삭제 > 특수문자 제거 > 괄호 안 삭제"
     cboOrderPreset.AddItem "괄호 안 삭제 > 법인/지점 표기 삭제 > 영어 변환 > 특수문자 제거"
+    cboOrderPreset.AddItem "직접 클릭한 순서"
     cboOrderPreset.ListIndex = 0
 End Sub
 
@@ -2148,6 +2151,10 @@ Public Property Get RemoveBilingualDuplicates() As Boolean
 End Property
 
 Public Property Get OperationOrder() As String
+    If Len(mManualOrder) > 0 And cboOrderPreset.ListIndex = 3 Then
+        OperationOrder = mManualOrder
+        Exit Property
+    End If
     Select Case cboOrderPreset.ListIndex
         Case 1
             OperationOrder = "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText,cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
@@ -2157,6 +2164,77 @@ Public Property Get OperationOrder() As String
             OperationOrder = "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeBranchMarkers,removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
     End Select
 End Property
+
+Private Sub ToggleOperation(ByVal operationName As String, ByVal enabled As Boolean)
+    Dim items As Variant
+    Dim i As Long
+    Dim rebuilt As String
+    items = Split(mManualOrder, ",")
+    For i = LBound(items) To UBound(items)
+        If Len(Trim$(CStr(items(i)))) > 0 And Trim$(CStr(items(i))) <> operationName Then
+            If Len(rebuilt) > 0 Then rebuilt = rebuilt & ","
+            rebuilt = rebuilt & Trim$(CStr(items(i)))
+        End If
+    Next i
+    If enabled Then
+        If Len(rebuilt) > 0 Then rebuilt = rebuilt & ","
+        rebuilt = rebuilt & operationName
+    End If
+    mManualOrder = rebuilt
+    cboOrderPreset.ListIndex = 3
+End Sub
+
+Private Sub chkTrimOuter_Click()
+    ToggleOperation "trimOuter", chkTrimOuter.Value
+End Sub
+Private Sub chkRemoveSpaces_Click()
+    ToggleOperation "removeSpaces", chkRemoveSpaces.Value
+End Sub
+Private Sub chkNormalizeCorpSymbol_Click()
+    ToggleOperation "normalizeCorpSymbol", chkNormalizeCorpSymbol.Value
+End Sub
+Private Sub chkNormalizeCorpText_Click()
+    ToggleOperation "normalizeCorpText", chkNormalizeCorpText.Value
+End Sub
+Private Sub chkMoveCorpToFront_Click()
+    ToggleOperation "moveCorpToFront", chkMoveCorpToFront.Value
+End Sub
+Private Sub chkMoveCorpToEnd_Click()
+    ToggleOperation "moveCorpToEnd", chkMoveCorpToEnd.Value
+End Sub
+Private Sub chkRemoveCorpMarkers_Click()
+    ToggleOperation "removeCorpMarkers", chkRemoveCorpMarkers.Value
+End Sub
+Private Sub chkAddCorpPrefix_Click()
+    ToggleOperation "addCorpPrefix", chkAddCorpPrefix.Value
+End Sub
+Private Sub chkAddCorpSuffix_Click()
+    ToggleOperation "addCorpSuffix", chkAddCorpSuffix.Value
+End Sub
+Private Sub chkCutBeforePossessive_Click()
+    ToggleOperation "cutBeforePossessive", chkCutBeforePossessive.Value
+End Sub
+Private Sub chkPronounceEnglishWords_Click()
+    ToggleOperation "pronounceEnglishWords", chkPronounceEnglishWords.Value
+End Sub
+Private Sub chkSpellAlphabetKorean_Click()
+    ToggleOperation "spellAlphabetKorean", chkSpellAlphabetKorean.Value
+End Sub
+Private Sub chkRemoveSpecialChars_Click()
+    ToggleOperation "removeSpecialChars", chkRemoveSpecialChars.Value
+End Sub
+Private Sub chkRemoveBranchMarkers_Click()
+    ToggleOperation "removeBranchMarkers", chkRemoveBranchMarkers.Value
+End Sub
+Private Sub chkRemoveLegalEntityMarkers_Click()
+    ToggleOperation "removeLegalEntityMarkers", chkRemoveLegalEntityMarkers.Value
+End Sub
+Private Sub chkRemoveParentheticalText_Click()
+    ToggleOperation "removeParentheticalText", chkRemoveParentheticalText.Value
+End Sub
+Private Sub chkRemoveBilingualDuplicates_Click()
+    ToggleOperation "removeBilingualDuplicates", chkRemoveBilingualDuplicates.Value
+End Sub
 
 Private Sub cmdOK_Click()
     Cancelled = False
@@ -3182,6 +3260,7 @@ function Add-RibbonCustomUi {
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
           <button id="btnCompanyNameClean" label="기업/사업체명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 괄호·특수문자, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙과 정리 순서로 기업체명/사업체명을 정리합니다." />
+          <button id="btnCharacterCheckFormula" label="문자 검진 함수" imageMso="InsertFunction" onAction="Ribbon_DataCheckCreateCharacterFormula" screentip="문자 구성 검진 함수 생성" supertip="데이터 범위를 선택하면 오른쪽에 알파벳 포함, 특수기호 포함, 정상 여부를 판정하는 Excel 수식을 생성합니다." />
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
           <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
