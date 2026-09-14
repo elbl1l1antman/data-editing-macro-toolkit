@@ -1,4 +1,4 @@
-﻿Attribute VB_Name = "MacroToolkit"
+Attribute VB_Name = "MacroToolkit"
 ' ============================================================
 ' 모듈명  : MacroToolkit
 ' 설  명  : 엑셀 데이터 편집을 위한 매크로 도구 모음
@@ -8,7 +8,7 @@
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.40"
+Public Const TOOLKIT_VERSION As String = "1.1.41"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -32,6 +32,7 @@ Private Const NAVER_BUILD_SIDO_KEY As String = "BuildSidoFilter"
 Private Const NAVER_BUILD_SIGUNGU_KEY As String = "BuildSigunguFilter"
 Private Const NAVER_MALL_DISPLAY_KEY As String = "OfficialMallDisplayCount"
 Private Const NAVER_MALL_DELAY_KEY As String = "OfficialMallDelaySeconds"
+Private Const NAVER_BUSINESS_KEYWORD_KEY As String = "BusinessSearchKeyword"
 Private Const NAVER_DONG_MASTER_SHEET As String = "_NaverLocalDongMaster"
 Private Const NAVER_USER_DONG_MASTER_SHEET As String = "행정동_마스터"
 Private Const NAVER_LEGAL_DONG_MASTER_SHEET As String = "_NaverLocalLegalDongMaster"
@@ -140,6 +141,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A50").Value = "SampleDesign_CreateBandColumn"
     ws.Range("A51").Value = "Roster_CreateValidationWorkspace"
     ws.Range("A52").Value = "NaverOfficialMall_FindLinksForSelection"
+    ws.Range("A53").Value = "NaverBusinessSearch_SearchSelection"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -5646,6 +5648,245 @@ ErrHandler:
     If Toolkit_ShowCancelMessage("네이버 지역검색") Then Exit Sub
     MsgBox "네이버 주소 검증 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Sub
+
+Public Sub NaverBusinessSearch_SearchSelection()
+    Const PURPOSE As String = "네이버 업체 검색"
+
+    If Not NaverLocal_HasCredentials() Then
+        MsgBox "먼저 [네이버 인증키 설정] 버튼으로 Client ID와 Client Secret을 저장하세요.", vbExclamation, PURPOSE
+        Exit Sub
+    End If
+
+    Dim nameRange As Range
+    If Not Toolkit_GetRangeFromUserForm(PURPOSE, _
+        "검색할 사업체명/기업체명 범위를 선택하세요." & vbCrLf & _
+        "선택 범위 오른쪽에 네이버 지역검색 주소와 웹문서 " & NaverBusinessSearch_DefaultKeyword() & " 후보를 추가합니다.", _
+        nameRange) Then Exit Sub
+    If nameRange Is Nothing Then Exit Sub
+
+    Set nameRange = nameRange.Areas(1)
+    If nameRange.Columns.Count > 1 Then Set nameRange = nameRange.Columns(1)
+
+    Dim keywordText As String
+    keywordText = InputBox("업체명 뒤에 붙일 검색 키워드를 입력하세요." & vbCrLf & _
+                           "예: " & NaverBusinessSearch_DefaultKeyword() & ", " & _
+                           NaverBusinessSearch_OfficialHomepageKeyword() & ", " & _
+                           NaverBusinessSearch_OfficialMallKeyword(), _
+                           PURPOSE, GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUSINESS_KEYWORD_KEY, NaverBusinessSearch_DefaultKeyword()))
+    If StrPtr(keywordText) = 0 Then Exit Sub
+    keywordText = Trim$(keywordText)
+    SaveSetting NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_BUSINESS_KEYWORD_KEY, keywordText
+
+    Dim headerAnswer As VbMsgBoxResult
+    headerAnswer = MsgBox("선택 범위의 첫 행을 헤더로 볼까요?", vbQuestion + vbYesNoCancel, PURPOSE)
+    If headerAnswer = vbCancel Then Exit Sub
+    Dim hasHeader As Boolean
+    hasHeader = (headerAnswer = vbYes)
+
+    Dim firstDataRow As Long
+    firstDataRow = nameRange.Row + IIf(hasHeader, 1, 0)
+
+    Dim lastRow As Long
+    lastRow = nameRange.Row + nameRange.Rows.Count - 1
+    If firstDataRow > lastRow Then
+        MsgBox "검색할 업체명 데이터가 없습니다.", vbInformation, PURPOSE
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = nameRange.Worksheet
+
+    Dim headers As Variant
+    headers = NaverBusinessSearch_ResultHeaders()
+
+    Dim outputCol As Long
+    outputCol = nameRange.Column + nameRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, outputCol, UBound(headers) - LBound(headers) + 1, PURPOSE) Then Exit Sub
+
+    Dim totalRows As Long
+    totalRows = lastRow - firstDataRow + 1
+    If totalRows > 500 Then
+        If MsgBox("검색 대상이 " & totalRows & "행입니다." & vbCrLf & _
+                  "행마다 네이버 지역검색과 웹문서 API를 호출하므로 시간이 걸릴 수 있습니다. 계속할까요?", _
+                  vbQuestion + vbYesNo, PURPOSE) <> vbYes Then Exit Sub
+    End If
+
+    Dim defaultDelay As Double
+    defaultDelay = CDbl(Val(GetSetting(NAVER_APP_NAME, NAVER_APP_SECTION, NAVER_MALL_DELAY_KEY, "0.3")))
+    If defaultDelay < 0 Then defaultDelay = 0.3
+
+    Dim outputData() As Variant
+    ReDim outputData(1 To totalRows, 1 To UBound(headers) - LBound(headers) + 1)
+
+    Dim rowIndex As Long
+    Dim outIndex As Long
+    Dim companyName As String
+    Dim queryText As String
+    Dim localItems As Collection
+    Dim webItems As Collection
+    Dim localItem As Object
+    Dim webItem As Object
+    Dim requestCount As Long
+    Dim errorCount As Long
+    Dim localFoundCount As Long
+    Dim webFoundCount As Long
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    ws.Columns(outputCol).Resize(, UBound(headers) - LBound(headers) + 1).Insert Shift:=xlToRight
+    If hasHeader Then NaverBusinessSearch_WriteHeaders ws, nameRange.Row, outputCol
+
+    Toolkit_ProgressShow PURPOSE, "검색 준비 중", totalRows
+
+    For rowIndex = firstDataRow To lastRow
+        outIndex = rowIndex - firstDataRow + 1
+        companyName = Trim$(CStr(ws.Cells(rowIndex, nameRange.Column).Value))
+        Toolkit_ProgressUpdate outIndex, totalRows, "네이버 업체 검색 중: " & CStr(rowIndex) & "행"
+
+        If Len(companyName) > 0 Then
+            queryText = NaverBusinessSearch_BuildQuery(companyName, keywordText)
+            outputData(outIndex, 1) = queryText
+            outputData(outIndex, 11) = Now
+            requestCount = requestCount + 1
+            Set localItems = Nothing
+            Set webItems = Nothing
+            Set localItem = Nothing
+            Set webItem = Nothing
+
+            On Error Resume Next
+            Set localItems = NaverLocal_Search(queryText, 5, "random")
+            If Err.Number <> 0 Then
+                errorCount = errorCount + 1
+                Toolkit_LogApiEvent ws.Parent, PURPOSE, "local", queryText, "ERROR", Err.Description
+                Err.Clear
+            ElseIf Not localItems Is Nothing Then
+                Set localItem = NaverBusinessSearch_FirstCollectionItem(localItems)
+                If Not localItem Is Nothing Then
+                    localFoundCount = localFoundCount + 1
+                    outputData(outIndex, 2) = CStr(localItem("title"))
+                    outputData(outIndex, 3) = CStr(localItem("link"))
+                    outputData(outIndex, 4) = CStr(localItem("telephone"))
+                    outputData(outIndex, 5) = CStr(localItem("address"))
+                    outputData(outIndex, 6) = CStr(localItem("roadAddress"))
+                End If
+            End If
+
+            Set webItems = NaverOfficialMall_SearchWeb(queryText, 10)
+            If Err.Number <> 0 Then
+                errorCount = errorCount + 1
+                Toolkit_LogApiEvent ws.Parent, PURPOSE, "webkr", queryText, "ERROR", Err.Description
+                Err.Clear
+            Else
+                Set webItem = NaverBusinessSearch_FirstWebsiteCandidate(webItems, companyName)
+                If Not webItem Is Nothing Then
+                    webFoundCount = webFoundCount + 1
+                    outputData(outIndex, 7) = CStr(webItem("link"))
+                    outputData(outIndex, 8) = CStr(webItem("title"))
+                    outputData(outIndex, 9) = CStr(webItem("description"))
+                    outputData(outIndex, 10) = NaverOfficialMall_Domain(CStr(webItem("link")))
+                End If
+            End If
+            On Error GoTo ErrHandler
+
+            NaverLocal_Delay defaultDelay
+        End If
+    Next rowIndex
+
+    ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol + UBound(headers))).Value = outputData
+    If hasHeader Then ws.Range(ws.Cells(nameRange.Row, outputCol), ws.Cells(nameRange.Row, outputCol + UBound(headers))).Font.Bold = True
+    ws.Columns(outputCol).Resize(, UBound(headers) - LBound(headers) + 1).AutoFit
+
+    Toolkit_ProgressClose
+    Application.ScreenUpdating = True
+
+    MsgBox "네이버 업체 검색을 완료했습니다." & vbCrLf & _
+           "조회: " & requestCount & "건" & vbCrLf & _
+           "지역검색 결과: " & localFoundCount & "건" & vbCrLf & _
+           "웹문서 후보: " & webFoundCount & "건" & vbCrLf & _
+           "조회 오류: " & errorCount & "건", vbInformation, PURPOSE
+    Exit Sub
+
+ErrHandler:
+    Toolkit_ProgressClose
+    Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage(PURPOSE) Then Exit Sub
+    MsgBox "네이버 업체 검색 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbCritical, PURPOSE
+End Sub
+
+Public Function NaverBusinessSearch_BuildQueryForTest(ByVal companyName As String, ByVal keywordText As String) As String
+    NaverBusinessSearch_BuildQueryForTest = NaverBusinessSearch_BuildQuery(companyName, keywordText)
+End Function
+
+Public Function NaverBusinessSearch_ResultHeaderTextForTest() As String
+    Dim headers As Variant
+    headers = NaverBusinessSearch_ResultHeaders()
+
+    Dim resultText As String
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        If Len(resultText) > 0 Then resultText = resultText & "|"
+        resultText = resultText & CStr(headers(i))
+    Next i
+    NaverBusinessSearch_ResultHeaderTextForTest = resultText
+End Function
+
+Private Function NaverBusinessSearch_BuildQuery(ByVal companyName As String, ByVal keywordText As String) As String
+    companyName = Trim$(CStr(companyName))
+    keywordText = Trim$(CStr(keywordText))
+    If Len(keywordText) = 0 Then
+        NaverBusinessSearch_BuildQuery = companyName
+    Else
+        NaverBusinessSearch_BuildQuery = Trim$(companyName & " " & keywordText)
+    End If
+End Function
+
+Private Function NaverBusinessSearch_DefaultKeyword() As String
+    NaverBusinessSearch_DefaultKeyword = ChrW(&HACF5) & ChrW(&HC2DD) & " " & ChrW(&HC0AC) & ChrW(&HC774) & ChrW(&HD2B8)
+End Function
+
+Private Function NaverBusinessSearch_OfficialHomepageKeyword() As String
+    NaverBusinessSearch_OfficialHomepageKeyword = ChrW(&HACF5) & ChrW(&HC2DD) & " " & ChrW(&HD648) & ChrW(&HD398) & ChrW(&HC774) & ChrW(&HC9C0)
+End Function
+
+Private Function NaverBusinessSearch_OfficialMallKeyword() As String
+    NaverBusinessSearch_OfficialMallKeyword = ChrW(&HACF5) & ChrW(&HC2DD) & ChrW(&HBAB0)
+End Function
+
+Private Function NaverBusinessSearch_ResultHeaders() As Variant
+    NaverBusinessSearch_ResultHeaders = Array("검색어", "지역검색 업체명", "지역검색 링크", "전화번호", "지번주소", "도로명주소", _
+                                              "웹문서 후보 URL", "웹문서 후보 제목", "웹문서 후보 요약", "웹문서 후보 도메인", "검색일시")
+End Function
+
+Private Sub NaverBusinessSearch_WriteHeaders(ws As Worksheet, ByVal rowIndex As Long, ByVal colIndex As Long)
+    Dim headers As Variant
+    headers = NaverBusinessSearch_ResultHeaders()
+
+    Dim i As Long
+    For i = LBound(headers) To UBound(headers)
+        ws.Cells(rowIndex, colIndex + i).Value = headers(i)
+    Next i
+End Sub
+
+Private Function NaverBusinessSearch_FirstCollectionItem(ByVal items As Collection) As Object
+    If items Is Nothing Then Exit Function
+    If items.Count = 0 Then Exit Function
+    Set NaverBusinessSearch_FirstCollectionItem = items.Item(1)
+End Function
+
+Private Function NaverBusinessSearch_FirstWebsiteCandidate(ByVal items As Collection, ByVal companyName As String) As Object
+    If items Is Nothing Then Exit Function
+    If items.Count = 0 Then Exit Function
+
+    Dim item As Object
+    For Each item In items
+        Dim classCode As String
+        classCode = NaverOfficialMall_ClassifyUrl(CStr(item("link")), CStr(item("title")), CStr(item("description")), companyName)
+        If Left$(classCode, 10) = "candidate:" Then
+            Set NaverBusinessSearch_FirstWebsiteCandidate = item
+            Exit Function
+        End If
+    Next item
+End Function
 
 Public Sub NaverOfficialMall_FindLinksForSelection()
     Const PURPOSE As String = "네이버 공식몰 링크 검색"
@@ -16131,7 +16372,8 @@ Public Sub Toolkit_LaunchAddressSearch()
         "7. 네이버 인증키 설정" & vbCrLf & _
         "8. 행정동 마스터 양식 생성" & vbCrLf & _
         "9. 법정동 마스터 양식 생성" & vbCrLf & _
-        "10. 네이버 공식몰 링크 검색", _
+        "10. 네이버 공식몰 링크 검색" & vbCrLf & _
+        "11. 네이버 업체 검색", _
         "1")
 
     Select Case choice
@@ -16145,8 +16387,9 @@ Public Sub Toolkit_LaunchAddressSearch()
         Case "8": NaverLocal_CreateDongMasterTemplate
         Case "9": NaverLocal_CreateLegalDongMasterTemplate
         Case "10": NaverOfficialMall_FindLinksForSelection
+        Case "11": NaverBusinessSearch_SearchSelection
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~10 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~11 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -16469,6 +16712,10 @@ End Sub
 
 Public Sub Ribbon_NaverOfficialMallFindLinks(control As IRibbonControl)
     NaverOfficialMall_FindLinksForSelection
+End Sub
+
+Public Sub Ribbon_NaverBusinessSearch(control As IRibbonControl)
+    NaverBusinessSearch_SearchSelection
 End Sub
 
 Public Sub Ribbon_NaverLocalCreateDongMasterTemplate(control As IRibbonControl)
