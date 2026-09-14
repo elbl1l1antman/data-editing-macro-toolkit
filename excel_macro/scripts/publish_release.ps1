@@ -1990,9 +1990,9 @@ function Add-CompanyNameOptionsUserForm {
     $form = $Workbook.VBProject.VBComponents.Add(3)
     $form.Name = "frmCompanyNameOptions"
     $designer = $form.Designer
-    $form.Properties.Item("Caption").Value = "기업체명/사업체명 정리 옵션"
+    $form.Properties.Item("Caption").Value = "기업/사업체명 정리 옵션"
     $form.Properties.Item("Width").Value = 580
-    $form.Properties.Item("Height").Value = 540
+    $form.Properties.Item("Height").Value = 560
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "적용할 정리 규칙을 선택하세요."
@@ -2031,24 +2031,38 @@ function Add-CompanyNameOptionsUserForm {
         $chk.Value = [bool]$item[4]
     }
 
+    $lblOrder = $designer.Controls.Add("Forms.Label.1", "lblOrder", $true)
+    $lblOrder.Caption = "정리 순서"
+    $lblOrder.Left = 12
+    $lblOrder.Top = 338
+    $lblOrder.Width = 90
+    $lblOrder.Height = 18
+
+    $cboOrderPreset = $designer.Controls.Add("Forms.ComboBox.1", "cboOrderPreset", $true)
+    $cboOrderPreset.Left = 100
+    $cboOrderPreset.Top = 334
+    $cboOrderPreset.Width = 430
+    $cboOrderPreset.Height = 22
+    $cboOrderPreset.Style = 2
+
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "기본값은 제공된 기업이름정리.xlsm의 체크 상태를 따릅니다. 결과는 원본 오른쪽 복사본 열에 생성됩니다."
+    $lblTip.Caption = "결과는 원본 오른쪽 복사본 열에 생성됩니다. 순서에 따라 괄호 안 문구 삭제와 특수문자 제거 결과가 달라질 수 있습니다."
     $lblTip.Left = 12
-    $lblTip.Top = 318
+    $lblTip.Top = 366
     $lblTip.Width = 540
     $lblTip.Height = 42
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 374
-    $cmdOk.Top = 448
+    $cmdOk.Top = 468
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 474
-    $cmdCancel.Top = 448
+    $cmdCancel.Top = 468
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -2059,6 +2073,10 @@ Public Cancelled As Boolean
 
 Private Sub UserForm_Initialize()
     Cancelled = True
+    cboOrderPreset.AddItem "기본 순서"
+    cboOrderPreset.AddItem "공백 제거 > 한글/영문 병기 제거 > (주) 삭제 > 특수문자 제거 > 괄호 안 삭제"
+    cboOrderPreset.AddItem "괄호 안 삭제 > 법인/지점 표기 삭제 > 영어 변환 > 특수문자 제거"
+    cboOrderPreset.ListIndex = 0
 End Sub
 
 Public Property Get TrimOuter() As Boolean
@@ -2127,6 +2145,17 @@ End Property
 
 Public Property Get RemoveBilingualDuplicates() As Boolean
     RemoveBilingualDuplicates = CBool(chkRemoveBilingualDuplicates.Value)
+End Property
+
+Public Property Get OperationOrder() As String
+    Select Case cboOrderPreset.ListIndex
+        Case 1
+            OperationOrder = "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText,cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+        Case 2
+            OperationOrder = "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates,pronounceEnglishWords,removeSpecialChars,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+        Case Else
+            OperationOrder = "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeBranchMarkers,removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+    End Select
 End Property
 
 Private Sub cmdOK_Click()
@@ -3141,7 +3170,7 @@ function Add-RibbonCustomUi {
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
         <group id="grpToolkitLaunchers" label="통합 실행">
-          <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업명 정리를 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업/사업체명 정리를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리/통합, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
@@ -3152,7 +3181,7 @@ function Add-RibbonCustomUi {
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
-          <button id="btnCompanyNameClean" label="기업명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업체명/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 괄호·특수문자, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙으로 기업체명/사업체명을 정리합니다." />
+          <button id="btnCompanyNameClean" label="기업/사업체명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 괄호·특수문자, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙과 정리 순서로 기업체명/사업체명을 정리합니다." />
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
           <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />

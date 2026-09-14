@@ -38,7 +38,11 @@ function Get-VbaBlock {
 
 $procedureNames = @(
     "CompanyName_DefaultOptions",
+    "CompanyName_DefaultOperationOrder",
+    "CompanyName_UserRequestedOperationOrder",
+    "CompanyName_PreserveParentheticalFirstOrder",
     "CompanyName_CleanOne",
+    "CompanyName_ApplyOperation",
     "CompanyName_RemoveSpaces",
     "CompanyName_HasCorpMarker",
     "CompanyName_RemoveCorpMarkers",
@@ -158,6 +162,23 @@ Public Function CompanyNameRulesPassed() As String
     resultText = CheckCase(resultText, "KRDict English loanword maps computer inside combined token", CompanyName_CleanOne("Computeracademy", options), KoComputer() & KoAcademy())
     resultText = CheckCase(resultText, "KRDict English loanword maps laptop inside combined token", CompanyName_CleanOne("Laptopservice", options), KoLaptop() & KoService())
     resultText = CheckCase(resultText, "KRDict English loanword maps keyboard inside combined token", CompanyName_CleanOne("Keyboardcenter", options), KoKeyboard() & KoCenter())
+    resultText = CheckCase(resultText, "space removal can run before English word conversion by selected priority", CompanyName_CleanOne("KT mobile", options), KoKT() & KoMobile())
+
+    Set options = CompanyName_DefaultOptions()
+    options("removeSpaces") = False
+    options("spellAlphabetKorean") = False
+    options("removeSpecialChars") = True
+    options("removeParentheticalText") = True
+    options("operationOrder") = CompanyName_UserRequestedOperationOrder()
+    resultText = CheckCase(resultText, "selected priority can remove special chars before parenthetical text", CompanyName_CleanOne("(" & KoBookPublisher() & ")" & KoYongYongDragon(), options), KoBookPublisher() & KoYongYongDragon())
+
+    Set options = CompanyName_DefaultOptions()
+    options("removeSpaces") = False
+    options("spellAlphabetKorean") = False
+    options("removeSpecialChars") = True
+    options("removeParentheticalText") = True
+    options("operationOrder") = CompanyName_PreserveParentheticalFirstOrder()
+    resultText = CheckCase(resultText, "selected priority can remove parenthetical text before special chars", CompanyName_CleanOne("(" & KoBookPublisher() & ")" & KoYongYongDragon(), options), KoYongYongDragon())
 
     Set options = CompanyName_DefaultOptions()
     options("pronounceEnglishWords") = False

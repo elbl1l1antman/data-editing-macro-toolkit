@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.41"
+Public Const TOOLKIT_VERSION As String = "1.1.42"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -932,7 +932,7 @@ End Sub
 
 Public Sub CompanyName_CleanWithOptions()
     Dim targetRange As Range
-    If Not Toolkit_GetRangeFromUserForm("기업체명/사업체명 정리", _
+    If Not Toolkit_GetRangeFromUserForm("기업/사업체명 정리", _
         "정리할 기업체명 또는 사업체명 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 선택한 규칙을 적용합니다.", _
         targetRange) Then Exit Sub
 
@@ -974,6 +974,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
     options("removeBilingualDuplicates") = CBool(form.RemoveBilingualDuplicates)
+    options("operationOrder") = CStr(form.OperationOrder)
 
     Unload form
     Set CompanyName_GetOptionsFromUser = options
@@ -1003,14 +1004,36 @@ Private Function CompanyName_DefaultOptions() As Object
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
     options("removeBilingualDuplicates") = True
+    options("operationOrder") = CompanyName_DefaultOperationOrder()
     Set CompanyName_DefaultOptions = options
+End Function
+
+Private Function CompanyName_DefaultOperationOrder() As String
+    CompanyName_DefaultOperationOrder = _
+        "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces," & _
+        "normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeBranchMarkers," & _
+        "removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+End Function
+
+Private Function CompanyName_UserRequestedOperationOrder() As String
+    CompanyName_UserRequestedOperationOrder = _
+        "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText," & _
+        "cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd," & _
+        "removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+End Function
+
+Private Function CompanyName_PreserveParentheticalFirstOrder() As String
+    CompanyName_PreserveParentheticalFirstOrder = _
+        "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates," & _
+        "pronounceEnglishWords,removeSpecialChars,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd," & _
+        "addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
 End Function
 
 Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal options As Object)
     Dim workRange As Range
     Set workRange = Toolkit_TrimRangeToActualData(target)
     If workRange Is Nothing Then
-        MsgBox "선택한 범위에서 처리할 기업체명/사업체명을 찾지 못했습니다.", vbInformation, "기업체명 정리"
+        MsgBox "선택한 범위에서 처리할 기업체명/사업체명을 찾지 못했습니다.", vbInformation, "기업/사업체명 정리"
         Exit Sub
     End If
 
@@ -1030,7 +1053,7 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
-    Toolkit_RowProgressStart "기업체명 정리", totalRows, "정리 준비 중"
+    Toolkit_RowProgressStart "기업/사업체명 정리", totalRows, "정리 준비 중"
     Dim relRow As Long, relCol As Long
     For relRow = 1 To outputRange.Rows.Count
         For relCol = 1 To outputRange.Columns.Count
@@ -1052,7 +1075,7 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
                 End If
             End If
         Next relCol
-        Toolkit_RowProgressUpdate relRow, totalRows, "기업체명 정리 중: " & CStr(relRow) & "/" & CStr(totalRows) & "행"
+        Toolkit_RowProgressUpdate relRow, totalRows, "기업/사업체명 정리 중: " & CStr(relRow) & "/" & CStr(totalRows) & "행"
     Next relRow
 
     outputRange.Columns.AutoFit
@@ -1061,49 +1084,87 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     MsgBox changedCount & "개 기업체명/사업체명을 정리했습니다." & vbCrLf & _
            blankPreventedCount & "개 비공란 원본은 공란화를 방지해 원본값을 유지했습니다." & vbCrLf & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
-           "원본 범위는 변경하지 않았습니다.", vbInformation, "기업체명 정리"
+           "원본 범위는 변경하지 않았습니다.", vbInformation, "기업/사업체명 정리"
     Exit Sub
 
 ErrHandler:
     Toolkit_RowProgressClose totalRows
     Application.ScreenUpdating = True
-    If Toolkit_ShowCancelMessage("기업체명 정리") Then Exit Sub
-    MsgBox "기업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업체명 정리"
+    If Toolkit_ShowCancelMessage("기업/사업체명 정리") Then Exit Sub
+    MsgBox "기업/사업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업/사업체명 정리"
 End Sub
 
 Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As Object) As String
     Dim textValue As String
     textValue = CStr(valueIn)
 
-    If CBool(options("cutBeforePossessive")) Then
-        Dim cutPos As Long
-        cutPos = InStr(1, textValue, "의 ", vbTextCompare)
-        If cutPos > 0 Then textValue = Left$(textValue, cutPos - 1)
+    Dim orderText As String
+    If options.Exists("operationOrder") Then
+        orderText = CStr(options("operationOrder"))
     End If
+    If Len(Trim$(orderText)) = 0 Then orderText = CompanyName_DefaultOperationOrder()
 
-    If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
-    If CBool(options("removeParentheticalText")) Then textValue = CompanyName_RemoveParentheticalText(textValue)
-    If CBool(options("removeBilingualDuplicates")) Then textValue = CompanyName_RemoveBilingualDuplicates(textValue)
-    If CBool(options("removeSpecialChars")) And Not CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_ReplaceBusinessSymbols(textValue)
-    If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
-    If CBool(options("removeSpaces")) And Not CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_RemoveSpaces(textValue)
-    If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
-    If CBool(options("normalizeCorpText")) Then textValue = Replace(textValue, "주식회사", "(주)")
-    If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
-    If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
-    If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
-    If CBool(options("removeBranchMarkers")) Then textValue = CompanyName_RemoveBranchMarkers(textValue)
-    If CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_RemoveLegalEntityMarkers(textValue)
-    If CBool(options("removeSpecialChars")) Then textValue = CompanyName_RemoveSpecialChars(textValue)
-    If CBool(options("addCorpPrefix")) Then
-        If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
-    End If
-    If CBool(options("addCorpSuffix")) Then
-        If Not CompanyName_HasCorpMarker(textValue) Then textValue = textValue & "(주)"
-    End If
-    If CBool(options("spellAlphabetKorean")) Then textValue = CompanyName_SpellAlphabetKorean(textValue)
+    Dim steps As Variant
+    steps = Split(orderText, ",")
+
+    Dim i As Long
+    For i = LBound(steps) To UBound(steps)
+        textValue = CompanyName_ApplyOperation(textValue, Trim$(CStr(steps(i))), options)
+    Next i
 
     CompanyName_CleanOne = textValue
+End Function
+
+Private Function CompanyName_ApplyOperation(ByVal textValue As String, ByVal operationName As String, ByVal options As Object) As String
+    Select Case operationName
+        Case "cutBeforePossessive"
+            If CBool(options("cutBeforePossessive")) Then
+                Dim cutPos As Long
+                cutPos = InStr(1, textValue, "의 ", vbTextCompare)
+                If cutPos > 0 Then textValue = Left$(textValue, cutPos - 1)
+            End If
+        Case "trimOuter"
+            If CBool(options("trimOuter")) Then textValue = Trim$(textValue)
+        Case "removeParentheticalText"
+            If CBool(options("removeParentheticalText")) Then textValue = CompanyName_RemoveParentheticalText(textValue)
+        Case "removeBilingualDuplicates"
+            If CBool(options("removeBilingualDuplicates")) Then textValue = CompanyName_RemoveBilingualDuplicates(textValue)
+        Case "pronounceEnglishWords"
+            If CBool(options("pronounceEnglishWords")) Then textValue = CompanyName_PronounceEnglishWords(textValue)
+        Case "removeSpaces"
+            If CBool(options("removeSpaces")) Then textValue = CompanyName_RemoveSpaces(textValue)
+        Case "normalizeCorpSymbol"
+            If CBool(options("normalizeCorpSymbol")) Then textValue = CompanyName_NormalizeCorpSymbol(textValue)
+        Case "normalizeCorpText"
+            If CBool(options("normalizeCorpText")) Then textValue = Replace(textValue, "주식회사", "(주)")
+        Case "moveCorpToFront"
+            If CBool(options("moveCorpToFront")) Then textValue = CompanyName_MoveCorpMarker(textValue, True)
+        Case "moveCorpToEnd"
+            If CBool(options("moveCorpToEnd")) Then textValue = CompanyName_MoveCorpMarker(textValue, False)
+        Case "removeCorpMarkers"
+            If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
+        Case "removeBranchMarkers"
+            If CBool(options("removeBranchMarkers")) Then textValue = CompanyName_RemoveBranchMarkers(textValue)
+        Case "removeLegalEntityMarkers"
+            If CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_RemoveLegalEntityMarkers(textValue)
+        Case "removeSpecialChars"
+            If CBool(options("removeSpecialChars")) Then
+                If Not CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_ReplaceBusinessSymbols(textValue)
+                textValue = CompanyName_RemoveSpecialChars(textValue)
+            End If
+        Case "addCorpPrefix"
+            If CBool(options("addCorpPrefix")) Then
+                If Not CompanyName_HasCorpMarker(textValue) Then textValue = "(주)" & textValue
+            End If
+        Case "addCorpSuffix"
+            If CBool(options("addCorpSuffix")) Then
+                If Not CompanyName_HasCorpMarker(textValue) Then textValue = textValue & "(주)"
+            End If
+        Case "spellAlphabetKorean"
+            If CBool(options("spellAlphabetKorean")) Then textValue = CompanyName_SpellAlphabetKorean(textValue)
+    End Select
+
+    CompanyName_ApplyOperation = textValue
 End Function
 
 Private Function CompanyName_RemoveSpaces(ByVal textValue As String) As String
@@ -16342,7 +16403,7 @@ Public Sub Toolkit_LaunchDataCleanup()
         "4. 전화번호 숫자만 남기기" & vbCrLf & _
         "5. 사업자등록번호 숫자만 남기기" & vbCrLf & _
         "6. 사업자등록번호 3열 병합" & vbCrLf & _
-        "7. 기업체명/사업체명 정리", _
+        "7. 기업/사업체명 정리", _
         "1")
 
     Select Case choice
