@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.42"
+Public Const TOOLKIT_VERSION As String = "1.1.45"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -142,6 +142,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A51").Value = "Roster_CreateValidationWorkspace"
     ws.Range("A52").Value = "NaverOfficialMall_FindLinksForSelection"
     ws.Range("A53").Value = "NaverBusinessSearch_SearchSelection"
+    ws.Range("A54").Value = "DataCheck_CreateCharacterCheckFormula"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -1094,6 +1095,79 @@ ErrHandler:
     MsgBox "기업/사업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업/사업체명 정리"
 End Sub
 
+' ============================================================
+' 프로시저 : DataCheck_CreateCharacterCheckFormula
+' 설  명  : 선택한 데이터 범위 오른쪽에 문자 구성 검진 수식을 생성한다.
+'           Excel 365의 SEQUENCE를 우선 사용하고, 구버전에서는 Formula로 재시도한다.
+' ============================================================
+Public Sub DataCheck_CreateCharacterCheckFormula()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("문자 검진 함수 생성", _
+        "검진할 데이터 셀 범위를 선택하세요. 헤더가 있으면 제외하고 실제 데이터만 선택합니다." & vbCrLf & _
+        "선택 범위 오른쪽에 알파벳/특수기호/정상 판정 수식 열이 생성됩니다.", _
+        targetRange) Then Exit Sub
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(targetRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 검진할 데이터를 찾지 못했습니다.", vbInformation, "문자 검진 함수 생성"
+        Exit Sub
+    End If
+
+    Dim outputRange As Range
+    Set outputRange = CopyRangeToAdjacentColumns(workRange, "문자검진")
+    If outputRange Is Nothing Then Exit Sub
+
+    Dim alphaChars As String
+    alphaChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+    Dim specialChars As String
+    specialChars = "!@#$%^&*()_+-=[]{}|\" & Chr$(34) & "<>,.?/~" & Chr$(96)
+
+    Dim sourceCell As Range
+    Dim outputCell As Range
+    Dim formulaText As String
+    Dim q As String
+    q = Chr$(34)
+
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "문자 검진 함수 생성", workRange.Rows.Count, "수식 생성 준비 중"
+
+    Dim relRow As Long
+    Dim relCol As Long
+    For relRow = 1 To workRange.Rows.Count
+        For relCol = 1 To workRange.Columns.Count
+            Set sourceCell = workRange.Cells(relRow, relCol)
+            Set outputCell = outputRange.Cells(relRow, relCol)
+            formulaText = "=IF(" & sourceCell.Address(False, False) & "=" & q & q & "," & q & q & _
+                ",IF(SUMPRODUCT(--ISNUMBER(FIND(MID(" & sourceCell.Address(False, False) & ",SEQUENCE(LEN(" & sourceCell.Address(False, False) & ")),1)," & q & alphaChars & q & ")))>0," & _
+                q & "알파벳 포함" & q & ",IF(SUMPRODUCT(--ISNUMBER(FIND(MID(" & sourceCell.Address(False, False) & ",SEQUENCE(LEN(" & sourceCell.Address(False, False) & ")),1)," & q & specialChars & q & ")))>0," & _
+                q & "특수기호 포함" & q & "," & q & "정상" & q & ")))"
+            On Error Resume Next
+            outputCell.Formula2 = formulaText
+            If Err.Number <> 0 Then
+                Err.Clear
+                outputCell.Formula = formulaText
+            End If
+            On Error GoTo ErrHandler
+        Next relCol
+        Toolkit_RowProgressUpdate relRow, workRange.Rows.Count, "문자 검진 수식 생성 중: " & CStr(relRow) & "/" & CStr(workRange.Rows.Count) & "행"
+    Next relRow
+
+    outputRange.Columns.AutoFit
+    Toolkit_RowProgressClose workRange.Rows.Count
+    Application.ScreenUpdating = True
+    MsgBox "문자 검진 수식을 " & CStr(outputRange.Cells.Count) & "개 생성했습니다." & vbCrLf & _
+           "결과 열에서 알파벳 포함, 특수기호 포함, 정상 여부를 확인하세요.", vbInformation, "문자 검진 함수 생성"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose workRange.Rows.Count
+    Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("문자 검진 함수 생성") Then Exit Sub
+    MsgBox "문자 검진 수식 생성 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "문자 검진 함수 생성"
+End Sub
+
 Private Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As Object) As String
     Dim textValue As String
     textValue = CStr(valueIn)
@@ -1414,6 +1488,8 @@ Private Function CompanyName_ReplaceBusinessSymbols(ByVal textValue As String) A
 
     result = Replace(result, "&", "앤")
     result = Replace(result, "＆", "앤")
+    result = Replace(result, "+", "플러스")
+    result = Replace(result, "＋", "플러스")
 
     Dim re As Object
     Set re = CreateObject("VBScript.RegExp")
@@ -11316,7 +11392,6 @@ End Function
 ' ============================================================
 ' 표본설계/표본할당 도구
 ' ============================================================
-Private Const SD_BAND_SETTINGS_SHEET As String = "_SampleDesignBandSettings"
 
 Public Sub SampleDesign_CreateTemplate()
     Dim wb As Workbook
@@ -11640,13 +11715,11 @@ Public Sub SampleDesign_CreateBandColumn()
 
     ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol)).Formula = formulaData
     ws.Columns(outputCol).AutoFit
-    SampleDesign_SaveBandSettings wb, outputHeader, specText
     Application.ScreenUpdating = True
 
     MsgBox "구간 열을 생성했습니다." & vbCrLf & _
            "수식 입력: " & rowCount & "행" & vbCrLf & _
-           "결과 열에는 IFS 수식이 입력되어 기준을 직접 확인하고 수정할 수 있습니다." & vbCrLf & _
-           "설정은 숨김 시트에 임시 저장되었습니다.", _
+           "결과 열에는 IFS 수식이 입력되어 기준을 직접 확인하고 수정할 수 있습니다.", _
            vbInformation, "표본설계 구간 만들기"
     Exit Sub
 
@@ -12924,7 +12997,7 @@ Private Function SampleDesign_ShowBandBuilder(ByVal wb As Workbook, ByRef output
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmSampleDesignBandBuilder")
-    form.Configure SampleDesign_LoadBandSpecText(wb), SampleDesign_LoadBandHeader(wb, outputHeader)
+    form.Configure SampleDesign_DefaultEmployeeBandSpec(), outputHeader
     form.Show
     If CBool(form.Cancelled) Then
         Unload form
@@ -12948,6 +13021,22 @@ Private Function SampleDesign_ShowBandBuilderFallback(ByRef outputHeader As Stri
     If VarType(headerInput) = vbBoolean And headerInput = False Then Exit Function
     outputHeader = Trim$(CStr(headerInput))
     If Len(outputHeader) = 0 Then outputHeader = "구간"
+
+    Dim presetInput As Variant
+    presetInput = Application.InputBox("기본 예시를 선택하세요." & vbCrLf & _
+        "1 = 종사자 구간" & vbCrLf & _
+        "2 = 매출액 구간" & vbCrLf & _
+        "3 = 직접 입력", "표본설계 구간 만들기", 1, Type:=1)
+    If VarType(presetInput) = vbBoolean And presetInput = False Then Exit Function
+    If CLng(presetInput) = 1 Then
+        specText = SampleDesign_DefaultEmployeeBandSpec()
+        SampleDesign_ShowBandBuilderFallback = True
+        Exit Function
+    ElseIf CLng(presetInput) = 2 Then
+        specText = SampleDesign_DefaultRevenueBandSpec()
+        SampleDesign_ShowBandBuilderFallback = True
+        Exit Function
+    End If
 
     Dim countInput As Variant
     countInput = Application.InputBox("구간 개수를 입력하세요. 최대 15개까지 가능합니다.", "표본설계 구간 만들기", 5, Type:=1)
@@ -13090,7 +13179,7 @@ Private Function SampleDesign_BandFormulaForAddress(ByVal sourceAddress As Strin
     valueExpr = SampleDesign_BandValueFormula(sourceAddress)
 
     Dim formulaText As String
-    formulaText = "=IF(" & sourceAddress & "=" & q & q & "," & q & q & ",IFERROR(IFS("
+    formulaText = "=IF(" & sourceAddress & "=" & q & q & "," & SampleDesign_FormulaStringLiteral("자료 없음") & ",IFERROR(IFS("
 
     Dim i As Long
     For i = 1 To bands.Count
@@ -13220,76 +13309,26 @@ Private Function SampleDesign_FormatBandNumber(ByVal valueData As Double) As Str
     End If
 End Function
 
-Private Function SampleDesign_LoadBandHeader(ByVal wb As Workbook, ByVal defaultHeader As String) As String
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If Not ws Is Nothing Then
-        SampleDesign_LoadBandHeader = Trim$(CStr(ws.Range("B2").Value))
-    End If
-    If Len(SampleDesign_LoadBandHeader) = 0 Then SampleDesign_LoadBandHeader = defaultHeader
+Private Function SampleDesign_DefaultEmployeeBandSpec() As String
+    SampleDesign_DefaultEmployeeBandSpec = _
+        "1" & vbTab & "" & vbTab & "이상" & vbTab & "5" & vbTab & "미만" & vbTab & "01. 5인 미만" & vbLf & _
+        "2" & vbTab & "5" & vbTab & "이상" & vbTab & "10" & vbTab & "미만" & vbTab & "02. 5-9명" & vbLf & _
+        "3" & vbTab & "10" & vbTab & "이상" & vbTab & "20" & vbTab & "미만" & vbTab & "03. 10-19명" & vbLf & _
+        "4" & vbTab & "20" & vbTab & "이상" & vbTab & "50" & vbTab & "미만" & vbTab & "04. 20-49명" & vbLf & _
+        "5" & vbTab & "50" & vbTab & "이상" & vbTab & "100" & vbTab & "미만" & vbTab & "05. 50-99명" & vbLf & _
+        "6" & vbTab & "100" & vbTab & "이상" & vbTab & "300" & vbTab & "미만" & vbTab & "06. 100-299명" & vbLf & _
+        "7" & vbTab & "300" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "07. 300명 이상"
 End Function
 
-Private Function SampleDesign_LoadBandSpecText(ByVal wb As Workbook) As String
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If ws Is Nothing Then Exit Function
-
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    Dim r As Long
-    For r = 5 To lastRow
-        If Len(Trim$(CStr(ws.Cells(r, 1).Value))) > 0 Then
-            If Len(SampleDesign_LoadBandSpecText) > 0 Then SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & vbLf
-            SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & _
-                CStr(ws.Cells(r, 1).Value) & vbTab & _
-                CStr(ws.Cells(r, 2).Value) & vbTab & _
-                CStr(ws.Cells(r, 3).Value) & vbTab & _
-                CStr(ws.Cells(r, 4).Value) & vbTab & _
-                CStr(ws.Cells(r, 5).Value) & vbTab & _
-                CStr(ws.Cells(r, 6).Value)
-        End If
-    Next r
+Private Function SampleDesign_DefaultRevenueBandSpec() As String
+    SampleDesign_DefaultRevenueBandSpec = _
+        "1" & vbTab & "" & vbTab & "이상" & vbTab & "100000000" & vbTab & "미만" & vbTab & "01. 1억 미만" & vbLf & _
+        "2" & vbTab & "100000000" & vbTab & "이상" & vbTab & "500000000" & vbTab & "미만" & vbTab & "02. 1억-5억 미만" & vbLf & _
+        "3" & vbTab & "500000000" & vbTab & "이상" & vbTab & "1000000000" & vbTab & "미만" & vbTab & "03. 5억-10억 미만" & vbLf & _
+        "4" & vbTab & "1000000000" & vbTab & "이상" & vbTab & "5000000000" & vbTab & "미만" & vbTab & "04. 10억-50억 미만" & vbLf & _
+        "5" & vbTab & "5000000000" & vbTab & "이상" & vbTab & "10000000000" & vbTab & "미만" & vbTab & "05. 50억-100억 미만" & vbLf & _
+        "6" & vbTab & "10000000000" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "06. 100억 이상"
 End Function
-
-Private Sub SampleDesign_SaveBandSettings(ByVal wb As Workbook, ByVal outputHeader As String, ByVal specText As String)
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If ws Is Nothing Then
-        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        ws.Name = SD_BAND_SETTINGS_SHEET
-    Else
-        ws.Visible = xlSheetVisible
-        ws.Cells.Clear
-    End If
-
-    ws.Range("A1").Value = "표본설계 구간 설정"
-    ws.Range("A2").Value = "결과 헤더"
-    ws.Range("B2").Value = outputHeader
-    SampleDesign_WriteArray ws, 4, 1, Array("순서", "구간 시작값", "시작 조건", "구간 종료값", "종료 조건", "구간명")
-
-    Dim lines As Variant
-    lines = Split(Replace(CStr(specText), vbCrLf, vbLf), vbLf)
-    Dim i As Long
-    Dim outRow As Long
-    outRow = 5
-    For i = LBound(lines) To UBound(lines)
-        If Len(Trim$(CStr(lines(i)))) > 0 Then
-            Dim parts As Variant
-            parts = Split(CStr(lines(i)), vbTab)
-            Dim c As Long
-            Dim maxPart As Long
-            maxPart = UBound(parts)
-            If maxPart > 5 Then maxPart = 5
-            For c = 0 To maxPart
-                ws.Cells(outRow, c + 1).Value = parts(c)
-            Next c
-            outRow = outRow + 1
-        End If
-    Next i
-
-    ws.Columns("A:F").AutoFit
-    ws.Visible = xlSheetVeryHidden
-End Sub
 
 Private Function SampleDesign_DefaultQuotaHeaders() As Variant
     SampleDesign_DefaultQuotaHeaders = Array("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")
@@ -16403,7 +16442,8 @@ Public Sub Toolkit_LaunchDataCleanup()
         "4. 전화번호 숫자만 남기기" & vbCrLf & _
         "5. 사업자등록번호 숫자만 남기기" & vbCrLf & _
         "6. 사업자등록번호 3열 병합" & vbCrLf & _
-        "7. 기업/사업체명 정리", _
+        "7. 기업/사업체명 정리" & vbCrLf & _
+        "8. 문자 검진 함수 생성", _
         "1")
 
     Select Case choice
@@ -16414,8 +16454,9 @@ Public Sub Toolkit_LaunchDataCleanup()
         Case "5": RemoveBizNoDashesToCopiedColumns
         Case "6": BizNo_MergeThreeColumns
         Case "7": CompanyName_CleanWithOptions
+        Case "8": DataCheck_CreateCharacterCheckFormula
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~7 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~8 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -16729,6 +16770,10 @@ End Sub
 
 Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)
     CompanyName_CleanWithOptions
+End Sub
+
+Public Sub Ribbon_DataCheckCreateCharacterFormula(control As IRibbonControl)
+    DataCheck_CreateCharacterCheckFormula
 End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)

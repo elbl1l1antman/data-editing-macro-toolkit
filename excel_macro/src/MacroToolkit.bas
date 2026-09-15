@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.44"
+Public Const TOOLKIT_VERSION As String = "1.1.45"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -11392,7 +11392,6 @@ End Function
 ' ============================================================
 ' 표본설계/표본할당 도구
 ' ============================================================
-Private Const SD_BAND_SETTINGS_SHEET As String = "_SampleDesignBandSettings"
 
 Public Sub SampleDesign_CreateTemplate()
     Dim wb As Workbook
@@ -11716,13 +11715,11 @@ Public Sub SampleDesign_CreateBandColumn()
 
     ws.Range(ws.Cells(firstDataRow, outputCol), ws.Cells(lastRow, outputCol)).Formula = formulaData
     ws.Columns(outputCol).AutoFit
-    SampleDesign_SaveBandSettings wb, outputHeader, specText
     Application.ScreenUpdating = True
 
     MsgBox "구간 열을 생성했습니다." & vbCrLf & _
            "수식 입력: " & rowCount & "행" & vbCrLf & _
-           "결과 열에는 IFS 수식이 입력되어 기준을 직접 확인하고 수정할 수 있습니다." & vbCrLf & _
-           "설정은 숨김 시트에 임시 저장되었습니다.", _
+           "결과 열에는 IFS 수식이 입력되어 기준을 직접 확인하고 수정할 수 있습니다.", _
            vbInformation, "표본설계 구간 만들기"
     Exit Sub
 
@@ -13000,7 +12997,7 @@ Private Function SampleDesign_ShowBandBuilder(ByVal wb As Workbook, ByRef output
 
     Dim form As Object
     Set form = VBA.UserForms.Add("frmSampleDesignBandBuilder")
-    form.Configure SampleDesign_LoadBandSpecText(wb), SampleDesign_LoadBandHeader(wb, outputHeader)
+    form.Configure SampleDesign_DefaultEmployeeBandSpec(), outputHeader
     form.Show
     If CBool(form.Cancelled) Then
         Unload form
@@ -13024,6 +13021,22 @@ Private Function SampleDesign_ShowBandBuilderFallback(ByRef outputHeader As Stri
     If VarType(headerInput) = vbBoolean And headerInput = False Then Exit Function
     outputHeader = Trim$(CStr(headerInput))
     If Len(outputHeader) = 0 Then outputHeader = "구간"
+
+    Dim presetInput As Variant
+    presetInput = Application.InputBox("기본 예시를 선택하세요." & vbCrLf & _
+        "1 = 종사자 구간" & vbCrLf & _
+        "2 = 매출액 구간" & vbCrLf & _
+        "3 = 직접 입력", "표본설계 구간 만들기", 1, Type:=1)
+    If VarType(presetInput) = vbBoolean And presetInput = False Then Exit Function
+    If CLng(presetInput) = 1 Then
+        specText = SampleDesign_DefaultEmployeeBandSpec()
+        SampleDesign_ShowBandBuilderFallback = True
+        Exit Function
+    ElseIf CLng(presetInput) = 2 Then
+        specText = SampleDesign_DefaultRevenueBandSpec()
+        SampleDesign_ShowBandBuilderFallback = True
+        Exit Function
+    End If
 
     Dim countInput As Variant
     countInput = Application.InputBox("구간 개수를 입력하세요. 최대 15개까지 가능합니다.", "표본설계 구간 만들기", 5, Type:=1)
@@ -13166,7 +13179,7 @@ Private Function SampleDesign_BandFormulaForAddress(ByVal sourceAddress As Strin
     valueExpr = SampleDesign_BandValueFormula(sourceAddress)
 
     Dim formulaText As String
-    formulaText = "=IF(" & sourceAddress & "=" & q & q & "," & q & q & ",IFERROR(IFS("
+    formulaText = "=IF(" & sourceAddress & "=" & q & q & "," & SampleDesign_FormulaStringLiteral("자료 없음") & ",IFERROR(IFS("
 
     Dim i As Long
     For i = 1 To bands.Count
@@ -13296,76 +13309,26 @@ Private Function SampleDesign_FormatBandNumber(ByVal valueData As Double) As Str
     End If
 End Function
 
-Private Function SampleDesign_LoadBandHeader(ByVal wb As Workbook, ByVal defaultHeader As String) As String
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If Not ws Is Nothing Then
-        SampleDesign_LoadBandHeader = Trim$(CStr(ws.Range("B2").Value))
-    End If
-    If Len(SampleDesign_LoadBandHeader) = 0 Then SampleDesign_LoadBandHeader = defaultHeader
+Private Function SampleDesign_DefaultEmployeeBandSpec() As String
+    SampleDesign_DefaultEmployeeBandSpec = _
+        "1" & vbTab & "" & vbTab & "이상" & vbTab & "5" & vbTab & "미만" & vbTab & "01. 5인 미만" & vbLf & _
+        "2" & vbTab & "5" & vbTab & "이상" & vbTab & "10" & vbTab & "미만" & vbTab & "02. 5-9명" & vbLf & _
+        "3" & vbTab & "10" & vbTab & "이상" & vbTab & "20" & vbTab & "미만" & vbTab & "03. 10-19명" & vbLf & _
+        "4" & vbTab & "20" & vbTab & "이상" & vbTab & "50" & vbTab & "미만" & vbTab & "04. 20-49명" & vbLf & _
+        "5" & vbTab & "50" & vbTab & "이상" & vbTab & "100" & vbTab & "미만" & vbTab & "05. 50-99명" & vbLf & _
+        "6" & vbTab & "100" & vbTab & "이상" & vbTab & "300" & vbTab & "미만" & vbTab & "06. 100-299명" & vbLf & _
+        "7" & vbTab & "300" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "07. 300명 이상"
 End Function
 
-Private Function SampleDesign_LoadBandSpecText(ByVal wb As Workbook) As String
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If ws Is Nothing Then Exit Function
-
-    Dim lastRow As Long
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    Dim r As Long
-    For r = 5 To lastRow
-        If Len(Trim$(CStr(ws.Cells(r, 1).Value))) > 0 Then
-            If Len(SampleDesign_LoadBandSpecText) > 0 Then SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & vbLf
-            SampleDesign_LoadBandSpecText = SampleDesign_LoadBandSpecText & _
-                CStr(ws.Cells(r, 1).Value) & vbTab & _
-                CStr(ws.Cells(r, 2).Value) & vbTab & _
-                CStr(ws.Cells(r, 3).Value) & vbTab & _
-                CStr(ws.Cells(r, 4).Value) & vbTab & _
-                CStr(ws.Cells(r, 5).Value) & vbTab & _
-                CStr(ws.Cells(r, 6).Value)
-        End If
-    Next r
+Private Function SampleDesign_DefaultRevenueBandSpec() As String
+    SampleDesign_DefaultRevenueBandSpec = _
+        "1" & vbTab & "" & vbTab & "이상" & vbTab & "100000000" & vbTab & "미만" & vbTab & "01. 1억 미만" & vbLf & _
+        "2" & vbTab & "100000000" & vbTab & "이상" & vbTab & "500000000" & vbTab & "미만" & vbTab & "02. 1억-5억 미만" & vbLf & _
+        "3" & vbTab & "500000000" & vbTab & "이상" & vbTab & "1000000000" & vbTab & "미만" & vbTab & "03. 5억-10억 미만" & vbLf & _
+        "4" & vbTab & "1000000000" & vbTab & "이상" & vbTab & "5000000000" & vbTab & "미만" & vbTab & "04. 10억-50억 미만" & vbLf & _
+        "5" & vbTab & "5000000000" & vbTab & "이상" & vbTab & "10000000000" & vbTab & "미만" & vbTab & "05. 50억-100억 미만" & vbLf & _
+        "6" & vbTab & "10000000000" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "06. 100억 이상"
 End Function
-
-Private Sub SampleDesign_SaveBandSettings(ByVal wb As Workbook, ByVal outputHeader As String, ByVal specText As String)
-    Dim ws As Worksheet
-    Set ws = SampleDesign_FindSheet(wb, SD_BAND_SETTINGS_SHEET)
-    If ws Is Nothing Then
-        Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
-        ws.Name = SD_BAND_SETTINGS_SHEET
-    Else
-        ws.Visible = xlSheetVisible
-        ws.Cells.Clear
-    End If
-
-    ws.Range("A1").Value = "표본설계 구간 설정"
-    ws.Range("A2").Value = "결과 헤더"
-    ws.Range("B2").Value = outputHeader
-    SampleDesign_WriteArray ws, 4, 1, Array("순서", "구간 시작값", "시작 조건", "구간 종료값", "종료 조건", "구간명")
-
-    Dim lines As Variant
-    lines = Split(Replace(CStr(specText), vbCrLf, vbLf), vbLf)
-    Dim i As Long
-    Dim outRow As Long
-    outRow = 5
-    For i = LBound(lines) To UBound(lines)
-        If Len(Trim$(CStr(lines(i)))) > 0 Then
-            Dim parts As Variant
-            parts = Split(CStr(lines(i)), vbTab)
-            Dim c As Long
-            Dim maxPart As Long
-            maxPart = UBound(parts)
-            If maxPart > 5 Then maxPart = 5
-            For c = 0 To maxPart
-                ws.Cells(outRow, c + 1).Value = parts(c)
-            Next c
-            outRow = outRow + 1
-        End If
-    Next i
-
-    ws.Columns("A:F").AutoFit
-    ws.Visible = xlSheetVeryHidden
-End Sub
 
 Private Function SampleDesign_DefaultQuotaHeaders() As Variant
     SampleDesign_DefaultQuotaHeaders = Array("산업", "대분류", "지역", "조사지역", "대조지역", "존", "성별", "연령")

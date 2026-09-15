@@ -659,6 +659,20 @@ function Add-SampleDesignBandBuilderUserForm {
     $txtBandCount.Width = 50
     $txtBandCount.Height = 22
 
+    $cmdEmployeePreset = $designer.Controls.Add("Forms.CommandButton.1", "cmdEmployeePreset", $true)
+    $cmdEmployeePreset.Caption = "종사자 예시"
+    $cmdEmployeePreset.Left = 470
+    $cmdEmployeePreset.Top = 46
+    $cmdEmployeePreset.Width = 90
+    $cmdEmployeePreset.Height = 24
+
+    $cmdRevenuePreset = $designer.Controls.Add("Forms.CommandButton.1", "cmdRevenuePreset", $true)
+    $cmdRevenuePreset.Caption = "매출액 예시"
+    $cmdRevenuePreset.Left = 570
+    $cmdRevenuePreset.Top = 46
+    $cmdRevenuePreset.Width = 90
+    $cmdRevenuePreset.Height = 24
+
     $lblHint = $designer.Controls.Add("Forms.Label.1", "lblHint", $true)
     $lblHint.Caption = "마지막 구간의 시작 조건은 기본적으로 1구간의 시작 조건과 동일하게 설정됩니다."
     $lblHint.Left = 18
@@ -820,6 +834,31 @@ Private Sub LoadSpec(ByVal specText As String)
     Next i
     If visibleCount = 0 Then visibleCount = 5
     txtBandCount.Text = CStr(visibleCount)
+End Sub
+
+Private Sub ApplyPreset(ByVal specText As String)
+    ClearRows
+    LoadSpec specText
+    ApplyBandCount
+End Sub
+
+Private Sub cmdEmployeePreset_Click()
+    ApplyPreset "1" & vbTab & "" & vbTab & "이상" & vbTab & "5" & vbTab & "미만" & vbTab & "01. 5인 미만" & vbLf & _
+        "2" & vbTab & "5" & vbTab & "이상" & vbTab & "10" & vbTab & "미만" & vbTab & "02. 5-9명" & vbLf & _
+        "3" & vbTab & "10" & vbTab & "이상" & vbTab & "20" & vbTab & "미만" & vbTab & "03. 10-19명" & vbLf & _
+        "4" & vbTab & "20" & vbTab & "이상" & vbTab & "50" & vbTab & "미만" & vbTab & "04. 20-49명" & vbLf & _
+        "5" & vbTab & "50" & vbTab & "이상" & vbTab & "100" & vbTab & "미만" & vbTab & "05. 50-99명" & vbLf & _
+        "6" & vbTab & "100" & vbTab & "이상" & vbTab & "300" & vbTab & "미만" & vbTab & "06. 100-299명" & vbLf & _
+        "7" & vbTab & "300" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "07. 300명 이상"
+End Sub
+
+Private Sub cmdRevenuePreset_Click()
+    ApplyPreset "1" & vbTab & "" & vbTab & "이상" & vbTab & "100000000" & vbTab & "미만" & vbTab & "01. 1억 미만" & vbLf & _
+        "2" & vbTab & "100000000" & vbTab & "이상" & vbTab & "500000000" & vbTab & "미만" & vbTab & "02. 1억-5억 미만" & vbLf & _
+        "3" & vbTab & "500000000" & vbTab & "이상" & vbTab & "1000000000" & vbTab & "미만" & vbTab & "03. 5억-10억 미만" & vbLf & _
+        "4" & vbTab & "1000000000" & vbTab & "이상" & vbTab & "5000000000" & vbTab & "미만" & vbTab & "04. 10억-50억 미만" & vbLf & _
+        "5" & vbTab & "5000000000" & vbTab & "이상" & vbTab & "10000000000" & vbTab & "미만" & vbTab & "05. 50억-100억 미만" & vbLf & _
+        "6" & vbTab & "10000000000" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "06. 100억 이상"
 End Sub
 
 Private Function NormalizeStartOp(ByVal opText As String) As String
@@ -3307,7 +3346,7 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
-          <button id="btnSampleDesignBandColumn" label="구간 만들기" imageMso="GroupInsert" onAction="Ribbon_SampleDesignCreateBandColumn" screentip="숫자값을 표본설계용 구간 변수로 변환" supertip="매출액, 종사자수, 인구수 같은 숫자 열을 선택하고 UserForm에서 구간 시작/종료값과 포함 조건을 지정하면 오른쪽에 구간 열을 생성하고 설정을 숨김 시트에 저장합니다." />
+          <button id="btnSampleDesignBandColumn" label="구간 만들기" imageMso="GroupInsert" onAction="Ribbon_SampleDesignCreateBandColumn" screentip="숫자값을 표본설계용 구간 변수로 변환" supertip="매출액, 종사자수, 인구수 같은 숫자 열을 선택하고 UserForm에서 종사자/매출액 예시 또는 직접 입력 기준을 지정하면 오른쪽에 IFS 구간 수식 열을 생성합니다." />
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>

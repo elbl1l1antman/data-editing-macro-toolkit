@@ -73,6 +73,7 @@ Public Function SampleDesignBandRulesPassed() As String
     resultText = CheckBool(resultText, "valid band specs parse", SampleDesign_ParseBandSpecs("1" & vbTab & "" & vbTab & "이상" & vbTab & "5" & vbTab & "미만" & vbTab & "under5" & vbLf & "2" & vbTab & "5" & vbTab & "이상" & vbTab & "10" & vbTab & "미만" & vbTab & "5to9" & vbLf & "3" & vbTab & "10" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "over10", bands), True)
     resultText = CheckContains(resultText, "formula uses IFS", SampleDesign_BandFormulaForAddress("Q4", bands), "IFS(")
     resultText = CheckContains(resultText, "formula references selected cell", SampleDesign_BandFormulaForAddress("Q4", bands), "Q4")
+    resultText = CheckContains(resultText, "formula labels blank source", SampleDesign_BandFormulaForAddress("Q4", bands), ChrW(&HC790) & ChrW(&HB8CC) & " " & ChrW(&HC5C6) & ChrW(&HC74C))
     resultText = CheckContains(resultText, "formula keeps direct readable less-than condition", SampleDesign_BandFormulaForAddress("Q4", bands), "Q4<5")
     resultText = CheckContains(resultText, "formula preserves first label", SampleDesign_BandFormulaForAddress("Q4", bands), """under5""")
     resultText = CheckContains(resultText, "formula preserves open-ended last label", SampleDesign_BandFormulaForAddress("Q4", bands), """over10""")
