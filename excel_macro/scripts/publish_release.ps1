@@ -1235,21 +1235,57 @@ function Add-SampleExtractionWizardUserForm {
 Option Explicit
 Private mAction As String
 
-Public Property Get Action() As String: Action = mAction: End Property
-Public Property Get PopulationAddress() As String: PopulationAddress = Trim$(txtPopulationAddress.Text): End Property
-Public Property Get HasHeader() As Boolean: HasHeader = CBool(chkHasHeader.Value): End Property
-Public Property Get AutoId() As Boolean: AutoId = CBool(chkAutoId.Value): End Property
-Public Property Get IdColumnIndex() As Long: IdColumnIndex = cboIdColumn.ListIndex + 1: End Property
-Public Property Get TargetMode() As String: If optAutoTarget.Value Then TargetMode = "auto" Else TargetMode = "manual": End Property
-Public Property Get ReplacementMultiplier() As Long: ReplacementMultiplier = CLng(Val(txtReplacementMultiplier.Text)): End Property
-Public Property Get ConfidenceLevel() As Double: ConfidenceLevel = CDbl(Val(txtConfidenceLevel.Text)): End Property
-Public Property Get ExpectedProportion() As Double: ExpectedProportion = CDbl(Val(txtExpectedProportion.Text)): End Property
-Public Property Get RandomSeedText() As String: RandomSeedText = Trim$(txtRandomSeed.Text): End Property
-Public Property Get OutputSheetName() As String: OutputSheetName = Trim$(txtOutputSheetName.Text): End Property
-Public Property Get TargetEditsText() As String: TargetEditsText = txtTargetEdits.Text: End Property
-Public Property Get SortColumnIndex() As Long: SortColumnIndex = cboSortColumn.ListIndex + 1: End Property
+Public Property Get Action() As String
+    Action = mAction
+End Property
+Public Property Get PopulationAddress() As String
+    PopulationAddress = Trim$(txtPopulationAddress.Text)
+End Property
+Public Property Get HasHeader() As Boolean
+    HasHeader = CBool(chkHasHeader.Value)
+End Property
+Public Property Get AutoId() As Boolean
+    AutoId = CBool(chkAutoId.Value)
+End Property
+Public Property Get IdColumnIndex() As Long
+    IdColumnIndex = cboIdColumn.ListIndex + 1
+End Property
+Public Property Get TargetMode() As String
+    If optAutoTarget.Value Then
+        TargetMode = "auto"
+    Else
+        TargetMode = "manual"
+    End If
+End Property
+Public Property Get ReplacementMultiplier() As Long
+    ReplacementMultiplier = CLng(Val(txtReplacementMultiplier.Text))
+End Property
+Public Property Get ConfidenceLevel() As Double
+    ConfidenceLevel = CDbl(Val(txtConfidenceLevel.Text))
+End Property
+Public Property Get ExpectedProportion() As Double
+    ExpectedProportion = CDbl(Val(txtExpectedProportion.Text))
+End Property
+Public Property Get RandomSeedText() As String
+    RandomSeedText = Trim$(txtRandomSeed.Text)
+End Property
+Public Property Get OutputSheetName() As String
+    OutputSheetName = Trim$(txtOutputSheetName.Text)
+End Property
+Public Property Get TargetEditsText() As String
+    TargetEditsText = txtTargetEdits.Text
+End Property
+Public Property Get SortColumnIndex() As Long
+    SortColumnIndex = cboSortColumn.ListIndex + 1
+End Property
 Public Property Get SortMode() As String
-    If optAscending.Value Then SortMode = "asc" Else If optDescending.Value Then SortMode = "desc" Else SortMode = "keep"
+    If optAscending.Value Then
+        SortMode = "asc"
+    ElseIf optDescending.Value Then
+        SortMode = "desc"
+    Else
+        SortMode = "keep"
+    End If
 End Property
 Public Property Get StratumColumnIndexes() As String
     Dim i As Long, resultText As String
@@ -1286,8 +1322,13 @@ Public Sub ShowPage(ByVal pageIndex As Long)
     cmdRun.Visible = (pageIndex = 2)
 End Sub
 
-Private Sub cmdPickRange_Click(): mAction = "pick_range": Hide: End Sub
-Private Sub cmdBack_Click(): If mpSteps.Value > 0 Then ShowPage mpSteps.Value - 1: End Sub
+Private Sub cmdPickRange_Click()
+    mAction = "pick_range"
+    Hide
+End Sub
+Private Sub cmdBack_Click()
+    If mpSteps.Value > 0 Then ShowPage mpSteps.Value - 1
+End Sub
 Private Sub cmdNext_Click()
     If mpSteps.Value = 0 Then
         If Len(PopulationAddress) = 0 Then MsgBox "먼저 모집단 범위를 선택하세요.", vbExclamation, "표본 추출": Exit Sub
@@ -1300,9 +1341,17 @@ Private Sub cmdNext_Click()
         mAction = "review": Hide
     End If
 End Sub
-Private Sub cmdRun_Click(): mAction = "run": Hide: End Sub
-Private Sub cmdCancel_Click(): mAction = "cancel": Hide: End Sub
-Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer): If CloseMode = 0 Then mAction = "cancel": End Sub
+Private Sub cmdRun_Click()
+    mAction = "run"
+    Hide
+End Sub
+Private Sub cmdCancel_Click()
+    mAction = "cancel"
+    Hide
+End Sub
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then mAction = "cancel"
+End Sub
 '@
     $form.CodeModule.AddFromString($formCode)
 }
@@ -3936,6 +3985,7 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
           <button id="btnSampleDesignBandColumn" label="구간 만들기" imageMso="GroupInsert" onAction="Ribbon_SampleDesignCreateBandColumn" screentip="숫자값을 표본설계용 구간 변수로 변환" supertip="매출액, 종사자수, 인구수 같은 숫자 열을 선택하고 UserForm에서 종사자/매출액 예시 또는 직접 입력 기준을 지정하면 오른쪽에 IFS 구간 수식 열을 생성합니다." />
+          <button id="btnSampleExtractRun" label="표본 추출" size="large" imageMso="DataFormExcel" onAction="Ribbon_SampleExtractRun" screentip="층화 계통 표본추출" supertip="모집단 범위와 층화 기준을 단계별로 선택해 원표본과 대체표본을 중복 없이 추출합니다." />
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>

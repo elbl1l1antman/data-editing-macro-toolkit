@@ -2,6 +2,17 @@
 
 $ErrorActionPreference = 'Stop'
 $publishPath = Join-Path $ProjectRoot 'scripts\publish_release.ps1'
+$modulePath = Join-Path $ProjectRoot 'src\MacroToolkit.bas'
+$publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
+$moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+foreach ($pair in @(
+    @($publishSource, 'label="표본 추출"'),
+    @($publishSource, 'onAction="Ribbon_SampleExtractRun"'),
+    @($moduleSource, 'Case "9": SampleExtract_Run'),
+    @($moduleSource, 'Public Const TOOLKIT_VERSION As String = "1.1.48"')
+)) {
+    if ($pair[0].IndexOf($pair[1], [StringComparison]::Ordinal) -lt 0) { throw "Missing release token: $($pair[1])" }
+}
 $tokens = $null; $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($publishPath, [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw ($errors | Out-String) }
@@ -10,6 +21,9 @@ if ($null -eq $fn) { throw 'Add-SampleExtractionWizardUserForm not found' }
 $source = $fn.Extent.Text
 foreach ($token in @('Forms.MultiPage.1','1. 모집단과 층 선택','2. 추출 방법 설정','3. 실행 전 검토','모집단 범위 선택','ID가 없으면 결과용 ID 자동 생성','대체표본 배수','현재 행 순서 유지','표본오차는 단순임의추출 근사치입니다.','Public Property Get Action()','Public Sub ConfigureReview','Private Sub cmdBack_Click()','Private Sub cmdNext_Click()')) {
     if ($source.IndexOf($token, [StringComparison]::Ordinal) -lt 0) { throw "Missing UI token: $token" }
+}
+if ($source -match '(?m)^(Public Property Get|Private Sub)[^\r\n]*(End Property|End Sub)\s*$') {
+    throw 'UserForm procedures must not place declaration and End statement on one line'
 }
 
 Invoke-Expression $source
@@ -36,6 +50,25 @@ try {
         $control = $designer.Controls.Item($name)
         if (($control.Left + $control.Width) -gt ($formWidth - 8)) { throw "Button clipped: $name" }
     }
+    $wrapper = $workbook.VBProject.VBComponents.Add(1)
+    $wrapper.CodeModule.AddFromString(@'
+Public Function SampleExtractionWizardPassed() As String
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmSampleExtractionWizard")
+    form.ConfigureColumns "[테스트.xlsx]모집단!$A$1:$E$10", "ID" & vbTab & "산업" & vbTab & "지역", "데이터 행: 9"
+    form.ConfigureReview "검토", "3:SW|" & vbTab & "2", ""
+    If form.Action <> "review" Then
+        SampleExtractionWizardPassed = "review action missing"
+    ElseIf form.OutputSheetName <> "표본추출_결과" Then
+        SampleExtractionWizardPassed = "default output missing"
+    Else
+        SampleExtractionWizardPassed = "PASS"
+    End If
+    Unload form
+End Function
+'@)
+    $result = [string]$excel.Run('SampleExtractionWizardPassed')
+    if ($result -ne 'PASS') { throw $result }
     Write-Host 'Sample extraction UI tests passed.'
 }
 finally {

@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.47"
+Public Const TOOLKIT_VERSION As String = "1.1.48"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -16807,7 +16807,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "5. 모집단 구성표 리스트화(자동/직접 지정)" & vbCrLf & _
         "6. 리스트→집계표" & vbCrLf & _
         "7. 표본설계 가이드 열기" & vbCrLf & _
-        "8. 숫자값 구간 만들기", _
+        "8. 숫자값 구간 만들기" & vbCrLf & _
+        "9. 표본 추출", _
         "1")
 
     Select Case choice
@@ -16819,8 +16820,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "6": SampleDesign_PivotPopulationList
         Case "7": SampleDesign_ShowGuide
         Case "8": SampleDesign_CreateBandColumn
+        Case "9": SampleExtract_Run
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~8 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~9 중 하나를 선택하세요."
     End Select
 End Sub
 
@@ -17657,6 +17659,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignCreateBandColumn(control As IRibbonControl)
     SampleDesign_CreateBandColumn
+End Sub
+
+Public Sub Ribbon_SampleExtractRun(control As IRibbonControl)
+    SampleExtract_Run
 End Sub
 
 Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)

@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.47"
+Public Const TOOLKIT_VERSION As String = "1.1.48"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -16807,7 +16807,8 @@ Public Sub Toolkit_LaunchSampleDesign()
         "5. 모집단 구성표 리스트화(자동/직접 지정)" & vbCrLf & _
         "6. 리스트→집계표" & vbCrLf & _
         "7. 표본설계 가이드 열기" & vbCrLf & _
-        "8. 숫자값 구간 만들기", _
+        "8. 숫자값 구간 만들기" & vbCrLf & _
+        "9. 표본 추출", _
         "1")
 
     Select Case choice
@@ -16819,9 +16820,503 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "6": SampleDesign_PivotPopulationList
         Case "7": SampleDesign_ShowGuide
         Case "8": SampleDesign_CreateBandColumn
+        Case "9": SampleExtract_Run
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~8 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~9 중 하나를 선택하세요."
     End Select
+End Sub
+
+' ============================================================
+' Stratified systematic sample extraction core
+' ============================================================
+Private Function SampleExtract_NormalizeMatchValue(ByVal valueData As Variant) As String
+    If IsError(valueData) Or IsNull(valueData) Or Len(Trim$(CStr(valueData))) = 0 Then
+        SampleExtract_NormalizeMatchValue = "(공란)"
+    ElseIf IsNumeric(valueData) Then
+        SampleExtract_NormalizeMatchValue = Replace$(Format$(CDbl(valueData), "0.###############"), Application.DecimalSeparator, ".")
+    Else
+        SampleExtract_NormalizeMatchValue = Trim$(CStr(valueData))
+    End If
+End Function
+
+Private Function SampleExtract_BuildStratumKey(ByVal rowValues As Variant, ByVal columnIndexes As Variant) As String
+    Dim i As Long, valueText As String, resultText As String
+    For i = LBound(columnIndexes) To UBound(columnIndexes)
+        valueText = SampleExtract_NormalizeMatchValue(rowValues(1, CLng(columnIndexes(i))))
+        resultText = resultText & Len(valueText) & ":" & valueText & "|"
+    Next i
+    SampleExtract_BuildStratumKey = resultText
+End Function
+
+Private Function SampleExtract_SystematicIndexes(ByVal populationCount As Long, _
+                                                 ByVal sampleCount As Long, _
+                                                 ByVal randomStart As Double) As Variant
+    Dim result() As Long, intervalValue As Double, i As Long
+    If populationCount <= 0 Or sampleCount <= 0 Then
+        SampleExtract_SystematicIndexes = Array()
+        Exit Function
+    End If
+    If sampleCount > populationCount Then sampleCount = populationCount
+    intervalValue = populationCount / sampleCount
+    If randomStart < 0 Then randomStart = 0
+    If randomStart >= intervalValue Then randomStart = intervalValue - 0.0000000001
+    ReDim result(0 To sampleCount - 1)
+    For i = 0 To sampleCount - 1
+        result(i) = Int(randomStart + (i * intervalValue)) + 1
+    Next i
+    SampleExtract_SystematicIndexes = result
+End Function
+
+Private Function SampleExtract_AppendUniqueRound(ByVal availableRows As Collection, _
+                                                 ByVal requestedCount As Long, _
+                                                 ByVal randomStart As Double, _
+                                                 ByVal selectedRows As Object) As Collection
+    Dim result As New Collection, indexes As Variant, i As Long, rowNumber As Long
+    If availableRows.Count = 0 Or requestedCount <= 0 Then
+        Set SampleExtract_AppendUniqueRound = result
+        Exit Function
+    End If
+
+    indexes = SampleExtract_SystematicIndexes(availableRows.Count, requestedCount, randomStart)
+    For i = LBound(indexes) To UBound(indexes)
+        rowNumber = CLng(availableRows(CLng(indexes(i))))
+        If Not selectedRows.Exists(CStr(rowNumber)) Then
+            result.Add rowNumber
+            selectedRows.Add CStr(rowNumber), True
+        End If
+    Next i
+    For i = UBound(indexes) To LBound(indexes) Step -1
+        availableRows.Remove CLng(indexes(i))
+    Next i
+    Set SampleExtract_AppendUniqueRound = result
+End Function
+
+Public Function SampleExtract_TestSystematicPositions(ByVal populationCount As Long, _
+                                                      ByVal sampleCount As Long, _
+                                                      ByVal randomStart As Double) As String
+    Dim indexes As Variant, i As Long, resultText As String
+    indexes = SampleExtract_SystematicIndexes(populationCount, sampleCount, randomStart)
+    On Error GoTo EmptyResult
+    For i = LBound(indexes) To UBound(indexes)
+        If Len(resultText) > 0 Then resultText = resultText & ","
+        resultText = resultText & CStr(indexes(i))
+    Next i
+EmptyResult:
+    SampleExtract_TestSystematicPositions = resultText
+End Function
+
+Public Function SampleExtract_TestErrorStats(ByVal populationCount As Long, _
+                                             ByVal sampleCount As Long, _
+                                             ByVal confidenceLevel As Double, _
+                                             ByVal expectedProportion As Double) As String
+    Dim inclusionProbability As Double, weightValue As Double
+    Dim standardError As Double, marginOfError As Double, zValue As Double
+    If populationCount <= 0 Or sampleCount <= 0 Then Exit Function
+    If sampleCount > populationCount Then sampleCount = populationCount
+    inclusionProbability = sampleCount / populationCount
+    weightValue = populationCount / sampleCount
+    If sampleCount < populationCount And populationCount > 1 Then
+        zValue = Application.WorksheetFunction.Norm_S_Inv(0.5 + confidenceLevel / 200)
+        standardError = Sqr(((populationCount - sampleCount) / (populationCount - 1)) * _
+                            expectedProportion * (1 - expectedProportion) / sampleCount)
+        marginOfError = zValue * standardError
+    End If
+    SampleExtract_TestErrorStats = "PI=" & CStr(inclusionProbability) & _
+        ";WEIGHT=" & CStr(weightValue) & ";SE=" & CStr(standardError) & ";MOE=" & CStr(marginOfError)
+End Function
+
+Public Sub SampleExtract_Run()
+    On Error GoTo ErrHandler
+    Dim wizard As Object, actionName As String, populationRange As Range
+    Set wizard = VBA.UserForms.Add("frmSampleExtractionWizard")
+    Do
+        wizard.Show
+        actionName = LCase$(Trim$(CStr(wizard.Action)))
+        Select Case actionName
+            Case "pick_range"
+                Set populationRange = SampleExtract_PickPopulationRange(wizard)
+            Case "review"
+                If populationRange Is Nothing Then
+                    MsgBox "먼저 모집단 범위를 선택하세요.", vbExclamation, "표본 추출"
+                    wizard.ShowPage 0
+                Else
+                    SampleExtract_PrepareReview wizard, populationRange
+                End If
+            Case "run"
+                If SampleExtract_Execute(wizard, populationRange) Then Exit Do
+            Case Else
+                Exit Do
+        End Select
+    Loop
+CleanExit:
+    On Error Resume Next
+    Unload wizard
+    Exit Sub
+ErrHandler:
+    If Not Toolkit_ShowCancelMessage("표본 추출") Then
+        MsgBox "표본 추출 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "표본 추출"
+    End If
+    Resume CleanExit
+End Sub
+
+Private Function SampleExtract_PickPopulationRange(ByVal wizard As Object) As Range
+    Dim selectedRange As Range, headers As Variant
+    On Error Resume Next
+    Set selectedRange = Application.InputBox( _
+        "모집단의 헤더와 데이터를 함께 선택하세요." & vbCrLf & _
+        "마우스 드래그, 주소 입력, 방향키와 Shift를 모두 사용할 수 있습니다.", _
+        "표본 추출 - 모집단 범위", Type:=8)
+    On Error GoTo 0
+    If selectedRange Is Nothing Then Exit Function
+    If selectedRange.Areas.Count > 1 Or selectedRange.Rows.Count < 2 Then
+        MsgBox "한 시트의 연속된 범위에서 헤더와 데이터 1행 이상을 선택하세요.", vbExclamation, "표본 추출"
+        Exit Function
+    End If
+    headers = SampleExtract_HeaderNames(selectedRange, CBool(wizard.HasHeader))
+    wizard.ConfigureColumns selectedRange.Address(External:=True), Join(headers, vbTab), _
+        "시트: " & selectedRange.Worksheet.Name & vbCrLf & _
+        "데이터 행: " & CStr(selectedRange.Rows.Count - IIf(wizard.HasHeader, 1, 0)) & vbCrLf & _
+        "열 수: " & CStr(selectedRange.Columns.Count) & vbCrLf & _
+        "다음 단계 전에 ID 열과 층화 기준 열을 확인하세요."
+    Set SampleExtract_PickPopulationRange = selectedRange
+End Function
+
+Private Function SampleExtract_HeaderNames(ByVal sourceRange As Range, ByVal hasHeader As Boolean) As Variant
+    Dim result() As String, c As Long, textValue As String
+    ReDim result(0 To sourceRange.Columns.Count - 1)
+    For c = 1 To sourceRange.Columns.Count
+        If hasHeader Then textValue = Trim$(CStr(sourceRange.Cells(1, c).Value2))
+        If Len(textValue) = 0 Then textValue = "열" & CStr(c)
+        result(c - 1) = textValue
+    Next c
+    SampleExtract_HeaderNames = result
+End Function
+
+Private Function SampleExtract_ParseIndexes(ByVal csvText As String) As Variant
+    Dim parts As Variant, result() As Long, i As Long
+    parts = Split(csvText, ",")
+    ReDim result(LBound(parts) To UBound(parts))
+    For i = LBound(parts) To UBound(parts): result(i) = CLng(parts(i)): Next i
+    SampleExtract_ParseIndexes = result
+End Function
+
+Private Function SampleExtract_KeyFromData(ByVal values As Variant, ByVal rowIndex As Long, ByVal indexes As Variant) As String
+    Dim i As Long, valueText As String, resultText As String
+    For i = LBound(indexes) To UBound(indexes)
+        valueText = SampleExtract_NormalizeMatchValue(values(rowIndex, CLng(indexes(i))))
+        resultText = resultText & Len(valueText) & ":" & valueText & "|"
+    Next i
+    SampleExtract_KeyFromData = resultText
+End Function
+
+Private Function SampleExtract_BuildStrata(ByVal values As Variant, ByVal firstDataRow As Long, ByVal indexes As Variant) As Object
+    Dim result As Object, rows As Collection, r As Long, keyText As String
+    Set result = CreateObject("Scripting.Dictionary")
+    For r = firstDataRow To UBound(values, 1)
+        keyText = SampleExtract_KeyFromData(values, r, indexes)
+        If Not result.Exists(keyText) Then
+            Set rows = New Collection
+            result.Add keyText, rows
+        End If
+        Set rows = result(keyText)
+        rows.Add r
+    Next r
+    Set SampleExtract_BuildStrata = result
+End Function
+
+Private Function SampleExtract_NormalizeHeader(ByVal headerText As String) As String
+    SampleExtract_NormalizeHeader = LCase$(Replace$(Replace$(Replace$(Trim$(headerText), " ", ""), vbCr, ""), vbLf, ""))
+End Function
+
+Private Function SampleExtract_LoadAllocationTargets(ByVal wb As Workbook, ByVal headers As Variant, _
+                                                     ByVal stratumIndexes As Variant, ByRef warningText As String) As Object
+    Dim result As Object, ws As Worksheet, headerMap As Object, c As Long, r As Long, lastRow As Long
+    Dim finalCol As Long, allocationIndexes() As Long, i As Long, keyText As String, valueText As String
+    Set result = CreateObject("Scripting.Dictionary")
+    On Error Resume Next
+    Set ws = wb.Worksheets("표본설계_할당결과")
+    On Error GoTo 0
+    If ws Is Nothing Then
+        warningText = "표본설계_할당결과 시트를 찾지 못했습니다. 층별 목표를 직접 입력하세요."
+        Set SampleExtract_LoadAllocationTargets = result
+        Exit Function
+    End If
+    Set headerMap = CreateObject("Scripting.Dictionary")
+    For c = 1 To ws.Cells(1, ws.Columns.Count).End(xlToLeft).Column
+        headerMap(SampleExtract_NormalizeHeader(CStr(ws.Cells(1, c).Value2))) = c
+    Next c
+    If Not headerMap.Exists(SampleExtract_NormalizeHeader("최종할당")) Then
+        warningText = "할당결과에서 최종할당 열을 찾지 못했습니다."
+        Set SampleExtract_LoadAllocationTargets = result
+        Exit Function
+    End If
+    finalCol = CLng(headerMap(SampleExtract_NormalizeHeader("최종할당")))
+    ReDim allocationIndexes(LBound(stratumIndexes) To UBound(stratumIndexes))
+    For i = LBound(stratumIndexes) To UBound(stratumIndexes)
+        valueText = SampleExtract_NormalizeHeader(CStr(headers(CLng(stratumIndexes(i)) - 1)))
+        If Not headerMap.Exists(valueText) Then
+            warningText = "할당결과에서 층화 열 '" & CStr(headers(CLng(stratumIndexes(i)) - 1)) & "'을 찾지 못했습니다."
+            Set SampleExtract_LoadAllocationTargets = result
+            Exit Function
+        End If
+        allocationIndexes(i) = CLng(headerMap(valueText))
+    Next i
+    lastRow = ws.Cells(ws.Rows.Count, finalCol).End(xlUp).Row
+    For r = 2 To lastRow
+        keyText = ""
+        For i = LBound(allocationIndexes) To UBound(allocationIndexes)
+            valueText = SampleExtract_NormalizeMatchValue(ws.Cells(r, allocationIndexes(i)).Value2)
+            keyText = keyText & Len(valueText) & ":" & valueText & "|"
+        Next i
+        If IsNumeric(ws.Cells(r, finalCol).Value2) Then
+            If result.Exists(keyText) Then
+                result(keyText) = CLng(result(keyText)) + CLng(ws.Cells(r, finalCol).Value2)
+            Else
+                result.Add keyText, CLng(ws.Cells(r, finalCol).Value2)
+            End If
+        End If
+    Next r
+    Set SampleExtract_LoadAllocationTargets = result
+End Function
+
+Private Function SampleExtract_BuildReviewText(ByVal strata As Object, ByVal targets As Object, _
+                                               ByVal replacementMultiplier As Long, ByRef targetText As String, _
+                                               ByRef warningText As String) As String
+    Dim key As Variant, rows As Collection, targetValue As Variant, resultText As String
+    resultText = "층 키" & vbTab & "모집단" & vbTab & "목표 원표본" & vbTab & "요청 대체" & vbTab & "상태"
+    For Each key In strata.Keys
+        Set rows = strata(key)
+        If targets.Exists(CStr(key)) Then targetValue = targets(CStr(key)) Else targetValue = ""
+        targetText = targetText & IIf(Len(targetText) > 0, vbCrLf, "") & CStr(key) & vbTab & CStr(targetValue)
+        resultText = resultText & vbCrLf & CStr(key) & vbTab & rows.Count & vbTab & CStr(targetValue) & vbTab
+        If Len(CStr(targetValue)) = 0 Then
+            resultText = resultText & "-" & vbTab & "확인 필요"
+            warningText = warningText & IIf(Len(warningText) > 0, vbCrLf, "") & "목표표본이 없는 층: " & CStr(key)
+        Else
+            resultText = resultText & CLng(targetValue) * replacementMultiplier & vbTab & _
+                IIf(CLng(targetValue) > rows.Count, "모집단 부족", "실행 가능")
+        End If
+    Next key
+    SampleExtract_BuildReviewText = resultText
+End Function
+
+Private Sub SampleExtract_PrepareReview(ByVal wizard As Object, ByVal populationRange As Range)
+    Dim values As Variant, headers As Variant, indexes As Variant, strata As Object, targets As Object
+    Dim warningText As String, targetText As String, reviewText As String, firstDataRow As Long
+    values = populationRange.Value2
+    headers = SampleExtract_HeaderNames(populationRange, CBool(wizard.HasHeader))
+    indexes = SampleExtract_ParseIndexes(CStr(wizard.StratumColumnIndexes))
+    firstDataRow = IIf(wizard.HasHeader, 2, 1)
+    Set strata = SampleExtract_BuildStrata(values, firstDataRow, indexes)
+    Set targets = CreateObject("Scripting.Dictionary")
+    If CStr(wizard.TargetMode) = "auto" Then
+        Set targets = SampleExtract_LoadAllocationTargets(populationRange.Worksheet.Parent, headers, indexes, warningText)
+    End If
+    reviewText = SampleExtract_BuildReviewText(strata, targets, CLng(wizard.ReplacementMultiplier), targetText, warningText)
+    wizard.ConfigureReview reviewText, targetText, warningText
+End Sub
+
+Private Function SampleExtract_ParseTargetEdits(ByVal targetText As String, ByVal strata As Object, ByRef warningText As String) As Object
+    Dim result As Object, lines As Variant, fields As Variant, i As Long, keyText As String, rawTarget As String
+    Set result = CreateObject("Scripting.Dictionary")
+    lines = Split(Replace$(targetText, vbCrLf, vbLf), vbLf)
+    For i = LBound(lines) To UBound(lines)
+        If Len(Trim$(CStr(lines(i)))) > 0 Then
+            fields = Split(CStr(lines(i)), vbTab)
+            If UBound(fields) < 1 Then warningText = "목표 목록은 층 키와 목표값을 Tab으로 구분해야 합니다.": Exit For
+            keyText = CStr(fields(0)): rawTarget = Trim$(CStr(fields(1)))
+            If Not strata.Exists(keyText) Or Not IsNumeric(rawTarget) Or CDbl(rawTarget) < 0 Or CDbl(rawTarget) <> Fix(CDbl(rawTarget)) Then
+                warningText = "층 키 또는 목표값을 확인하세요: " & CStr(lines(i)): Exit For
+            End If
+            result(keyText) = CLng(rawTarget)
+        End If
+    Next i
+    If Len(warningText) = 0 Then
+        Dim key As Variant
+        For Each key In strata.Keys
+            If Not result.Exists(CStr(key)) Then warningText = "모든 층의 목표 원표본을 입력하세요.": Exit For
+        Next key
+    End If
+    Set SampleExtract_ParseTargetEdits = result
+End Function
+
+Private Function SampleExtract_CompareRows(ByVal values As Variant, ByVal rowA As Long, ByVal rowB As Long, ByVal sortColumn As Long) As Long
+    If IsNumeric(values(rowA, sortColumn)) And IsNumeric(values(rowB, sortColumn)) Then
+        SampleExtract_CompareRows = Sgn(CDbl(values(rowA, sortColumn)) - CDbl(values(rowB, sortColumn)))
+    Else
+        SampleExtract_CompareRows = StrComp(CStr(values(rowA, sortColumn)), CStr(values(rowB, sortColumn)), vbTextCompare)
+    End If
+End Function
+
+Private Sub SampleExtract_SortRows(ByVal rows As Collection, ByVal values As Variant, ByVal sortColumn As Long, ByVal descending As Boolean)
+    Dim orderedRows() As Long, i As Long
+    If rows.Count < 2 Then Exit Sub
+    ReDim orderedRows(1 To rows.Count)
+    For i = 1 To rows.Count: orderedRows(i) = CLng(rows(i)): Next i
+    SampleExtract_QuickSortRows orderedRows, LBound(orderedRows), UBound(orderedRows), values, sortColumn, descending
+    Do While rows.Count > 0: rows.Remove 1: Loop
+    For i = LBound(orderedRows) To UBound(orderedRows): rows.Add orderedRows(i): Next i
+End Sub
+
+Private Sub SampleExtract_QuickSortRows(ByRef orderedRows() As Long, ByVal low As Long, ByVal high As Long, _
+                                        ByVal values As Variant, ByVal sortColumn As Long, ByVal descending As Boolean)
+    Dim i As Long, j As Long, pivotRow As Long, temp As Long, direction As Long
+    i = low: j = high: pivotRow = orderedRows((low + high) \ 2)
+    direction = IIf(descending, -1, 1)
+    Do While i <= j
+        Do While SampleExtract_CompareRows(values, orderedRows(i), pivotRow, sortColumn) * direction < 0: i = i + 1: Loop
+        Do While SampleExtract_CompareRows(values, orderedRows(j), pivotRow, sortColumn) * direction > 0: j = j - 1: Loop
+        If i <= j Then
+            temp = orderedRows(i): orderedRows(i) = orderedRows(j): orderedRows(j) = temp
+            i = i + 1: j = j - 1
+        End If
+    Loop
+    If low < j Then SampleExtract_QuickSortRows orderedRows, low, j, values, sortColumn, descending
+    If i < high Then SampleExtract_QuickSortRows orderedRows, i, high, values, sortColumn, descending
+End Sub
+
+Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationRange As Range) As Boolean
+    On Error GoTo ErrHandler
+    Dim wb As Workbook, outputName As String, reviewName As String, warningText As String
+    If populationRange Is Nothing Then MsgBox "모집단 범위를 다시 선택하세요.", vbExclamation, "표본 추출": Exit Function
+    Set wb = populationRange.Worksheet.Parent
+    outputName = CStr(wizard.OutputSheetName): reviewName = "표본추출_검토"
+    If SampleExtract_SheetExists(wb, outputName) Or SampleExtract_SheetExists(wb, reviewName) Then
+        MsgBox "결과 또는 검토 시트가 이미 있습니다. 기존 시트명을 변경하거나 삭제한 뒤 다시 실행하세요.", vbExclamation, "표본 추출"
+        Exit Function
+    End If
+
+    Dim values As Variant, headers As Variant, indexes As Variant, strata As Object, targets As Object
+    Dim firstDataRow As Long, key As Variant, rows As Collection
+    values = populationRange.Value2: headers = SampleExtract_HeaderNames(populationRange, CBool(wizard.HasHeader))
+    indexes = SampleExtract_ParseIndexes(CStr(wizard.StratumColumnIndexes))
+    firstDataRow = IIf(wizard.HasHeader, 2, 1)
+    Set strata = SampleExtract_BuildStrata(values, firstDataRow, indexes)
+    Set targets = SampleExtract_ParseTargetEdits(CStr(wizard.TargetEditsText), strata, warningText)
+    If Len(warningText) > 0 Then MsgBox warningText, vbExclamation, "표본 추출": Exit Function
+
+    Dim sortMode As String, sortColumn As Long
+    sortMode = CStr(wizard.SortMode): sortColumn = CLng(wizard.SortColumnIndex)
+    If sortMode <> "keep" Then
+        For Each key In strata.Keys
+            Set rows = strata(key): SampleExtract_SortRows rows, values, sortColumn, (sortMode = "desc")
+        Next key
+    End If
+
+    Dim seedValue As Long
+    If Len(CStr(wizard.RandomSeedText)) > 0 And IsNumeric(wizard.RandomSeedText) Then seedValue = CLng(wizard.RandomSeedText) Else seedValue = CLng(Timer * 100)
+    Randomize seedValue
+    Dim records As New Collection, selectedRows As Object, statsByKey As Object, roundNo As Long, totalSteps As Long, stepNo As Long
+    Dim targetN As Long, actualN As Long, intervalValue As Double, startValue As Double, picks As Collection, i As Long
+    Dim statsText As String, statParts As Variant, replacementMultiplier As Long
+    Set selectedRows = CreateObject("Scripting.Dictionary")
+    Set statsByKey = CreateObject("Scripting.Dictionary")
+    replacementMultiplier = CLng(wizard.ReplacementMultiplier)
+    For Each key In strata.Keys
+        Set rows = strata(key): targetN = CLng(targets(CStr(key))): actualN = targetN
+        If actualN > rows.Count Then actualN = rows.Count
+        If actualN > 0 Then statsByKey(CStr(key)) = SampleExtract_TestErrorStats(rows.Count, actualN, CDbl(wizard.ConfidenceLevel), CDbl(wizard.ExpectedProportion))
+    Next key
+    totalSteps = strata.Count * (replacementMultiplier + 1)
+    Toolkit_ProgressShow "표본 추출", "층별 원표본과 대체표본을 추출합니다.", totalSteps
+    For roundNo = 0 To replacementMultiplier
+        For Each key In strata.Keys
+            Set rows = strata(key): targetN = CLng(targets(CStr(key)))
+            actualN = targetN: If actualN > rows.Count Then actualN = rows.Count
+            If actualN > 0 Then
+                intervalValue = rows.Count / actualN: startValue = Rnd * intervalValue
+                statsText = CStr(statsByKey(CStr(key)))
+                Set picks = SampleExtract_AppendUniqueRound(rows, actualN, startValue, selectedRows)
+                For i = 1 To picks.Count
+                    records.Add Array(CLng(picks(i)), CStr(key), IIf(roundNo = 0, "원표본", "대체표본"), roundNo, i, i, intervalValue, startValue, statsText)
+                Next i
+            End If
+            stepNo = stepNo + 1
+            Toolkit_ProgressUpdate stepNo, totalSteps, "차수 " & roundNo & " / 층 " & CStr(key)
+        Next key
+    Next roundNo
+    SampleExtract_WriteResultSheet wb, outputName, populationRange, values, headers, records, CLng(wizard.IdColumnIndex), seedValue, CDbl(wizard.ConfidenceLevel), CDbl(wizard.ExpectedProportion)
+    SampleExtract_WriteReviewSheet wb, reviewName, wizard, strata, targets, records, seedValue
+    Toolkit_ProgressClose
+    MsgBox "표본추출_결과와 표본추출_검토 시트를 만들었습니다.", vbInformation, "표본 추출"
+    SampleExtract_Execute = True
+    Exit Function
+ErrHandler:
+    Toolkit_ProgressClose
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not wb Is Nothing Then
+        If SampleExtract_SheetExists(wb, outputName) Then wb.Worksheets(outputName).Delete
+        If SampleExtract_SheetExists(wb, reviewName) Then wb.Worksheets(reviewName).Delete
+    End If
+    Application.DisplayAlerts = True
+    On Error GoTo 0
+    If Toolkit_IsCancelError(Err.Number) Then
+        MsgBox "표본 추출을 취소했습니다. 원본 시트는 변경되지 않았습니다.", vbInformation, "표본 추출"
+    Else
+        MsgBox "표본 추출 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "표본 추출"
+    End If
+End Function
+
+Private Function SampleExtract_SheetExists(ByVal wb As Workbook, ByVal sheetName As String) As Boolean
+    Dim ws As Worksheet
+    On Error Resume Next: Set ws = wb.Worksheets(sheetName): On Error GoTo 0
+    SampleExtract_SheetExists = Not ws Is Nothing
+End Function
+
+Private Sub SampleExtract_WriteResultSheet(ByVal wb As Workbook, ByVal outputName As String, ByVal sourceRange As Range, _
+                                           ByVal values As Variant, ByVal headers As Variant, ByVal records As Collection, _
+                                           ByVal idColumn As Long, ByVal seedValue As Long, ByVal confidenceLevel As Double, _
+                                           ByVal expectedProportion As Double)
+    Dim ws As Worksheet, meta As Variant, output() As Variant, r As Long, c As Long, rec As Variant, parts As Variant
+    meta = Array("__SAMPLE_SOURCE_SHEET", "__SAMPLE_SOURCE_ROW", "__SAMPLE_ID", "__SAMPLE_STRATUM_ID", "__SAMPLE_STRATUM_KEY", _
+        "__SAMPLE_TYPE", "__SAMPLE_REPLACEMENT_ROUND", "__SAMPLE_LINKED_ORIGINAL_ORDER", "__SAMPLE_WITHIN_STRATUM_ORDER", _
+        "__SAMPLE_INTERVAL", "__SAMPLE_RANDOM_START", "__SAMPLE_INCLUSION_PROBABILITY", "__SAMPLE_WEIGHT", _
+        "__SAMPLE_STANDARD_ERROR", "__SAMPLE_MARGIN_OF_ERROR", "__SAMPLE_CONFIDENCE_LEVEL", "__SAMPLE_EXPECTED_PROPORTION", "__SAMPLE_RANDOM_SEED")
+    ReDim output(1 To records.Count + 1, 1 To UBound(values, 2) + UBound(meta) + 1)
+    For c = 1 To UBound(values, 2): output(1, c) = headers(c - 1): Next c
+    For c = 0 To UBound(meta): output(1, UBound(values, 2) + c + 1) = meta(c): Next c
+    For r = 1 To records.Count
+        rec = records(r)
+        For c = 1 To UBound(values, 2): output(r + 1, c) = values(rec(0), c): Next c
+        c = UBound(values, 2)
+        output(r + 1, c + 1) = sourceRange.Worksheet.Name
+        output(r + 1, c + 2) = sourceRange.Row + CLng(rec(0)) - 1
+        If idColumn > 0 And Len(Trim$(CStr(values(rec(0), idColumn)))) > 0 Then output(r + 1, c + 3) = values(rec(0), idColumn) Else output(r + 1, c + 3) = sourceRange.Worksheet.Name & "_R" & output(r + 1, c + 2)
+        output(r + 1, c + 4) = rec(1): output(r + 1, c + 5) = rec(1): output(r + 1, c + 6) = rec(2)
+        output(r + 1, c + 7) = rec(3): output(r + 1, c + 8) = rec(4): output(r + 1, c + 9) = rec(5)
+        output(r + 1, c + 10) = rec(6): output(r + 1, c + 11) = rec(7)
+        parts = Split(CStr(rec(8)), ";")
+        output(r + 1, c + 12) = CDbl(Split(parts(0), "=")(1)): output(r + 1, c + 13) = CDbl(Split(parts(1), "=")(1))
+        output(r + 1, c + 14) = CDbl(Split(parts(2), "=")(1)): output(r + 1, c + 15) = CDbl(Split(parts(3), "=")(1))
+        output(r + 1, c + 16) = confidenceLevel: output(r + 1, c + 17) = expectedProportion: output(r + 1, c + 18) = seedValue
+    Next r
+    Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count)): ws.Name = outputName
+    ws.Cells(1, 1).Resize(UBound(output, 1), UBound(output, 2)).Value = output
+    ws.Rows(1).Font.Bold = True: ws.Rows(1).AutoFilter: ws.Columns.AutoFit
+End Sub
+
+Private Sub SampleExtract_WriteReviewSheet(ByVal wb As Workbook, ByVal reviewName As String, ByVal wizard As Object, _
+                                           ByVal strata As Object, ByVal targets As Object, ByVal records As Collection, ByVal seedValue As Long)
+    Dim ws As Worksheet, rowNo As Long, key As Variant, rows As Collection
+    Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count)): ws.Name = reviewName
+    ws.Range("A1").Value = "표본 추출 검토": ws.Range("A1").Font.Bold = True
+    ws.Cells(3, 1).Value = "모집단 범위": ws.Cells(3, 2).Value = wizard.PopulationAddress
+    ws.Cells(4, 1).Value = "층화 열": ws.Cells(4, 2).Value = wizard.StratumColumnIndexes
+    ws.Cells(5, 1).Value = "정렬": ws.Cells(5, 2).Value = wizard.SortMode
+    ws.Cells(6, 1).Value = "대체표본 배수": ws.Cells(6, 2).Value = wizard.ReplacementMultiplier
+    ws.Cells(7, 1).Value = "신뢰수준": ws.Cells(7, 2).Value = wizard.ConfidenceLevel
+    ws.Cells(8, 1).Value = "예상비율": ws.Cells(8, 2).Value = wizard.ExpectedProportion
+    ws.Cells(9, 1).Value = "난수 시드": ws.Cells(9, 2).Value = seedValue
+    ws.Range("A11").Value = "표본오차는 단순임의추출 근사치이며, 정렬된 명부의 실제 계통추출 분산과 다를 수 있습니다."
+    ws.Range("A13:D13").Value = Array("층 키", "모집단수", "목표 원표본", "요청 대체표본")
+    rowNo = 14
+    For Each key In strata.Keys
+        Set rows = strata(key): ws.Cells(rowNo, 1).Value = CStr(key): ws.Cells(rowNo, 2).Value = rows.Count
+        ws.Cells(rowNo, 3).Value = targets(CStr(key)): ws.Cells(rowNo, 4).Value = CLng(targets(CStr(key))) * CLng(wizard.ReplacementMultiplier)
+        rowNo = rowNo + 1
+    Next key
+    ws.Columns.AutoFit
 End Sub
 
 Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
@@ -17164,6 +17659,10 @@ End Sub
 
 Public Sub Ribbon_SampleDesignCreateBandColumn(control As IRibbonControl)
     SampleDesign_CreateBandColumn
+End Sub
+
+Public Sub Ribbon_SampleExtractRun(control As IRibbonControl)
+    SampleExtract_Run
 End Sub
 
 Public Sub Ribbon_DatabaseMergeSheets(control As IRibbonControl)
