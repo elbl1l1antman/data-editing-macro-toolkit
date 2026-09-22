@@ -1143,8 +1143,18 @@ function Add-DatabaseMergeSetupUserForm {
     $form.Properties.Item("Width").Value = 760
     $form.Properties.Item("Height").Value = 660
 
+    $mpSteps = $designer.Controls.Add("Forms.MultiPage.1", "mpSteps", $true)
+    $mpSteps.Left = 8
+    $mpSteps.Top = 8
+    $mpSteps.Width = 724
+    $mpSteps.Height = 530
+    $mpSteps.Pages.Item(0).Caption = "1. 통합할 시트 선택"
+    $mpSteps.Pages.Item(1).Caption = "2. 가져올 열과 ID 설정"
+    $null = $mpSteps.Pages.Add()
+    $mpSteps.Pages.Item(2).Caption = "3. 통합 결과 확인"
+
     $lblGuide = $designer.Controls.Add("Forms.Label.1", "lblGuide", $true)
-    $lblGuide.Caption = "통합할 시트, 헤더 행/구조, KEY 열 지정 방식, ID 처리 방식, 가져올 헤더 또는 표시행 기준, 결과 시트 위치를 지정하세요. 다음 단계에서 시트별 헤더 매칭을 확인합니다."
+    $lblGuide.Caption = "통합할 원본 시트를 선택하세요. 헤더 행과 데이터 범위는 자동으로 감지됩니다."
     $lblGuide.Left = 12
     $lblGuide.Top = 10
     $lblGuide.Width = 720
@@ -1161,9 +1171,11 @@ function Add-DatabaseMergeSetupUserForm {
     $lstSheets = $designer.Controls.Add("Forms.ListBox.1", "lstSheets", $true)
     $lstSheets.Left = 12
     $lstSheets.Top = 74
-    $lstSheets.Width = 250
-    $lstSheets.Height = 410
+    $lstSheets.Width = 700
+    $lstSheets.Height = 390
     $lstSheets.MultiSelect = 2
+    $lstSheets.ColumnCount = 5
+    $lstSheets.ColumnWidths = "220 pt;65 pt;75 pt;90 pt;220 pt"
 
     $cmdAll = $designer.Controls.Add("Forms.CommandButton.1", "cmdAll", $true)
     $cmdAll.Caption = "전체 선택"
@@ -1180,7 +1192,7 @@ function Add-DatabaseMergeSetupUserForm {
     $cmdNone.Height = 26
 
     $lblKey = $designer.Controls.Add("Forms.Label.1", "lblKey", $true)
-    $lblKey.Caption = "결과 KEY 헤더"
+    $lblKey.Caption = "기존 ID 열"
     $lblKey.Left = 286
     $lblKey.Top = 54
     $lblKey.Width = 120
@@ -1193,7 +1205,7 @@ function Add-DatabaseMergeSetupUserForm {
     $txtKeyHeader.Height = 22
 
     $chkManualKeyColumn = $designer.Controls.Add("Forms.CheckBox.1", "chkManualKeyColumn", $true)
-    $chkManualKeyColumn.Caption = "KEY 열 직접 지정"
+    $chkManualKeyColumn.Caption = "시트별로 다른 ID 열 지정"
     $chkManualKeyColumn.Left = 594
     $chkManualKeyColumn.Top = 50
     $chkManualKeyColumn.Width = 138
@@ -1228,28 +1240,28 @@ function Add-DatabaseMergeSetupUserForm {
 
     $lblHeaderRow = $designer.Controls.Add("Forms.Label.1", "lblHeaderRow", $true)
     $lblHeaderRow.Caption = "헤더 행"
-    $lblHeaderRow.Left = 286
-    $lblHeaderRow.Top = 122
+    $lblHeaderRow.Left = 300
+    $lblHeaderRow.Top = 370
     $lblHeaderRow.Width = 120
     $lblHeaderRow.Height = 18
 
     $txtHeaderRow = $designer.Controls.Add("Forms.TextBox.1", "txtHeaderRow", $true)
-    $txtHeaderRow.Left = 410
-    $txtHeaderRow.Top = 118
+    $txtHeaderRow.Left = 380
+    $txtHeaderRow.Top = 366
     $txtHeaderRow.Width = 72
     $txtHeaderRow.Height = 22
     $txtHeaderRow.Text = "자동"
 
     $lblHeaderMode = $designer.Controls.Add("Forms.Label.1", "lblHeaderMode", $true)
     $lblHeaderMode.Caption = "헤더 구조"
-    $lblHeaderMode.Left = 494
-    $lblHeaderMode.Top = 122
+    $lblHeaderMode.Left = 470
+    $lblHeaderMode.Top = 370
     $lblHeaderMode.Width = 76
     $lblHeaderMode.Height = 18
 
     $cmbHeaderMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbHeaderMode", $true)
-    $cmbHeaderMode.Left = 576
-    $cmbHeaderMode.Top = 118
+    $cmbHeaderMode.Left = 550
+    $cmbHeaderMode.Top = 366
     $cmbHeaderMode.Width = 156
     $cmbHeaderMode.Height = 22
     $cmbHeaderMode.Style = 2
@@ -1268,44 +1280,159 @@ function Add-DatabaseMergeSetupUserForm {
     $cmbIdMode.Height = 22
     $cmbIdMode.Style = 2
 
+    $optAutoId = $designer.Controls.Add("Forms.OptionButton.1", "optAutoId", $true)
+    $optAutoId.Caption = "ID 자동 생성 (권장)"
+    $optAutoId.Left = 410
+    $optAutoId.Top = 148
+    $optAutoId.Width = 160
+    $optAutoId.Height = 20
+
+    $optExistingId = $designer.Controls.Add("Forms.OptionButton.1", "optExistingId", $true)
+    $optExistingId.Caption = "기존 열을 ID로 사용"
+    $optExistingId.Left = 410
+    $optExistingId.Top = 172
+    $optExistingId.Width = 160
+    $optExistingId.Height = 20
+
+    $optManualId = $designer.Controls.Add("Forms.OptionButton.1", "optManualId", $true)
+    $optManualId.Caption = "시트별로 다른 ID 열 지정"
+    $optManualId.Left = 576
+    $optManualId.Top = 172
+    $optManualId.Width = 156
+    $optManualId.Height = 20
+
+    $lstHeaders = $designer.Controls.Add("Forms.ListBox.1", "lstHeaders", $true)
+    $lstHeaders.Left = 12
+    $lstHeaders.Top = 74
+    $lstHeaders.Width = 330
+    $lstHeaders.Height = 390
+    $lstHeaders.MultiSelect = 2
+    $lstHeaders.ColumnCount = 3
+    $lstHeaders.ColumnWidths = "160 pt;55 pt;105 pt"
+
+    $lstManualKeys = $designer.Controls.Add("Forms.ListBox.1", "lstManualKeys", $true)
+    $lstManualKeys.Left = 410
+    $lstManualKeys.Top = 200
+    $lstManualKeys.Width = 322
+    $lstManualKeys.Height = 82
+    $lstManualKeys.ColumnCount = 2
+    $lstManualKeys.ColumnWidths = "150 pt;150 pt"
+
+    $cmbManualKeyHeader = $designer.Controls.Add("Forms.ComboBox.1", "cmbManualKeyHeader", $true)
+    $cmbManualKeyHeader.Left = 410
+    $cmbManualKeyHeader.Top = 288
+    $cmbManualKeyHeader.Width = 220
+    $cmbManualKeyHeader.Height = 22
+    $cmbManualKeyHeader.Style = 2
+
+    $cmdApplyManualKey = $designer.Controls.Add("Forms.CommandButton.1", "cmdApplyManualKey", $true)
+    $cmdApplyManualKey.Caption = "선택 시트에 적용"
+    $cmdApplyManualKey.Left = 638
+    $cmdApplyManualKey.Top = 286
+    $cmdApplyManualKey.Width = 94
+    $cmdApplyManualKey.Height = 26
+
+    $chkAdvanced = $designer.Controls.Add("Forms.CheckBox.1", "chkAdvanced", $true)
+    $chkAdvanced.Caption = "고급 설정"
+    $chkAdvanced.Left = 286
+    $chkAdvanced.Top = 322
+    $chkAdvanced.Width = 120
+    $chkAdvanced.Height = 20
+
+    $fraAdvanced = $designer.Controls.Add("Forms.Frame.1", "fraAdvanced", $true)
+    $fraAdvanced.Caption = "고급 설정"
+    $fraAdvanced.Left = 286
+    $fraAdvanced.Top = 346
+    $fraAdvanced.Width = 446
+    $fraAdvanced.Height = 132
+
+    $chkSourceAutoId = $designer.Controls.Add("Forms.CheckBox.1", "chkSourceAutoId", $true)
+    $chkSourceAutoId.Caption = "자동 ID를 원본 시트에도 기록"
+    $chkSourceAutoId.Left = 410
+    $chkSourceAutoId.Top = 440
+    $chkSourceAutoId.Width = 240
+    $chkSourceAutoId.Height = 20
+
     $chkUseMarkerRow = $designer.Controls.Add("Forms.CheckBox.1", "chkUseMarkerRow", $true)
     $chkUseMarkerRow.Caption = "표시행 기준으로 통합할 열 선택"
-    $chkUseMarkerRow.Left = 286
-    $chkUseMarkerRow.Top = 182
+    $chkUseMarkerRow.Left = 300
+    $chkUseMarkerRow.Top = 400
     $chkUseMarkerRow.Width = 360
     $chkUseMarkerRow.Height = 18
 
     $lblHeaders = $designer.Controls.Add("Forms.Label.1", "lblHeaders", $true)
     $lblHeaders.Caption = "통합할 헤더 목록"
-    $lblHeaders.Left = 286
-    $lblHeaders.Top = 214
+    $lblHeaders.Left = 12
+    $lblHeaders.Top = 52
     $lblHeaders.Width = 180
     $lblHeaders.Height = 18
 
     $lblHeadersHelp = $designer.Controls.Add("Forms.Label.1", "lblHeadersHelp", $true)
     $lblHeadersHelp.Caption = "쉼표 또는 줄바꿈으로 입력하세요. 표시행 기준을 켜면 표시된 열에서 자동 생성되며, 이 목록은 선택사항입니다."
-    $lblHeadersHelp.Left = 286
-    $lblHeadersHelp.Top = 234
+    $lblHeadersHelp.Left = 12
+    $lblHeadersHelp.Top = 472
     $lblHeadersHelp.Width = 430
     $lblHeadersHelp.Height = 30
     $lblHeadersHelp.WordWrap = $true
 
     $txtOutputHeaders = $designer.Controls.Add("Forms.TextBox.1", "txtOutputHeaders", $true)
-    $txtOutputHeaders.Left = 286
-    $txtOutputHeaders.Top = 270
-    $txtOutputHeaders.Width = 446
-    $txtOutputHeaders.Height = 228
+    $txtOutputHeaders.Left = 12
+    $txtOutputHeaders.Top = 74
+    $txtOutputHeaders.Width = 330
+    $txtOutputHeaders.Height = 390
     $txtOutputHeaders.MultiLine = $true
     $txtOutputHeaders.ScrollBars = 2
     $txtOutputHeaders.EnterKeyBehavior = $true
     $txtOutputHeaders.WordWrap = $false
 
-    $cmdOK = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
-    $cmdOK.Caption = "매칭 확인"
-    $cmdOK.Left = 544
-    $cmdOK.Top = 548
-    $cmdOK.Width = 90
-    $cmdOK.Height = 28
+    $txtReviewSummary = $designer.Controls.Add("Forms.TextBox.1", "txtReviewSummary", $true)
+    $txtReviewSummary.Left = 12
+    $txtReviewSummary.Top = 62
+    $txtReviewSummary.Width = 700
+    $txtReviewSummary.Height = 130
+    $txtReviewSummary.MultiLine = $true
+    $txtReviewSummary.Locked = $true
+    $txtReviewSummary.ScrollBars = 2
+
+    $txtReviewWarnings = $designer.Controls.Add("Forms.TextBox.1", "txtReviewWarnings", $true)
+    $txtReviewWarnings.Left = 12
+    $txtReviewWarnings.Top = 202
+    $txtReviewWarnings.Width = 700
+    $txtReviewWarnings.Height = 62
+    $txtReviewWarnings.MultiLine = $true
+    $txtReviewWarnings.Locked = $true
+    $txtReviewWarnings.ScrollBars = 2
+
+    $txtReviewMapping = $designer.Controls.Add("Forms.TextBox.1", "txtReviewMapping", $true)
+    $txtReviewMapping.Left = 12
+    $txtReviewMapping.Top = 274
+    $txtReviewMapping.Width = 700
+    $txtReviewMapping.Height = 204
+    $txtReviewMapping.MultiLine = $true
+    $txtReviewMapping.Locked = $true
+    $txtReviewMapping.ScrollBars = 3
+    $txtReviewMapping.WordWrap = $false
+
+    $cmdBack = $designer.Controls.Add("Forms.CommandButton.1", "cmdBack", $true)
+    $cmdBack.Caption = "이전"
+    $cmdBack.Left = 438
+    $cmdBack.Top = 548
+    $cmdBack.Width = 86
+    $cmdBack.Height = 28
+
+    $cmdNext = $designer.Controls.Add("Forms.CommandButton.1", "cmdNext", $true)
+    $cmdNext.Caption = "다음"
+    $cmdNext.Left = 544
+    $cmdNext.Top = 548
+    $cmdNext.Width = 90
+    $cmdNext.Height = 28
+
+    $cmdRun = $designer.Controls.Add("Forms.CommandButton.1", "cmdRun", $true)
+    $cmdRun.Caption = "통합 실행"
+    $cmdRun.Left = 544
+    $cmdRun.Top = 548
+    $cmdRun.Width = 90
+    $cmdRun.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
@@ -1318,31 +1445,38 @@ function Add-DatabaseMergeSetupUserForm {
 Option Explicit
 
 Public Cancelled As Boolean
+Private mAction As String
+Private mHeadersConfigured As Boolean
+Private mManualKeys As Object
 
-Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As String, _
-                     ByVal defaultOutputHeaders As String, ByVal defaultOutputSheetName As String, _
+Public Sub Configure(ByVal sheetInfoText As String, ByVal defaultSelectedSheets As String, _
+                     ByVal defaultKeyHeader As String, ByVal defaultOutputSheetName As String, _
                      ByVal defaultOutputPosition As String, ByVal defaultHeaderRowSetting As String, _
                      ByVal defaultHeaderMode As String, ByVal defaultIdMode As String, _
                      ByVal defaultKeyMode As String, ByVal defaultUseMarkerRow As Boolean)
     Cancelled = True
+    mAction = "cancel"
+    Set mManualKeys = CreateObject("Scripting.Dictionary")
     lstSheets.Clear
 
     Dim lines As Variant
-    lines = Split(Replace(sheetNamesText, vbCr, vbLf), vbLf)
+    lines = Split(Replace(sheetInfoText, vbCr, vbLf), vbLf)
 
     Dim i As Long
     For i = LBound(lines) To UBound(lines)
-        Dim sheetName As String
-        sheetName = Trim$(CStr(lines(i)))
-        If Len(sheetName) > 0 Then
-            lstSheets.AddItem sheetName
-            lstSheets.Selected(lstSheets.ListCount - 1) = True
+        Dim parts As Variant
+        parts = Split(CStr(lines(i)), vbTab)
+        If UBound(parts) >= 3 And Len(Trim$(CStr(parts(0)))) > 0 Then
+            lstSheets.AddItem CStr(parts(0))
+            lstSheets.List(lstSheets.ListCount - 1, 1) = CStr(parts(1))
+            lstSheets.List(lstSheets.ListCount - 1, 2) = CStr(parts(2))
+            lstSheets.List(lstSheets.ListCount - 1, 3) = CStr(parts(3))
+            If UBound(parts) >= 4 Then lstSheets.List(lstSheets.ListCount - 1, 4) = CStr(parts(4))
+            lstSheets.Selected(lstSheets.ListCount - 1) = TextListContains(defaultSelectedSheets, CStr(parts(0)))
         End If
     Next i
 
     txtKeyHeader.Text = defaultKeyHeader
-    chkManualKeyColumn.Value = (LCase$(Trim$(defaultKeyMode)) = "manual")
-    txtOutputHeaders.Text = HeadersForDisplay(defaultOutputHeaders)
     txtOutputSheetName.Text = defaultOutputSheetName
     txtHeaderRow.Text = IIf(Len(Trim$(defaultHeaderRowSetting)) > 0, defaultHeaderRowSetting, "자동")
 
@@ -1370,19 +1504,54 @@ Public Sub Configure(ByVal sheetNamesText As String, ByVal defaultKeyHeader As S
             cmbHeaderMode.Value = "1줄 헤더"
     End Select
 
-    cmbIdMode.Clear
-    cmbIdMode.AddItem "ID 없으면 결과 시트에만 자동 생성"
-    cmbIdMode.AddItem "기존 KEY 헤더 사용"
-    cmbIdMode.AddItem "ID 없으면 원본 시트에 ID열 생성"
-    Select Case defaultIdMode
-        Case "existing"
-            cmbIdMode.Value = "기존 KEY 헤더 사용"
-        Case "source_auto"
-            cmbIdMode.Value = "ID 없으면 원본 시트에 ID열 생성"
-        Case Else
-            cmbIdMode.Value = "ID 없으면 결과 시트에만 자동 생성"
-    End Select
+    optAutoId.Value = (defaultIdMode <> "existing" And LCase$(Trim$(defaultKeyMode)) <> "manual")
+    optExistingId.Value = (defaultIdMode = "existing")
+    optManualId.Value = (LCase$(Trim$(defaultKeyMode)) = "manual")
+    chkSourceAutoId.Value = (defaultIdMode = "source_auto")
     chkUseMarkerRow.Value = defaultUseMarkerRow
+    chkAdvanced.Value = False
+    mpSteps.Value = 0
+    UpdatePage
+End Sub
+
+Public Sub ConfigureHeaders(ByVal headerInfoText As String)
+    Dim previous As String
+    previous = SelectedHeaders
+    lstHeaders.Clear
+    cmbManualKeyHeader.Clear
+
+    Dim lines As Variant
+    lines = Split(Replace(headerInfoText, vbCr, vbLf), vbLf)
+    Dim i As Long
+    For i = LBound(lines) To UBound(lines)
+        Dim parts As Variant
+        parts = Split(CStr(lines(i)), vbTab)
+        If UBound(parts) >= 2 And Len(Trim$(CStr(parts(0)))) > 0 Then
+            lstHeaders.AddItem CStr(parts(0))
+            lstHeaders.List(lstHeaders.ListCount - 1, 1) = CStr(parts(1))
+            lstHeaders.List(lstHeaders.ListCount - 1, 2) = CStr(parts(2))
+            If mHeadersConfigured Then
+                lstHeaders.Selected(lstHeaders.ListCount - 1) = TextListContains(previous, CStr(parts(0)))
+            Else
+                lstHeaders.Selected(lstHeaders.ListCount - 1) = (CStr(parts(2)) = "전체 시트")
+            End If
+            cmbManualKeyHeader.AddItem CStr(parts(0))
+        End If
+    Next i
+    mHeadersConfigured = True
+    PopulateManualKeySheets
+    mpSteps.Value = 1
+    mAction = vbNullString
+    UpdatePage
+End Sub
+
+Public Sub ConfigureReview(ByVal summaryText As String, ByVal mappingText As String, ByVal warningText As String)
+    txtReviewSummary.Text = summaryText
+    txtReviewMapping.Text = mappingText
+    txtReviewWarnings.Text = warningText
+    mpSteps.Value = 2
+    mAction = "review"
+    UpdatePage
 End Sub
 
 Public Property Get SelectedSheets() As String
@@ -1397,12 +1566,37 @@ Public Property Get SelectedSheets() As String
     SelectedSheets = result
 End Property
 
+Public Property Get Action() As String
+    Action = mAction
+End Property
+
+Public Property Get SelectedHeaders() As String
+    Dim result As String
+    Dim i As Long
+    For i = 0 To lstHeaders.ListCount - 1
+        If lstHeaders.Selected(i) Then
+            If Len(result) > 0 Then result = result & vbLf
+            result = result & CStr(lstHeaders.List(i, 0))
+        End If
+    Next i
+    SelectedHeaders = result
+End Property
+
 Public Property Get KeyHeader() As String
     KeyHeader = Trim$(txtKeyHeader.Text)
+    If Len(KeyHeader) = 0 Then KeyHeader = "ID"
 End Property
 
 Public Property Get OutputHeaders() As String
-    OutputHeaders = Trim$(txtOutputHeaders.Text)
+    OutputHeaders = SelectedHeaders
+End Property
+
+Public Property Get ManualKeyHeaders() As String
+    Dim i As Long
+    For i = 0 To lstManualKeys.ListCount - 1
+        If Len(ManualKeyHeaders) > 0 Then ManualKeyHeaders = ManualKeyHeaders & vbLf
+        ManualKeyHeaders = ManualKeyHeaders & CStr(lstManualKeys.List(i, 0)) & vbTab & CStr(lstManualKeys.List(i, 1))
+    Next i
 End Property
 
 Public Property Get OutputSheetName() As String
@@ -1430,18 +1624,17 @@ Public Property Get HeaderMode() As String
 End Property
 
 Public Property Get IdMode() As String
-    Select Case CStr(cmbIdMode.Value)
-        Case "기존 KEY 헤더 사용"
-            IdMode = "existing"
-        Case "ID 없으면 원본 시트에 ID열 생성"
-            IdMode = "source_auto"
-        Case Else
-            IdMode = "output_auto"
-    End Select
+    If CBool(chkSourceAutoId.Value) Then
+        IdMode = "source_auto"
+    ElseIf CBool(optExistingId.Value) Then
+        IdMode = "existing"
+    Else
+        IdMode = "output_auto"
+    End If
 End Property
 
 Public Property Get KeyMode() As String
-    If CBool(chkManualKeyColumn.Value) Then
+    If CBool(optManualId.Value) Then
         KeyMode = "manual"
     Else
         KeyMode = "header"
@@ -1451,6 +1644,104 @@ End Property
 Public Property Get UseMarkerRow() As Boolean
     UseMarkerRow = CBool(chkUseMarkerRow.Value)
 End Property
+
+Private Function TextListContains(ByVal listText As String, ByVal wanted As String) As Boolean
+    Dim lines As Variant
+    Dim i As Long
+    lines = Split(Replace(listText, vbCr, vbLf), vbLf)
+    For i = LBound(lines) To UBound(lines)
+        If StrComp(Trim$(CStr(lines(i))), Trim$(wanted), vbTextCompare) = 0 Then
+            TextListContains = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Sub PopulateManualKeySheets()
+    Dim selectedRow As Long
+    selectedRow = lstManualKeys.ListIndex
+    lstManualKeys.Clear
+
+    Dim i As Long
+    For i = 0 To lstSheets.ListCount - 1
+        If lstSheets.Selected(i) Then
+            Dim sheetName As String
+            sheetName = CStr(lstSheets.List(i, 0))
+            lstManualKeys.AddItem sheetName
+            If mManualKeys.Exists(sheetName) Then
+                lstManualKeys.List(lstManualKeys.ListCount - 1, 1) = CStr(mManualKeys(sheetName))
+            ElseIf cmbManualKeyHeader.ListCount > 0 Then
+                lstManualKeys.List(lstManualKeys.ListCount - 1, 1) = CStr(cmbManualKeyHeader.List(0))
+                mManualKeys(sheetName) = CStr(cmbManualKeyHeader.List(0))
+            End If
+        End If
+    Next i
+    If lstManualKeys.ListCount > 0 Then
+        If selectedRow < 0 Or selectedRow >= lstManualKeys.ListCount Then selectedRow = 0
+        lstManualKeys.ListIndex = selectedRow
+    End If
+End Sub
+
+Private Sub SetVisible(ByVal controlName As String, ByVal isVisible As Boolean)
+    Me.Controls(controlName).Visible = isVisible
+End Sub
+
+Private Sub UpdatePage()
+    Dim pageNo As Long
+    pageNo = mpSteps.Value
+
+    Dim showSheets As Boolean
+    Dim showSettings As Boolean
+    Dim showReview As Boolean
+    showSheets = (pageNo = 0)
+    showSettings = (pageNo = 1)
+    showReview = (pageNo = 2)
+
+    SetVisible "lblGuide", showSheets
+    SetVisible "lblSheets", showSheets
+    SetVisible "lstSheets", showSheets
+    SetVisible "cmdAll", showSheets
+    SetVisible "cmdNone", showSheets
+
+    SetVisible "lblHeaders", showSettings
+    SetVisible "lblHeadersHelp", showSettings
+    SetVisible "lstHeaders", showSettings
+    SetVisible "lblKey", showSettings
+    SetVisible "txtKeyHeader", showSettings And CBool(optExistingId.Value)
+    SetVisible "lblOutputName", showSettings
+    SetVisible "txtOutputSheetName", showSettings
+    SetVisible "lblPosition", showSettings
+    SetVisible "cmbPosition", showSettings
+    SetVisible "optAutoId", showSettings
+    SetVisible "optExistingId", showSettings
+    SetVisible "optManualId", showSettings
+    SetVisible "lstManualKeys", showSettings And CBool(optManualId.Value)
+    SetVisible "cmbManualKeyHeader", showSettings And CBool(optManualId.Value)
+    SetVisible "cmdApplyManualKey", showSettings And CBool(optManualId.Value)
+    SetVisible "chkAdvanced", showSettings
+
+    Dim showAdvanced As Boolean
+    showAdvanced = showSettings And CBool(chkAdvanced.Value)
+    SetVisible "fraAdvanced", showAdvanced
+    SetVisible "lblHeaderRow", showAdvanced
+    SetVisible "txtHeaderRow", showAdvanced
+    SetVisible "lblHeaderMode", showAdvanced
+    SetVisible "cmbHeaderMode", showAdvanced
+    SetVisible "chkUseMarkerRow", showAdvanced
+    SetVisible "chkSourceAutoId", showAdvanced
+
+    SetVisible "txtReviewSummary", showReview
+    SetVisible "txtReviewWarnings", showReview
+    SetVisible "txtReviewMapping", showReview
+
+    txtOutputHeaders.Visible = False
+    cmbIdMode.Visible = False
+    chkManualKeyColumn.Visible = False
+    lblIdMode.Visible = False
+    cmdBack.Visible = (pageNo > 0)
+    cmdNext.Visible = (pageNo < 2)
+    cmdRun.Visible = showReview
+End Sub
 
 Private Function HeadersForDisplay(ByVal headerText As String) As String
     Dim t As String
@@ -1482,36 +1773,61 @@ Private Sub cmdNone_Click()
     Next i
 End Sub
 
-Private Sub cmdOK_Click()
-    If SelectedSheetCount() = 0 Then
-        MsgBox "통합할 시트를 하나 이상 선택하세요.", vbExclamation, "시트 데이터 통합"
-        lstSheets.SetFocus
+Private Sub cmdNext_Click()
+    If mpSteps.Value = 0 Then
+        If SelectedSheetCount() = 0 Then
+            MsgBox "통합할 시트를 하나 이상 선택하세요.", vbExclamation, "시트 데이터 통합"
+            lstSheets.SetFocus
+            Exit Sub
+        End If
+        mAction = "headers"
+        Hide
         Exit Sub
     End If
-    If Len(Trim$(txtKeyHeader.Text)) = 0 And IdMode = "existing" Then
-        MsgBox "기존 KEY 헤더 사용 방식에서는 메인 KEY 헤더를 입력하세요.", vbExclamation, "시트 데이터 통합"
+
+    If mpSteps.Value = 1 Then
+        If Not SettingsAreValid() Then Exit Sub
+        mAction = "preview"
+        Hide
+    End If
+End Sub
+
+Private Function SettingsAreValid() As Boolean
+    If Len(SelectedHeaders) = 0 And Not CBool(chkUseMarkerRow.Value) Then
+        MsgBox "가져올 열을 하나 이상 선택하세요.", vbExclamation, "시트 데이터 통합"
+        lstHeaders.SetFocus
+        Exit Function
+    End If
+    If CBool(optExistingId.Value) And Len(Trim$(txtKeyHeader.Text)) = 0 Then
+        MsgBox "ID로 사용할 기존 열 이름을 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtKeyHeader.SetFocus
-        Exit Sub
+        Exit Function
+    End If
+    If CBool(optManualId.Value) And Not ManualKeysAreComplete() Then
+        MsgBox "선택한 모든 시트의 ID 열을 지정하세요.", vbExclamation, "시트 데이터 통합"
+        lstManualKeys.SetFocus
+        Exit Function
     End If
     If Not HeaderRowSettingIsValid() Then
         MsgBox "헤더 행은 '자동', '0', 또는 1 이상의 행 번호로 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtHeaderRow.SetFocus
-        Exit Sub
-    End If
-    If Len(Trim$(txtOutputHeaders.Text)) = 0 And Not CBool(chkUseMarkerRow.Value) Then
-        MsgBox "표시행 기준을 사용하지 않을 때는 통합할 헤더를 하나 이상 입력하세요.", vbExclamation, "시트 데이터 통합"
-        txtOutputHeaders.SetFocus
-        Exit Sub
+        Exit Function
     End If
     If Len(Trim$(txtOutputSheetName.Text)) = 0 Then
         MsgBox "결과 시트 이름을 입력하세요.", vbExclamation, "시트 데이터 통합"
         txtOutputSheetName.SetFocus
-        Exit Sub
+        Exit Function
     End If
+    SettingsAreValid = True
+End Function
 
-    Cancelled = False
-    Hide
-End Sub
+Private Function ManualKeysAreComplete() As Boolean
+    Dim i As Long
+    For i = 0 To lstManualKeys.ListCount - 1
+        If Len(Trim$(CStr(lstManualKeys.List(i, 1)))) = 0 Then Exit Function
+    Next i
+    ManualKeysAreComplete = (lstManualKeys.ListCount > 0)
+End Function
 
 Private Function HeaderRowSettingIsValid() As Boolean
     Dim t As String
@@ -1525,8 +1841,55 @@ Private Function HeaderRowSettingIsValid() As Boolean
     HeaderRowSettingIsValid = (CLng(t) > 0)
 End Function
 
+Private Sub cmdBack_Click()
+    If mpSteps.Value > 0 Then mpSteps.Value = mpSteps.Value - 1
+    mAction = vbNullString
+    UpdatePage
+End Sub
+
+Private Sub cmdRun_Click()
+    Cancelled = False
+    mAction = "run"
+    Hide
+End Sub
+
+Private Sub chkAdvanced_Click()
+    UpdatePage
+End Sub
+
+Private Sub optAutoId_Click()
+    UpdatePage
+End Sub
+
+Private Sub optExistingId_Click()
+    UpdatePage
+End Sub
+
+Private Sub optManualId_Click()
+    PopulateManualKeySheets
+    UpdatePage
+End Sub
+
+Private Sub lstManualKeys_Click()
+    If lstManualKeys.ListIndex < 0 Then Exit Sub
+    cmbManualKeyHeader.Value = CStr(lstManualKeys.List(lstManualKeys.ListIndex, 1))
+End Sub
+
+Private Sub cmdApplyManualKey_Click()
+    If lstManualKeys.ListIndex < 0 Or Len(Trim$(CStr(cmbManualKeyHeader.Value))) = 0 Then Exit Sub
+    Dim sheetName As String
+    sheetName = CStr(lstManualKeys.List(lstManualKeys.ListIndex, 0))
+    lstManualKeys.List(lstManualKeys.ListIndex, 1) = CStr(cmbManualKeyHeader.Value)
+    mManualKeys(sheetName) = CStr(cmbManualKeyHeader.Value)
+End Sub
+
+Private Sub mpSteps_Change()
+    UpdatePage
+End Sub
+
 Private Sub cmdCancel_Click()
     Cancelled = True
+    mAction = "cancel"
     Hide
 End Sub
 
@@ -2034,7 +2397,7 @@ function Add-CompanyNameOptionsUserForm {
     $form.Properties.Item("Height").Value = 560
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "적용할 정리 규칙을 선택하세요. 체크를 누른 순서대로 실행됩니다."
+    $lblTitle.Caption = "적용할 정리 규칙을 선택하세요. 직접 선택 시 실행 순번이 표시됩니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 10
     $lblTitle.Width = 540
@@ -2221,7 +2584,59 @@ Private Sub ToggleOperation(ByVal operationName As String, ByVal enabled As Bool
     End If
     mManualOrder = rebuilt
     cboOrderPreset.ListIndex = 3
+    RefreshOrderNumbers
 End Sub
+
+Private Sub cboOrderPreset_Change()
+    If cboOrderPreset.ListIndex = 3 Then
+        RefreshOrderNumbers
+    Else
+        ClearOrderNumbers
+    End If
+End Sub
+
+Private Sub RefreshOrderNumbers()
+    Dim ctl As Object
+    Dim items As Variant
+    Dim i As Long
+    Dim orderNo As Long
+    Dim operationName As String
+
+    ClearOrderNumbers
+    items = Split(mManualOrder, ",")
+    For i = LBound(items) To UBound(items)
+        operationName = Trim$(CStr(items(i)))
+        If Len(operationName) > 0 Then
+            orderNo = orderNo + 1
+            For Each ctl In Me.Controls
+                If TypeName(ctl) = "CheckBox" Then
+                    If OperationNameFromControl(ctl.Name) = operationName Then
+                        ctl.Caption = CStr(orderNo) & ". " & ctl.Caption
+                        Exit For
+                    End If
+                End If
+            Next ctl
+        End If
+    Next i
+End Sub
+
+Private Sub ClearOrderNumbers()
+    Dim ctl As Object
+    Dim dotPos As Long
+    For Each ctl In Me.Controls
+        If TypeName(ctl) = "CheckBox" Then
+            dotPos = InStr(1, ctl.Caption, ". ", vbBinaryCompare)
+            If dotPos > 1 And IsNumeric(Left$(ctl.Caption, dotPos - 1)) Then
+                ctl.Caption = Mid$(ctl.Caption, dotPos + 2)
+            End If
+        End If
+    Next ctl
+End Sub
+
+Private Function OperationNameFromControl(ByVal controlName As String) As String
+    If Left$(controlName, 3) <> "chk" Or Len(controlName) < 4 Then Exit Function
+    OperationNameFromControl = LCase$(Mid$(controlName, 4, 1)) & Mid$(controlName, 5)
+End Function
 
 Private Sub chkTrimOuter_Click()
     ToggleOperation "trimOuter", chkTrimOuter.Value
