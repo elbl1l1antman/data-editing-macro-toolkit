@@ -1133,6 +1133,180 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-SampleExtractionWizardUserForm {
+    param($Workbook)
+
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = 'frmSampleExtractionWizard'
+    $form.Properties.Item('Caption').Value = '표본 추출 마법사'
+    $form.Properties.Item('Width').Value = 690
+    $form.Properties.Item('Height').Value = 600
+    $designer = $form.Designer
+
+    $mp = $designer.Controls.Add('Forms.MultiPage.1', 'mpSteps', $true)
+    $mp.Left = 12; $mp.Top = 10; $mp.Width = 650; $mp.Height = 480
+    while ($mp.Pages.Count -lt 3) { $null = $mp.Pages.Add() }
+    $mp.Pages.Item(0).Caption = '1. 모집단과 층 선택'
+    $mp.Pages.Item(1).Caption = '2. 추출 방법 설정'
+    $mp.Pages.Item(2).Caption = '3. 실행 전 검토'
+    $p1 = $mp.Pages.Item(0); $p2 = $mp.Pages.Item(1); $p3 = $mp.Pages.Item(2)
+
+    $guide1 = $p1.Controls.Add('Forms.Label.1', 'lblGuide1', $true)
+    $guide1.Caption = "1) 모집단의 헤더와 데이터를 함께 선택하세요.`r`n2) ID와 층을 만들 열을 고르세요. 원본 시트는 바뀌지 않습니다."
+    $guide1.Left = 12; $guide1.Top = 10; $guide1.Width = 600; $guide1.Height = 34; $guide1.WordWrap = $true
+    $pick = $p1.Controls.Add('Forms.CommandButton.1', 'cmdPickRange', $true)
+    $pick.Caption = '모집단 범위 선택'; $pick.Left = 12; $pick.Top = 52; $pick.Width = 130; $pick.Height = 26
+    $address = $p1.Controls.Add('Forms.TextBox.1', 'txtPopulationAddress', $true)
+    $address.Left = 152; $address.Top = 54; $address.Width = 458; $address.Height = 22; $address.Locked = $true
+    $header = $p1.Controls.Add('Forms.CheckBox.1', 'chkHasHeader', $true)
+    $header.Caption = '첫 행을 헤더로 사용'; $header.Left = 12; $header.Top = 88; $header.Width = 150; $header.Value = $true
+    $autoId = $p1.Controls.Add('Forms.CheckBox.1', 'chkAutoId', $true)
+    $autoId.Caption = 'ID가 없으면 결과용 ID 자동 생성'; $autoId.Left = 180; $autoId.Top = 88; $autoId.Width = 230; $autoId.Value = $true
+    $idLabel = $p1.Controls.Add('Forms.Label.1', 'lblId', $true)
+    $idLabel.Caption = 'ID 열'; $idLabel.Left = 12; $idLabel.Top = 120; $idLabel.Width = 70
+    $id = $p1.Controls.Add('Forms.ComboBox.1', 'cboIdColumn', $true)
+    $id.Left = 88; $id.Top = 117; $id.Width = 220; $id.Height = 22
+    $strataLabel = $p1.Controls.Add('Forms.Label.1', 'lblStrata', $true)
+    $strataLabel.Caption = '층화 기준 열 (여러 개 선택 가능)'; $strataLabel.Left = 12; $strataLabel.Top = 153; $strataLabel.Width = 220
+    $strata = $p1.Controls.Add('Forms.ListBox.1', 'lstStrata', $true)
+    $strata.Left = 12; $strata.Top = 176; $strata.Width = 296; $strata.Height = 180; $strata.MultiSelect = 1
+    $detected = $p1.Controls.Add('Forms.TextBox.1', 'txtDetectedSummary', $true)
+    $detected.Left = 326; $detected.Top = 117; $detected.Width = 284; $detected.Height = 239; $detected.MultiLine = $true; $detected.Locked = $true
+    $hint1 = $p1.Controls.Add('Forms.Label.1', 'lblHint1', $true)
+    $hint1.Caption = '범위를 선택하면 열 제목과 데이터 상태를 자동으로 보여줍니다.'; $hint1.Left = 12; $hint1.Top = 370; $hint1.Width = 590; $hint1.Height = 22
+
+    $guide2 = $p2.Controls.Add('Forms.Label.1', 'lblGuide2', $true)
+    $guide2.Caption = '표본설계 결과를 연결하거나 층별 목표를 직접 입력한 뒤 추출 방법을 선택하세요.'
+    $guide2.Left = 12; $guide2.Top = 10; $guide2.Width = 600; $guide2.Height = 28
+    $autoTarget = $p2.Controls.Add('Forms.OptionButton.1', 'optAutoTarget', $true)
+    $autoTarget.Caption = '표본설계_할당결과 자동 연결'; $autoTarget.Left = 12; $autoTarget.Top = 48; $autoTarget.Width = 220; $autoTarget.Value = $true
+    $manualTarget = $p2.Controls.Add('Forms.OptionButton.1', 'optManualTarget', $true)
+    $manualTarget.Caption = '층별 목표 직접 지정'; $manualTarget.Left = 245; $manualTarget.Top = 48; $manualTarget.Width = 170
+    $labels = @(
+        @('lblReplacement','대체표본 배수','txtReplacementMultiplier','3',12,86,120),
+        @('lblConfidence','신뢰수준 (%)','txtConfidenceLevel','95',12,126,120),
+        @('lblProportion','예상비율 (0~1)','txtExpectedProportion','0.5',12,166,120),
+        @('lblSeed','난수 시드 (선택)','txtRandomSeed','',12,206,120),
+        @('lblOutput','결과 시트명','txtOutputSheetName','표본추출_결과',12,246,120)
+    )
+    foreach ($item in $labels) {
+        $lbl = $p2.Controls.Add('Forms.Label.1', $item[0], $true); $lbl.Caption=$item[1]; $lbl.Left=$item[4]; $lbl.Top=$item[5]; $lbl.Width=$item[6]; $lbl.Height=18
+        $txt = $p2.Controls.Add('Forms.TextBox.1', $item[2], $true); $txt.Text=$item[3]; $txt.Left=142; $txt.Top=$item[5]-3; $txt.Width=150; $txt.Height=22
+    }
+    $sortLabel = $p2.Controls.Add('Forms.Label.1', 'lblSort', $true)
+    $sortLabel.Caption = '층 내부 정렬'; $sortLabel.Left = 330; $sortLabel.Top = 86; $sortLabel.Width = 100
+    $keep = $p2.Controls.Add('Forms.OptionButton.1', 'optKeepOrder', $true)
+    $keep.Caption = '현재 행 순서 유지'; $keep.Left = 330; $keep.Top = 110; $keep.Width = 150; $keep.Value = $true
+    $asc = $p2.Controls.Add('Forms.OptionButton.1', 'optAscending', $true)
+    $asc.Caption = '오름차순'; $asc.Left = 330; $asc.Top = 138; $asc.Width = 100
+    $desc = $p2.Controls.Add('Forms.OptionButton.1', 'optDescending', $true)
+    $desc.Caption = '내림차순'; $desc.Left = 438; $desc.Top = 138; $desc.Width = 100
+    $sortCol = $p2.Controls.Add('Forms.ComboBox.1', 'cboSortColumn', $true)
+    $sortCol.Left = 330; $sortCol.Top = 170; $sortCol.Width = 250; $sortCol.Height = 22
+    $hint2 = $p2.Controls.Add('Forms.Label.1', 'lblHint2', $true)
+    $hint2.Caption = "기본값: 대체 3배, 95% 신뢰수준, 예상비율 0.5.`r`n난수 시드를 기록하면 같은 설정으로 같은 표본을 다시 만들 수 있습니다."
+    $hint2.Left = 330; $hint2.Top = 210; $hint2.Width = 280; $hint2.Height = 52; $hint2.WordWrap = $true
+
+    $guide3 = $p3.Controls.Add('Forms.Label.1', 'lblGuide3', $true)
+    $guide3.Caption = '층별 모집단과 목표 표본을 확인하세요. 확인 필요 행은 아래 목표 목록에서 수정해야 실행할 수 있습니다.'
+    $guide3.Left = 12; $guide3.Top = 10; $guide3.Width = 600; $guide3.Height = 30; $guide3.WordWrap = $true
+    $review = $p3.Controls.Add('Forms.TextBox.1', 'txtReview', $true)
+    $review.Left = 12; $review.Top = 48; $review.Width = 600; $review.Height = 185; $review.MultiLine = $true; $review.ScrollBars = 3; $review.Locked = $true
+    $targetsLabel = $p3.Controls.Add('Forms.Label.1', 'lblTargets', $true)
+    $targetsLabel.Caption = '층 키와 목표 원표본 (한 줄에 층키<Tab>목표값)'; $targetsLabel.Left = 12; $targetsLabel.Top = 244; $targetsLabel.Width = 310
+    $targets = $p3.Controls.Add('Forms.TextBox.1', 'txtTargetEdits', $true)
+    $targets.Left = 12; $targets.Top = 266; $targets.Width = 350; $targets.Height = 110; $targets.MultiLine = $true; $targets.ScrollBars = 3
+    $warnings = $p3.Controls.Add('Forms.TextBox.1', 'txtWarnings', $true)
+    $warnings.Left = 376; $warnings.Top = 244; $warnings.Width = 236; $warnings.Height = 132; $warnings.MultiLine = $true; $warnings.Locked = $true
+    $approx = $p3.Controls.Add('Forms.Label.1', 'lblApproximation', $true)
+    $approx.Caption = '표본오차는 단순임의추출 근사치입니다.'; $approx.Left = 12; $approx.Top = 390; $approx.Width = 360; $approx.Height = 20
+
+    $buttons = @(
+        @('cmdBack','이전',310), @('cmdNext','다음',390), @('cmdRun','추출 실행',470), @('cmdCancel','취소',560)
+    )
+    foreach ($item in $buttons) {
+        $button = $designer.Controls.Add('Forms.CommandButton.1', $item[0], $true)
+        $button.Caption=$item[1]; $button.Left=$item[2]; $button.Top=510; $button.Width=78; $button.Height=28
+    }
+    $designer.Controls.Item('cmdBack').Enabled = $false
+    $designer.Controls.Item('cmdRun').Visible = $false
+
+    $formCode = @'
+Option Explicit
+Private mAction As String
+
+Public Property Get Action() As String: Action = mAction: End Property
+Public Property Get PopulationAddress() As String: PopulationAddress = Trim$(txtPopulationAddress.Text): End Property
+Public Property Get HasHeader() As Boolean: HasHeader = CBool(chkHasHeader.Value): End Property
+Public Property Get AutoId() As Boolean: AutoId = CBool(chkAutoId.Value): End Property
+Public Property Get IdColumnIndex() As Long: IdColumnIndex = cboIdColumn.ListIndex + 1: End Property
+Public Property Get TargetMode() As String: If optAutoTarget.Value Then TargetMode = "auto" Else TargetMode = "manual": End Property
+Public Property Get ReplacementMultiplier() As Long: ReplacementMultiplier = CLng(Val(txtReplacementMultiplier.Text)): End Property
+Public Property Get ConfidenceLevel() As Double: ConfidenceLevel = CDbl(Val(txtConfidenceLevel.Text)): End Property
+Public Property Get ExpectedProportion() As Double: ExpectedProportion = CDbl(Val(txtExpectedProportion.Text)): End Property
+Public Property Get RandomSeedText() As String: RandomSeedText = Trim$(txtRandomSeed.Text): End Property
+Public Property Get OutputSheetName() As String: OutputSheetName = Trim$(txtOutputSheetName.Text): End Property
+Public Property Get TargetEditsText() As String: TargetEditsText = txtTargetEdits.Text: End Property
+Public Property Get SortColumnIndex() As Long: SortColumnIndex = cboSortColumn.ListIndex + 1: End Property
+Public Property Get SortMode() As String
+    If optAscending.Value Then SortMode = "asc" Else If optDescending.Value Then SortMode = "desc" Else SortMode = "keep"
+End Property
+Public Property Get StratumColumnIndexes() As String
+    Dim i As Long, resultText As String
+    For i = 0 To lstStrata.ListCount - 1
+        If lstStrata.Selected(i) Then
+            If Len(resultText) > 0 Then resultText = resultText & ","
+            resultText = resultText & CStr(i + 1)
+        End If
+    Next i
+    StratumColumnIndexes = resultText
+End Property
+
+Public Sub ConfigureColumns(ByVal addressText As String, ByVal headersText As String, ByVal summaryText As String)
+    Dim values As Variant, i As Long
+    txtPopulationAddress.Text = addressText
+    values = Split(headersText, vbTab)
+    cboIdColumn.Clear: cboSortColumn.Clear: lstStrata.Clear
+    For i = LBound(values) To UBound(values)
+        cboIdColumn.AddItem CStr(values(i)): cboSortColumn.AddItem CStr(values(i)): lstStrata.AddItem CStr(values(i))
+    Next i
+    If cboIdColumn.ListCount > 0 Then cboIdColumn.ListIndex = 0: cboSortColumn.ListIndex = 0
+    txtDetectedSummary.Text = summaryText
+End Sub
+
+Public Sub ConfigureReview(ByVal reviewText As String, ByVal targetText As String, ByVal warningText As String)
+    txtReview.Text = reviewText: txtTargetEdits.Text = targetText: txtWarnings.Text = warningText
+    ShowPage 2: mAction = "review"
+End Sub
+
+Public Sub ShowPage(ByVal pageIndex As Long)
+    mpSteps.Value = pageIndex
+    cmdBack.Enabled = (pageIndex > 0)
+    cmdNext.Visible = (pageIndex < 2)
+    cmdRun.Visible = (pageIndex = 2)
+End Sub
+
+Private Sub cmdPickRange_Click(): mAction = "pick_range": Hide: End Sub
+Private Sub cmdBack_Click(): If mpSteps.Value > 0 Then ShowPage mpSteps.Value - 1: End Sub
+Private Sub cmdNext_Click()
+    If mpSteps.Value = 0 Then
+        If Len(PopulationAddress) = 0 Then MsgBox "먼저 모집단 범위를 선택하세요.", vbExclamation, "표본 추출": Exit Sub
+        If Len(StratumColumnIndexes) = 0 Then MsgBox "층을 만들 열을 하나 이상 선택하세요.", vbExclamation, "표본 추출": Exit Sub
+        ShowPage 1
+    Else
+        If ReplacementMultiplier < 0 Or ConfidenceLevel <= 0 Or ConfidenceLevel >= 100 Or ExpectedProportion <= 0 Or ExpectedProportion >= 1 Or Len(OutputSheetName) = 0 Then
+            MsgBox "대체배수, 신뢰수준, 예상비율과 결과 시트명을 확인하세요.", vbExclamation, "표본 추출": Exit Sub
+        End If
+        mAction = "review": Hide
+    End If
+End Sub
+Private Sub cmdRun_Click(): mAction = "run": Hide: End Sub
+Private Sub cmdCancel_Click(): mAction = "cancel": Hide: End Sub
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer): If CloseMode = 0 Then mAction = "cancel": End Sub
+'@
+    $form.CodeModule.AddFromString($formCode)
+}
+
 function Add-DatabaseMergeSetupUserForm {
     param($Workbook)
 
@@ -3892,6 +4066,7 @@ try {
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
         $publishStage = "add frmSampleDesignSetup"
         Add-SampleDesignSetupUserForm -Workbook $workbook
+        Add-SampleExtractionWizardUserForm -Workbook $workbook
         $publishStage = "add frmSampleDesignBandBuilder"
         Add-SampleDesignBandBuilderUserForm -Workbook $workbook
         $publishStage = "add frmPopulationListifyPreview"
