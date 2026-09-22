@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.45"
+Public Const TOOLKIT_VERSION As String = "1.1.46"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -15390,6 +15390,150 @@ ErrHandler:
     Application.ScreenUpdating = True
     MsgBox "통합 표시행을 만드는 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "통합 표시행 만들기"
 End Sub
+
+Public Function DBMerge_WizardSheetInfoText(ByVal wb As Workbook) As String
+    Dim ws As Worksheet
+    Dim result As String
+    For Each ws In wb.Worksheets
+        Dim headerRow As Long
+        Dim dataCount As Long
+        Dim stateText As String
+        Dim warningText As String
+
+        dataCount = 0
+        stateText = vbNullString
+        warningText = vbNullString
+
+        headerRow = DBMerge_DetectHeaderRow(ws)
+        If headerRow = 0 Then
+            stateText = "확인 필요"
+            warningText = "헤더를 찾지 못함"
+        Else
+            dataCount = DBMerge_LastUsedRow(ws) - headerRow
+            If dataCount < 0 Then dataCount = 0
+            If DBMerge_WizardIsDefaultSheet(ws) Then
+                stateText = "선택"
+            Else
+                stateText = "제외"
+            End If
+            If DBMerge_WizardDuplicateHeaderCount(ws, headerRow, "single") > 0 Then warningText = "중복 헤더"
+        End If
+
+        If Len(result) > 0 Then result = result & vbLf
+        result = result & ws.Name & vbTab & CStr(headerRow) & vbTab & CStr(dataCount) & vbTab & stateText
+        If Len(warningText) > 0 Then result = result & vbTab & warningText
+    Next ws
+    DBMerge_WizardSheetInfoText = result
+End Function
+
+Public Function DBMerge_WizardDefaultSheetNames(ByVal wb As Workbook) As String
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If DBMerge_WizardIsDefaultSheet(ws) Then
+            If Len(DBMerge_WizardDefaultSheetNames) > 0 Then DBMerge_WizardDefaultSheetNames = DBMerge_WizardDefaultSheetNames & vbLf
+            DBMerge_WizardDefaultSheetNames = DBMerge_WizardDefaultSheetNames & ws.Name
+        End If
+    Next ws
+End Function
+
+Public Function DBMerge_WizardHeaderInfoText(ByVal wb As Workbook, _
+                                              ByVal selectedSheetNames As String, _
+                                              ByVal headerRowSetting As String, _
+                                              ByVal headerMode As String) As String
+    Dim displayNames As Object
+    Dim matchCounts As Object
+    Dim headerOrder As Collection
+    Set displayNames = CreateObject("Scripting.Dictionary")
+    Set matchCounts = CreateObject("Scripting.Dictionary")
+    Set headerOrder = New Collection
+
+    Dim selectedCount As Long
+    selectedCount = DBMerge_WizardSelectedSheetCount(wb, selectedSheetNames)
+
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If DBMerge_NameIsSelected(selectedSheetNames, ws.Name) Then
+            Dim headerRow As Long
+            headerRow = DBMerge_HeaderRowForSheet(ws, headerRowSetting, headerMode, False)
+            If headerRow > 0 Then
+                Dim seenOnSheet As Object
+                Set seenOnSheet = CreateObject("Scripting.Dictionary")
+
+                Dim c As Long
+                For c = 1 To DBMerge_LastUsedCol(ws)
+                    Dim headerText As String
+                    Dim norm As String
+                    headerText = DBMerge_HeaderTextForColumn(ws, c, headerRow, headerMode)
+                    norm = DBMerge_NormalizeHeader(headerText)
+                    If Len(norm) > 0 And Not seenOnSheet.Exists(norm) Then
+                        seenOnSheet.Add norm, True
+                        If Not displayNames.Exists(norm) Then
+                            displayNames.Add norm, headerText
+                            matchCounts.Add norm, 0
+                            headerOrder.Add norm
+                        End If
+                        matchCounts(norm) = CLng(matchCounts(norm)) + 1
+                    End If
+                Next c
+            End If
+        End If
+    Next ws
+
+    Dim i As Long
+    Dim result As String
+    For i = 1 To headerOrder.Count
+        Dim key As String
+        Dim stateText As String
+        key = CStr(headerOrder(i))
+        If selectedCount > 0 And CLng(matchCounts(key)) = selectedCount Then
+            stateText = "전체 시트"
+        Else
+            stateText = "일부 시트만 있음"
+        End If
+        If Len(result) > 0 Then result = result & vbLf
+        result = result & CStr(displayNames(key)) & vbTab & CStr(matchCounts(key)) & vbTab & stateText
+    Next i
+    DBMerge_WizardHeaderInfoText = result
+End Function
+
+Private Function DBMerge_WizardDuplicateHeaderCount(ByVal ws As Worksheet, ByVal headerRow As Long, _
+                                                     ByVal headerMode As String) As Long
+    Dim seen As Object
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    Dim c As Long
+    For c = 1 To DBMerge_LastUsedCol(ws)
+        Dim norm As String
+        norm = DBMerge_NormalizeHeader(DBMerge_HeaderTextForColumn(ws, c, headerRow, headerMode))
+        If Len(norm) > 0 Then
+            If seen.Exists(norm) Then
+                DBMerge_WizardDuplicateHeaderCount = DBMerge_WizardDuplicateHeaderCount + 1
+            Else
+                seen.Add norm, True
+            End If
+        End If
+    Next c
+End Function
+
+Private Function DBMerge_WizardIsDefaultSheet(ByVal ws As Worksheet) As Boolean
+    If ws.Visible <> xlSheetVisible Then Exit Function
+    If Left$(ws.Name, 1) = "_" Then Exit Function
+
+    Dim c As Long
+    For c = 1 To DBMerge_LastUsedCol(ws)
+        If CStr(ws.Cells(1, c).Value) = "__DBMERGE_SOURCE_SHEET" Then Exit Function
+    Next c
+    DBMerge_WizardIsDefaultSheet = True
+End Function
+
+Private Function DBMerge_WizardSelectedSheetCount(ByVal wb As Workbook, ByVal selectedSheetNames As String) As Long
+    Dim ws As Worksheet
+    For Each ws In wb.Worksheets
+        If DBMerge_NameIsSelected(selectedSheetNames, ws.Name) Then
+            DBMerge_WizardSelectedSheetCount = DBMerge_WizardSelectedSheetCount + 1
+        End If
+    Next ws
+End Function
 
 Private Function DBMerge_ShowSetupForm(ByVal wb As Workbook, ByRef selectedSheetNames As String, _
                                        ByRef keyHeader As String, ByRef outputHeadersCsv As String, _
