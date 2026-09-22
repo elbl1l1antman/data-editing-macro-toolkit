@@ -29,6 +29,13 @@ foreach ($token in @(
     '표본오차는 단순임의추출 근사치'
 )) { Assert-Contains $source $token }
 
+foreach ($token in @(
+    'minimumRows = IIf(wizard.HasHeader, 2, 1)',
+    'Private Function SampleExtract_CopyRows',
+    '"실제 원표본"',
+    '"실제 대체표본"'
+)) { Assert-Contains $source $token }
+
 function Get-VbaBlock([string]$Name) {
     $start = [regex]::Match($source, "(?m)^(Public|Private)\s+(Function|Sub)\s+$([regex]::Escape($Name))\b.*$")
     if (-not $start.Success) { throw "Procedure not found: $Name" }

@@ -16960,7 +16960,7 @@ ErrHandler:
 End Sub
 
 Private Function SampleExtract_PickPopulationRange(ByVal wizard As Object) As Range
-    Dim selectedRange As Range, headers As Variant
+    Dim selectedRange As Range, headers As Variant, minimumRows As Long
     On Error Resume Next
     Set selectedRange = Application.InputBox( _
         "모집단의 헤더와 데이터를 함께 선택하세요." & vbCrLf & _
@@ -16968,7 +16968,8 @@ Private Function SampleExtract_PickPopulationRange(ByVal wizard As Object) As Ra
         "표본 추출 - 모집단 범위", Type:=8)
     On Error GoTo 0
     If selectedRange Is Nothing Then Exit Function
-    If selectedRange.Areas.Count > 1 Or selectedRange.Rows.Count < 2 Then
+    minimumRows = IIf(wizard.HasHeader, 2, 1)
+    If selectedRange.Areas.Count > 1 Or selectedRange.Rows.Count < minimumRows Then
         MsgBox "한 시트의 연속된 범위에서 헤더와 데이터 1행 이상을 선택하세요.", vbExclamation, "표본 추출"
         Exit Function
     End If
@@ -17158,6 +17159,12 @@ Private Sub SampleExtract_SortRows(ByVal rows As Collection, ByVal values As Var
     For i = LBound(orderedRows) To UBound(orderedRows): rows.Add orderedRows(i): Next i
 End Sub
 
+Private Function SampleExtract_CopyRows(ByVal sourceRows As Collection) As Collection
+    Dim result As New Collection, i As Long
+    For i = 1 To sourceRows.Count: result.Add CLng(sourceRows(i)): Next i
+    Set SampleExtract_CopyRows = result
+End Function
+
 Private Sub SampleExtract_QuickSortRows(ByRef orderedRows() As Long, ByVal low As Long, ByVal high As Long, _
                                         ByVal values As Variant, ByVal sortColumn As Long, ByVal descending As Boolean)
     Dim i As Long, j As Long, pivotRow As Long, temp As Long, direction As Long
@@ -17186,7 +17193,7 @@ Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationR
         Exit Function
     End If
 
-    Dim values As Variant, headers As Variant, indexes As Variant, strata As Object, targets As Object
+    Dim values As Variant, headers As Variant, indexes As Variant, strata As Object, availableByKey As Object, targets As Object
     Dim firstDataRow As Long, key As Variant, rows As Collection
     values = populationRange.Value2: headers = SampleExtract_HeaderNames(populationRange, CBool(wizard.HasHeader))
     indexes = SampleExtract_ParseIndexes(CStr(wizard.StratumColumnIndexes))
@@ -17202,6 +17209,11 @@ Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationR
             Set rows = strata(key): SampleExtract_SortRows rows, values, sortColumn, (sortMode = "desc")
         Next key
     End If
+    Set availableByKey = CreateObject("Scripting.Dictionary")
+    For Each key In strata.Keys
+        Set rows = SampleExtract_CopyRows(strata(key))
+        availableByKey.Add CStr(key), rows
+    Next key
 
     Dim seedValue As Long
     If Len(CStr(wizard.RandomSeedText)) > 0 And IsNumeric(wizard.RandomSeedText) Then seedValue = CLng(wizard.RandomSeedText) Else seedValue = CLng(Timer * 100)
@@ -17221,7 +17233,7 @@ Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationR
     Toolkit_ProgressShow "표본 추출", "층별 원표본과 대체표본을 추출합니다.", totalSteps
     For roundNo = 0 To replacementMultiplier
         For Each key In strata.Keys
-            Set rows = strata(key): targetN = CLng(targets(CStr(key)))
+            Set rows = availableByKey(CStr(key)): targetN = CLng(targets(CStr(key)))
             actualN = targetN: If actualN > rows.Count Then actualN = rows.Count
             If actualN > 0 Then
                 intervalValue = rows.Count / actualN: startValue = Rnd * intervalValue
@@ -17298,7 +17310,18 @@ End Sub
 
 Private Sub SampleExtract_WriteReviewSheet(ByVal wb As Workbook, ByVal reviewName As String, ByVal wizard As Object, _
                                            ByVal strata As Object, ByVal targets As Object, ByVal records As Collection, ByVal seedValue As Long)
-    Dim ws As Worksheet, rowNo As Long, key As Variant, rows As Collection
+    Dim ws As Worksheet, rowNo As Long, key As Variant, rows As Collection, rec As Variant, i As Long
+    Dim originalCounts As Object, replacementCounts As Object
+    Set originalCounts = CreateObject("Scripting.Dictionary")
+    Set replacementCounts = CreateObject("Scripting.Dictionary")
+    For i = 1 To records.Count
+        rec = records(i): key = CStr(rec(1))
+        If CLng(rec(3)) = 0 Then
+            If originalCounts.Exists(key) Then originalCounts(key) = CLng(originalCounts(key)) + 1 Else originalCounts.Add key, 1
+        Else
+            If replacementCounts.Exists(key) Then replacementCounts(key) = CLng(replacementCounts(key)) + 1 Else replacementCounts.Add key, 1
+        End If
+    Next i
     Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count)): ws.Name = reviewName
     ws.Range("A1").Value = "표본 추출 검토": ws.Range("A1").Font.Bold = True
     ws.Cells(3, 1).Value = "모집단 범위": ws.Cells(3, 2).Value = wizard.PopulationAddress
@@ -17309,11 +17332,14 @@ Private Sub SampleExtract_WriteReviewSheet(ByVal wb As Workbook, ByVal reviewNam
     ws.Cells(8, 1).Value = "예상비율": ws.Cells(8, 2).Value = wizard.ExpectedProportion
     ws.Cells(9, 1).Value = "난수 시드": ws.Cells(9, 2).Value = seedValue
     ws.Range("A11").Value = "표본오차는 단순임의추출 근사치이며, 정렬된 명부의 실제 계통추출 분산과 다를 수 있습니다."
-    ws.Range("A13:D13").Value = Array("층 키", "모집단수", "목표 원표본", "요청 대체표본")
+    SampleDesign_WriteArray ws, 13, 1, Array("층 키", "모집단수", "목표 원표본", "실제 원표본", "요청 대체표본", "실제 대체표본")
     rowNo = 14
     For Each key In strata.Keys
         Set rows = strata(key): ws.Cells(rowNo, 1).Value = CStr(key): ws.Cells(rowNo, 2).Value = rows.Count
-        ws.Cells(rowNo, 3).Value = targets(CStr(key)): ws.Cells(rowNo, 4).Value = CLng(targets(CStr(key))) * CLng(wizard.ReplacementMultiplier)
+        ws.Cells(rowNo, 3).Value = targets(CStr(key))
+        If originalCounts.Exists(CStr(key)) Then ws.Cells(rowNo, 4).Value = originalCounts(CStr(key)) Else ws.Cells(rowNo, 4).Value = 0
+        ws.Cells(rowNo, 5).Value = CLng(targets(CStr(key))) * CLng(wizard.ReplacementMultiplier)
+        If replacementCounts.Exists(CStr(key)) Then ws.Cells(rowNo, 6).Value = replacementCounts(CStr(key)) Else ws.Cells(rowNo, 6).Value = 0
         rowNo = rowNo + 1
     Next key
     ws.Columns.AutoFit
