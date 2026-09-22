@@ -38,6 +38,8 @@ $procedureNames = @(
     "DBMerge_WizardDuplicateHeaderCount",
     "DBMerge_WizardIsDefaultSheet",
     "DBMerge_WizardSelectedSheetCount",
+    "DBMerge_WizardManualKeyColumns",
+    "DBMerge_WizardWarningSummary",
     "DBMerge_NameIsSelected",
     "DBMerge_HeaderRowForSheet",
     "DBMerge_RowLooksLikeMarker",
@@ -57,6 +59,57 @@ $moduleCode = "Option Explicit`r`n" + (($procedureNames | ForEach-Object {
     Get-VbaBlock -SourceText $source -ProcedureName $_
 }) -join "`r`n`r`n")
 
+$wrapperCode = @'
+Public Function DBMergeWizardControllerRulesPassed(ByVal wb As Workbook) As String
+    Dim columns As Object
+    Set columns = DBMerge_WizardManualKeyColumns(wb, _
+        "서울" & vbTab & "ID" & vbLf & "부산" & vbTab & "관리번호", "자동", "single")
+    If Not columns.Exists("서울") Or CLng(columns("서울")) <> 1 Then
+        DBMergeWizardControllerRulesPassed = "서울 ID 열 매칭 실패"
+        Exit Function
+    End If
+    If Not columns.Exists("부산") Or CLng(columns("부산")) <> 1 Then
+        DBMergeWizardControllerRulesPassed = "부산 관리번호 열 매칭 실패"
+        Exit Function
+    End If
+
+    Dim plan As Object
+    Set plan = CreateObject("Scripting.Dictionary")
+    plan.Add "idMode", "source_auto"
+    Dim headers As Collection
+    Set headers = New Collection
+    headers.Add "ID"
+    headers.Add "사업체명"
+    headers.Add "주소"
+    plan.Add "headers", headers
+
+    Dim sheetPlans As Collection
+    Set sheetPlans = New Collection
+    Dim sheetPlan As Object
+    Set sheetPlan = CreateObject("Scripting.Dictionary")
+    sheetPlan.Add "sheetName", "서울"
+    Dim headerMap As Object
+    Set headerMap = CreateObject("Scripting.Dictionary")
+    headerMap.Add "id", 1
+    headerMap.Add "사업체명", 2
+    sheetPlan.Add "headerMap", headerMap
+    sheetPlans.Add sheetPlan
+    plan.Add "sheets", sheetPlans
+
+    Dim warnings As String
+    warnings = DBMerge_WizardWarningSummary(plan)
+    If InStr(1, warnings, "일부 누락", vbTextCompare) = 0 Then
+        DBMergeWizardControllerRulesPassed = "누락 헤더 경고 없음"
+        Exit Function
+    End If
+    If InStr(1, warnings, "원본 변경", vbTextCompare) = 0 Then
+        DBMergeWizardControllerRulesPassed = "원본 변경 경고 없음"
+        Exit Function
+    End If
+    DBMergeWizardControllerRulesPassed = "PASS"
+End Function
+'@
+
 $excel = $null
 $workbook = $null
 
@@ -69,6 +122,8 @@ try {
     $module = $workbook.VBProject.VBComponents.Add(1)
     $module.Name = "DBMergeWizardTests"
     $module.CodeModule.AddFromString($moduleCode)
+    $wrapper = $workbook.VBProject.VBComponents.Add(1)
+    $wrapper.CodeModule.AddFromString($wrapperCode)
 
     $sheetInfo = [string]$excel.Run("DBMerge_WizardSheetInfoText", $workbook)
     $defaultSheets = [string]$excel.Run("DBMerge_WizardDefaultSheetNames", $workbook)
@@ -95,6 +150,9 @@ try {
     $warningInfo = [string]$excel.Run("DBMerge_WizardSheetInfoText", $workbook)
     Assert-Contains $warningInfo "오류헤더`t0`t0`t확인 필요"
     Assert-Contains $warningInfo "중복헤더`t1`t1`t선택`t중복 헤더"
+
+    $controllerResult = [string]$excel.Run("DBMergeWizardControllerRulesPassed", $workbook)
+    if ($controllerResult -ne "PASS") { throw $controllerResult }
 
     Write-Host "DBMerge wizard logic tests passed."
 }
