@@ -16824,6 +16824,105 @@ Public Sub Toolkit_LaunchSampleDesign()
     End Select
 End Sub
 
+' ============================================================
+' Stratified systematic sample extraction core
+' ============================================================
+Private Function SampleExtract_NormalizeMatchValue(ByVal valueData As Variant) As String
+    If IsError(valueData) Or IsNull(valueData) Or Len(Trim$(CStr(valueData))) = 0 Then
+        SampleExtract_NormalizeMatchValue = "(공란)"
+    ElseIf IsNumeric(valueData) Then
+        SampleExtract_NormalizeMatchValue = Replace$(Format$(CDbl(valueData), "0.###############"), Application.DecimalSeparator, ".")
+    Else
+        SampleExtract_NormalizeMatchValue = Trim$(CStr(valueData))
+    End If
+End Function
+
+Private Function SampleExtract_BuildStratumKey(ByVal rowValues As Variant, ByVal columnIndexes As Variant) As String
+    Dim i As Long, valueText As String, resultText As String
+    For i = LBound(columnIndexes) To UBound(columnIndexes)
+        valueText = SampleExtract_NormalizeMatchValue(rowValues(1, CLng(columnIndexes(i))))
+        resultText = resultText & Len(valueText) & ":" & valueText & "|"
+    Next i
+    SampleExtract_BuildStratumKey = resultText
+End Function
+
+Private Function SampleExtract_SystematicIndexes(ByVal populationCount As Long, _
+                                                 ByVal sampleCount As Long, _
+                                                 ByVal randomStart As Double) As Variant
+    Dim result() As Long, intervalValue As Double, i As Long
+    If populationCount <= 0 Or sampleCount <= 0 Then
+        SampleExtract_SystematicIndexes = Array()
+        Exit Function
+    End If
+    If sampleCount > populationCount Then sampleCount = populationCount
+    intervalValue = populationCount / sampleCount
+    If randomStart < 0 Then randomStart = 0
+    If randomStart >= intervalValue Then randomStart = intervalValue - 0.0000000001
+    ReDim result(0 To sampleCount - 1)
+    For i = 0 To sampleCount - 1
+        result(i) = Int(randomStart + (i * intervalValue)) + 1
+    Next i
+    SampleExtract_SystematicIndexes = result
+End Function
+
+Private Function SampleExtract_AppendUniqueRound(ByVal availableRows As Collection, _
+                                                 ByVal requestedCount As Long, _
+                                                 ByVal randomStart As Double, _
+                                                 ByVal selectedRows As Object) As Collection
+    Dim result As New Collection, indexes As Variant, i As Long, rowNumber As Long
+    If availableRows.Count = 0 Or requestedCount <= 0 Then
+        Set SampleExtract_AppendUniqueRound = result
+        Exit Function
+    End If
+
+    indexes = SampleExtract_SystematicIndexes(availableRows.Count, requestedCount, randomStart)
+    For i = LBound(indexes) To UBound(indexes)
+        rowNumber = CLng(availableRows(CLng(indexes(i))))
+        If Not selectedRows.Exists(CStr(rowNumber)) Then
+            result.Add rowNumber
+            selectedRows.Add CStr(rowNumber), True
+        End If
+    Next i
+    For i = UBound(indexes) To LBound(indexes) Step -1
+        availableRows.Remove CLng(indexes(i))
+    Next i
+    Set SampleExtract_AppendUniqueRound = result
+End Function
+
+Public Function SampleExtract_TestSystematicPositions(ByVal populationCount As Long, _
+                                                      ByVal sampleCount As Long, _
+                                                      ByVal randomStart As Double) As String
+    Dim indexes As Variant, i As Long, resultText As String
+    indexes = SampleExtract_SystematicIndexes(populationCount, sampleCount, randomStart)
+    On Error GoTo EmptyResult
+    For i = LBound(indexes) To UBound(indexes)
+        If Len(resultText) > 0 Then resultText = resultText & ","
+        resultText = resultText & CStr(indexes(i))
+    Next i
+EmptyResult:
+    SampleExtract_TestSystematicPositions = resultText
+End Function
+
+Public Function SampleExtract_TestErrorStats(ByVal populationCount As Long, _
+                                             ByVal sampleCount As Long, _
+                                             ByVal confidenceLevel As Double, _
+                                             ByVal expectedProportion As Double) As String
+    Dim inclusionProbability As Double, weightValue As Double
+    Dim standardError As Double, marginOfError As Double, zValue As Double
+    If populationCount <= 0 Or sampleCount <= 0 Then Exit Function
+    If sampleCount > populationCount Then sampleCount = populationCount
+    inclusionProbability = sampleCount / populationCount
+    weightValue = populationCount / sampleCount
+    If sampleCount < populationCount And populationCount > 1 Then
+        zValue = Application.WorksheetFunction.Norm_S_Inv(0.5 + confidenceLevel / 200)
+        standardError = Sqr(((populationCount - sampleCount) / (populationCount - 1)) * _
+                            expectedProportion * (1 - expectedProportion) / sampleCount)
+        marginOfError = zValue * standardError
+    End If
+    SampleExtract_TestErrorStats = "PI=" & CStr(inclusionProbability) & _
+        ";WEIGHT=" & CStr(weightValue) & ";SE=" & CStr(standardError) & ";MOE=" & CStr(marginOfError)
+End Function
+
 Private Function Toolkit_LauncherPrompt(ByVal title As String, ByVal promptText As String, ByVal defaultChoice As String) As String
     On Error GoTo Fallback
 
