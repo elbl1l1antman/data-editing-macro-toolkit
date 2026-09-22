@@ -3735,7 +3735,7 @@ function Add-RibbonCustomUi {
           <button id="btnNaverLegalDongMaster" label="법정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateLegalDongMasterTemplate" screentip="법정동 마스터 양식 생성" supertip="현재 통합문서에 내장 법정동 마스터와 같은 양식의 법정동_마스터 시트를 생성합니다. 이 시트를 수정하면 법정동 기준 신규 리스트 생성에 우선 사용됩니다." />
         </group>
         <group id="grpDatabaseTools" label="데이터 통합">
-          <button id="btnDatabaseMergeSheets" label="시트 통합" size="large" imageMso="TableInsert" onAction="Ribbon_DatabaseMergeSheets" screentip="여러 시트 데이터 통합" supertip="KEY와 통합 헤더를 지정하고 시트별 헤더 매핑을 검증한 뒤 여러 시트의 데이터를 하나의 통합 시트로 쌓습니다." />
+          <button id="btnDatabaseMergeSheets" label="시트 통합" size="large" imageMso="TableInsert" onAction="Ribbon_DatabaseMergeSheets" screentip="여러 시트 데이터 통합" supertip="통합할 시트를 선택하면 헤더와 데이터 범위를 자동 감지합니다. 가져올 열과 ID 방식을 확인한 뒤 매칭 결과를 검토하고 통합합니다." />
           <button id="btnDatabaseCreateMarkerRows" label="통합 표시행" imageMso="InsertRows" onAction="Ribbon_DatabaseCreateMergeMarkerRows" screentip="통합할 열 표시행 만들기" supertip="선택한 시트의 헤더 위에 표시행을 추가합니다. 통합할 열 위 셀에 x, 1 등 아무 값을 입력한 뒤 시트 통합에서 표시행 기준을 선택하세요." />
           <button id="btnDatabaseSplitMergedSheet" label="통합 시트 분리" imageMso="TableSelect" onAction="Ribbon_DatabaseSplitMergedSheet" screentip="통합 데이터 원본별 분리" supertip="통합 시트 1행의 관리코드를 기준으로 원본시트별 분리 시트를 다시 생성합니다." />
         </group>
@@ -3812,6 +3812,7 @@ $AdminDongMasterCsv = Join-Path $ProjectRoot "resources\admin_dong_master.csv"
 $LegalDongMasterCsv = Join-Path $ProjectRoot "resources\legal_dong_master.csv"
 $DevWorkbook = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
 $ReleaseRoot = Join-Path $ProjectRoot "release"
+$VbaProtector = Join-Path $ProjectRoot "scripts\protect_vba_project.py"
 
 $commit = "unknown"
 $wasDirtyBeforePublish = $false
@@ -3829,6 +3830,7 @@ try {
 
 if (-not (Test-Path -LiteralPath $ModulePath)) { throw "VBA module not found: $ModulePath" }
 if (-not (Test-Path -LiteralPath $DevWorkbook)) { throw "Development workbook not found: $DevWorkbook" }
+if (-not (Test-Path -LiteralPath $VbaProtector)) { throw "VBA protector not found: $VbaProtector" }
 
 if (-not $Version) {
     $moduleText = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
@@ -3953,6 +3955,42 @@ finally {
     if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 }
 
+$vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "Process")
+if (-not $vbaPassword) {
+    $vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "User")
+}
+if (-not $vbaPassword) {
+    throw "Set the DATA_EDITING_TOOLKIT_VBA_PASSWORD user environment variable before publishing."
+}
+
+$env:DATA_EDITING_TOOLKIT_VBA_PASSWORD = $vbaPassword
+foreach ($artifact in @($ReleaseAddin, $LatestAddin)) {
+    & python $VbaProtector $artifact
+    if ($LASTEXITCODE -ne 0) { throw "Could not protect VBA project: $artifact" }
+}
+
+$verifyExcel = New-Object -ComObject Excel.Application
+$verifyExcel.Visible = $false
+$verifyExcel.DisplayAlerts = $false
+try {
+    foreach ($artifact in @($ReleaseAddin, $LatestAddin)) {
+        $verifyWorkbook = $verifyExcel.Workbooks.Open($artifact, 0, $true)
+        try {
+            if ($verifyWorkbook.VBProject.Protection -ne 1) {
+                throw "VBA project protection verification failed: $artifact"
+            }
+        }
+        finally {
+            $verifyWorkbook.Close($false)
+            [System.Runtime.InteropServices.Marshal]::ReleaseComObject($verifyWorkbook) | Out-Null
+        }
+    }
+}
+finally {
+    $verifyExcel.Quit()
+    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($verifyExcel) | Out-Null
+}
+
 if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
 
 function Copy-OrderedDictionary {
@@ -3985,6 +4023,7 @@ $baseManifest = [ordered]@{
     installFile = $ReleaseAddinName
     containsVbaModule = $true
     containsRibbonTab = $true
+    addinVbaProjectProtected = $true
     ribbonTab = "데이터 툴킷"
     ribbonInsertAfter = "보기"
     vbaImportEncoding = "CP949"
