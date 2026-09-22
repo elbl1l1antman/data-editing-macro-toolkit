@@ -1,4 +1,4 @@
-param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
+﻿param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 
 $ErrorActionPreference = 'Stop'
 $modulePath = Join-Path $ProjectRoot 'src\MacroToolkit.bas'
@@ -16,6 +16,18 @@ foreach ($name in @(
     'SampleExtract_TestSystematicPositions',
     'SampleExtract_TestErrorStats'
 )) { Assert-Contains $source $name }
+
+foreach ($token in @(
+    'Public Sub SampleExtract_Run()',
+    'Private Function SampleExtract_LoadAllocationTargets',
+    'Private Function SampleExtract_BuildReviewText',
+    'Private Sub SampleExtract_WriteResultSheet',
+    'Private Sub SampleExtract_WriteReviewSheet',
+    '__SAMPLE_SOURCE_ROW',
+    '__SAMPLE_REPLACEMENT_ROUND',
+    '__SAMPLE_WEIGHT',
+    '표본오차는 단순임의추출 근사치'
+)) { Assert-Contains $source $token }
 
 function Get-VbaBlock([string]$Name) {
     $start = [regex]::Match($source, "(?m)^(Public|Private)\s+(Function|Sub)\s+$([regex]::Escape($Name))\b.*$")
