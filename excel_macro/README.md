@@ -140,10 +140,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.43/DataEditingMacroToolkit_v1.1.43.xlam`
-- `release/v1.1.42/DataEditingMacroToolkit_v1.1.42.xlsm`
-- `release/v1.1.42/MacroToolkit.bas`
-- `release/v1.1.42/manifest.json`
+- `release/v1.1.49/DataEditingMacroToolkit_v1.1.49.xlam`
+- `release/v1.1.49/DataEditingMacroToolkit_v1.1.49.xlsm`
+- `release/v1.1.49/MacroToolkit.bas`
+- `release/v1.1.49/manifest.json`
 
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
@@ -157,7 +157,7 @@ Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 
 설치 후 Excel 상단 리본의 `보기` 탭 옆에 `데이터 툴킷` 탭이 추가됩니다. 기능은 이 탭의 버튼으로 실행합니다.
 
-- `값 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리, 전화번호 숫자만, 기업/사업체명 정리, 주소 유형 판별, 주소 체계 분리, 주소 통합
+- `값 정리`: 숫자 변환, 시트 숫자 변환, 전화번호 정리, 전화번호 숫자만, 기업/사업체명 정리, 주소 유형 판별, 주소 체계 분리, 주소 통합, 광역시도 표기 변환
 - `사업자등록`: 인증키 설정, 번호 숫자만, 3열 병합, 상태조회
 - `네이버 지역검색`: 인증키 설정, 행정동/법정동 기준 신규 리스트, 업체명/주소 검증, 업체 검색, 공식몰 링크 검색, 행정동/법정동 마스터 양식 생성
 - `데이터 통합`: 시트 통합, 통합 시트 원본별 분리

@@ -3941,6 +3941,7 @@ function Add-RibbonCustomUi {
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
           <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
+          <button id="btnAddressProvinceNotation" label="광역시도 표기" imageMso="AddressBook" onAction="Ribbon_AddressConvertProvinceNotation" screentip="17개 광역시도 축약형/정규형 변환" supertip="주소 첫 어절의 광역시도만 변환합니다. 축약형을 정규형으로 바꿀 때 최신 특별자치도 명칭 또는 기존 명칭을 선택할 수 있습니다." />
         </group>
         <group id="grpBusinessNoTools" label="사업자등록">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />

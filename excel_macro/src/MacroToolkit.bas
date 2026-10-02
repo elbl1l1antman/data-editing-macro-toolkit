@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.48"
+Public Const TOOLKIT_VERSION As String = "1.1.49"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -143,6 +143,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A52").Value = "NaverOfficialMall_FindLinksForSelection"
     ws.Range("A53").Value = "NaverBusinessSearch_SearchSelection"
     ws.Range("A54").Value = "DataCheck_CreateCharacterCheckFormula"
+    ws.Range("A55").Value = "Address_ConvertProvinceNotation"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -3884,6 +3885,229 @@ Public Sub Address_ClassifyAddressType()
     Address_ClassifyRangeType addressRange
 End Sub
 
+Public Sub Address_ConvertProvinceNotation()
+    Dim addressRange As Range
+    If Not Toolkit_GetRangeFromUserForm("광역시도 표기 변환", _
+        "주소가 들어 있는 한 개 열을 선택하세요. 첫 어절의 광역시도만 변환하며 결과는 오른쪽 새 열에 생성됩니다.", _
+        addressRange) Then Exit Sub
+
+    Dim direction As String
+    direction = Toolkit_ButtonMenu( _
+        "광역시도 표기 변환", _
+        "변환 방향을 선택하세요. 주소 중간에 같은 지명이 있어도 첫 어절만 바뀝니다.", _
+        "formal" & vbTab & "축약형 → 정규형" & vbLf & _
+        "short" & vbTab & "정규형 → 축약형", _
+        "formal")
+    If Len(direction) = 0 Then Exit Sub
+
+    Dim formalStyle As String
+    formalStyle = "latest"
+    If direction = "formal" Then
+        formalStyle = Toolkit_ButtonMenu( _
+            "정규형 명칭 선택", _
+            "강원·전북·제주의 정규형 표기를 선택하세요. 두 형식 모두 입력값으로 인정됩니다.", _
+            "latest" & vbTab & "최신 명칭: 강원특별자치도·전북특별자치도·제주특별자치도" & vbLf & _
+            "legacy" & vbTab & "기존 명칭: 강원도·전라북도·제주도", _
+            "latest")
+        If Len(formalStyle) = 0 Then Exit Sub
+    End If
+
+    Address_ConvertProvinceRange addressRange, direction, formalStyle
+End Sub
+
+Private Sub Address_ConvertProvinceRange(ByVal addressRange As Range, ByVal direction As String, ByVal formalStyle As String)
+    If addressRange.Areas.Count > 1 Or addressRange.Columns.Count <> 1 Then
+        MsgBox "광역시도 표기 변환은 한 번에 한 개의 연속된 주소 열만 처리합니다.", vbExclamation, "광역시도 표기 변환"
+        Exit Sub
+    End If
+
+    Dim workRange As Range
+    Set workRange = Toolkit_TrimRangeToActualData(addressRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에서 변환할 주소를 찾지 못했습니다.", vbInformation, "광역시도 표기 변환"
+        Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = workRange.Worksheet
+
+    Dim firstRow As Long, lastRow As Long, dataStartRow As Long, headerRow As Long
+    firstRow = workRange.Row
+    lastRow = workRange.Row + workRange.Rows.Count - 1
+    dataStartRow = firstRow
+    If Address_LooksLikeHeader(CStr(workRange.Cells(1, 1).Value)) Then
+        headerRow = firstRow
+        dataStartRow = firstRow + 1
+    ElseIf firstRow > 1 Then
+        headerRow = firstRow - 1
+    End If
+
+    Dim totalRows As Long
+    totalRows = Application.Max(0, lastRow - dataStartRow + 1)
+    If totalRows = 0 Then
+        MsgBox "헤더를 제외하면 변환할 주소가 없습니다.", vbInformation, "광역시도 표기 변환"
+        Exit Sub
+    End If
+
+    Dim outputCol As Long
+    outputCol = workRange.Column + 1
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "광역시도 표기 변환") Then Exit Sub
+
+    Dim sourceValues As Variant, resultValues() As Variant
+    sourceValues = ws.Range(ws.Cells(dataStartRow, workRange.Column), ws.Cells(lastRow, workRange.Column)).Value2
+    ReDim resultValues(1 To totalRows, 1 To 1)
+
+    Dim i As Long, sourceText As String, convertedText As String, changedCount As Long
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "광역시도 표기 변환", totalRows, "광역시도 표기 변환 준비 중"
+    For i = 1 To totalRows
+        If totalRows = 1 Then
+            sourceText = CStr(sourceValues)
+        Else
+            sourceText = CStr(sourceValues(i, 1))
+        End If
+        convertedText = Address_ConvertProvinceFirstToken(sourceText, direction, formalStyle)
+        resultValues(i, 1) = convertedText
+        If convertedText <> sourceText Then changedCount = changedCount + 1
+        Toolkit_RowProgressUpdate i, totalRows, "광역시도 표기 변환 중: " & CStr(i) & "/" & CStr(totalRows) & "행"
+    Next i
+
+    ws.Columns(outputCol).Insert Shift:=xlToRight
+    If headerRow > 0 Then
+        If direction = "formal" Then
+            ws.Cells(headerRow, outputCol).Value = "주소_광역시도정규형"
+        Else
+            ws.Cells(headerRow, outputCol).Value = "주소_광역시도축약형"
+        End If
+        ws.Cells(headerRow, outputCol).Font.Bold = True
+    End If
+    ws.Range(ws.Cells(dataStartRow, outputCol), ws.Cells(lastRow, outputCol)).Value = resultValues
+    ws.Columns(outputCol).AutoFit
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+
+    MsgBox "광역시도 표기 변환을 완료했습니다." & vbCrLf & _
+           "변환: " & changedCount & "건" & vbCrLf & _
+           "변경 없음: " & (totalRows - changedCount) & "건", vbInformation, "광역시도 표기 변환"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("광역시도 표기 변환") Then Exit Sub
+    MsgBox "광역시도 표기 변환 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "광역시도 표기 변환"
+End Sub
+
+Public Function Address_ProvinceNotationForTest(ByVal addressText As String, ByVal direction As String, ByVal formalStyle As String) As String
+    Address_ProvinceNotationForTest = Address_ConvertProvinceFirstToken(addressText, direction, formalStyle)
+End Function
+
+Private Function Address_ConvertProvinceFirstToken(ByVal addressText As String, ByVal direction As String, ByVal formalStyle As String) As String
+    Dim textValue As String
+    textValue = Trim$(CStr(addressText))
+    If Len(textValue) = 0 Then Exit Function
+
+    Dim separatorPosition As Long, firstToken As String, remainder As String
+    separatorPosition = Address_FirstWhitespacePosition(textValue)
+    If separatorPosition > 0 Then
+        firstToken = Left$(textValue, separatorPosition - 1)
+        remainder = Mid$(textValue, separatorPosition)
+    Else
+        firstToken = textValue
+    End If
+
+    Dim shortName As String, replacement As String
+    shortName = Address_ProvinceShortName(firstToken)
+    If Len(shortName) = 0 Then
+        Address_ConvertProvinceFirstToken = addressText
+        Exit Function
+    End If
+
+    Select Case LCase$(direction)
+        Case "short"
+            replacement = shortName
+        Case "normalize"
+            replacement = Address_ProvinceFormalFromShort(shortName, "latest")
+        Case Else
+            If Address_IsProvinceFormalToken(firstToken) Then
+                replacement = firstToken
+            Else
+                replacement = Address_ProvinceFormalFromShort(shortName, formalStyle)
+            End If
+    End Select
+
+    Address_ConvertProvinceFirstToken = replacement & remainder
+End Function
+
+Private Function Address_FirstWhitespacePosition(ByVal textValue As String) As Long
+    Dim i As Long, charCode As Long
+    For i = 1 To Len(textValue)
+        charCode = AscW(Mid$(textValue, i, 1))
+        If charCode = 32 Or charCode = 9 Or charCode = 10 Or charCode = 13 Then
+            Address_FirstWhitespacePosition = i
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function Address_ProvinceShortName(ByVal provinceName As String) As String
+    Select Case Trim$(provinceName)
+        Case "서울", "서울시", "서울특별시": Address_ProvinceShortName = "서울"
+        Case "부산", "부산시", "부산광역시": Address_ProvinceShortName = "부산"
+        Case "대구", "대구시", "대구광역시": Address_ProvinceShortName = "대구"
+        Case "인천", "인천시", "인천광역시": Address_ProvinceShortName = "인천"
+        Case "광주", "광주시", "광주광역시": Address_ProvinceShortName = "광주"
+        Case "대전", "대전시", "대전광역시": Address_ProvinceShortName = "대전"
+        Case "울산", "울산시", "울산광역시": Address_ProvinceShortName = "울산"
+        Case "세종", "세종시", "세종특별자치시": Address_ProvinceShortName = "세종"
+        Case "경기", "경기도": Address_ProvinceShortName = "경기"
+        Case "강원", "강원도", "강원특별자치도": Address_ProvinceShortName = "강원"
+        Case "충북", "충청북도": Address_ProvinceShortName = "충북"
+        Case "충남", "충청남도": Address_ProvinceShortName = "충남"
+        Case "전북", "전라북도", "전북특별자치도": Address_ProvinceShortName = "전북"
+        Case "전남", "전라남도": Address_ProvinceShortName = "전남"
+        Case "경북", "경상북도": Address_ProvinceShortName = "경북"
+        Case "경남", "경상남도": Address_ProvinceShortName = "경남"
+        Case "제주", "제주도", "제주특별자치도": Address_ProvinceShortName = "제주"
+    End Select
+End Function
+
+Private Function Address_IsProvinceFormalToken(ByVal provinceName As String) As Boolean
+    Select Case Trim$(provinceName)
+        Case "서울특별시", "부산광역시", "대구광역시", "인천광역시", "광주광역시", _
+             "대전광역시", "울산광역시", "세종특별자치시", "경기도", "강원도", "강원특별자치도", _
+             "충청북도", "충청남도", "전라북도", "전북특별자치도", "전라남도", "경상북도", _
+             "경상남도", "제주도", "제주특별자치도"
+            Address_IsProvinceFormalToken = True
+    End Select
+End Function
+
+Private Function Address_ProvinceFormalFromShort(ByVal shortName As String, ByVal formalStyle As String) As String
+    Select Case shortName
+        Case "서울": Address_ProvinceFormalFromShort = "서울특별시"
+        Case "부산": Address_ProvinceFormalFromShort = "부산광역시"
+        Case "대구": Address_ProvinceFormalFromShort = "대구광역시"
+        Case "인천": Address_ProvinceFormalFromShort = "인천광역시"
+        Case "광주": Address_ProvinceFormalFromShort = "광주광역시"
+        Case "대전": Address_ProvinceFormalFromShort = "대전광역시"
+        Case "울산": Address_ProvinceFormalFromShort = "울산광역시"
+        Case "세종": Address_ProvinceFormalFromShort = "세종특별자치시"
+        Case "경기": Address_ProvinceFormalFromShort = "경기도"
+        Case "강원"
+            If LCase$(formalStyle) = "legacy" Then Address_ProvinceFormalFromShort = "강원도" Else Address_ProvinceFormalFromShort = "강원특별자치도"
+        Case "충북": Address_ProvinceFormalFromShort = "충청북도"
+        Case "충남": Address_ProvinceFormalFromShort = "충청남도"
+        Case "전북"
+            If LCase$(formalStyle) = "legacy" Then Address_ProvinceFormalFromShort = "전라북도" Else Address_ProvinceFormalFromShort = "전북특별자치도"
+        Case "전남": Address_ProvinceFormalFromShort = "전라남도"
+        Case "경북": Address_ProvinceFormalFromShort = "경상북도"
+        Case "경남": Address_ProvinceFormalFromShort = "경상남도"
+        Case "제주"
+            If LCase$(formalStyle) = "legacy" Then Address_ProvinceFormalFromShort = "제주도" Else Address_ProvinceFormalFromShort = "제주특별자치도"
+    End Select
+End Function
+
 Private Sub Address_ClassifyRangeType(ByVal addressRange As Range)
     If addressRange.Areas.Count > 1 Then
         MsgBox "주소 유형 판별은 한 번에 하나의 연속된 범위만 처리합니다.", vbExclamation, "주소 유형 판별"
@@ -4515,26 +4739,7 @@ Private Function Address_NormalizeKey(ByVal addressText As String) As String
 End Function
 
 Private Function Address_NormalizeRegionNames(ByVal addressText As String) As String
-    Dim textValue As String
-    textValue = addressText
-    textValue = Replace(textValue, "서울시", "서울특별시")
-    textValue = Replace(textValue, "부산시", "부산광역시")
-    textValue = Replace(textValue, "대구시", "대구광역시")
-    textValue = Replace(textValue, "인천시", "인천광역시")
-    textValue = Replace(textValue, "광주시", "광주광역시")
-    textValue = Replace(textValue, "대전시", "대전광역시")
-    textValue = Replace(textValue, "울산시", "울산광역시")
-    textValue = Replace(textValue, "세종시", "세종특별자치시")
-    textValue = Replace(textValue, "경기 ", "경기도 ")
-    textValue = Replace(textValue, "강원 ", "강원도 ")
-    textValue = Replace(textValue, "충북 ", "충청북도 ")
-    textValue = Replace(textValue, "충남 ", "충청남도 ")
-    textValue = Replace(textValue, "전북 ", "전라북도 ")
-    textValue = Replace(textValue, "전남 ", "전라남도 ")
-    textValue = Replace(textValue, "경북 ", "경상북도 ")
-    textValue = Replace(textValue, "경남 ", "경상남도 ")
-    textValue = Replace(textValue, "제주도", "제주특별자치도")
-    Address_NormalizeRegionNames = textValue
+    Address_NormalizeRegionNames = Address_ConvertProvinceFirstToken(addressText, "normalize", "latest")
 End Function
 
 Private Function Address_IsRoadAddress(ByVal addressText As String) As Boolean
@@ -16729,7 +16934,8 @@ Public Sub Toolkit_LaunchAddressSearch()
         "8. 행정동 마스터 양식 생성" & vbCrLf & _
         "9. 법정동 마스터 양식 생성" & vbCrLf & _
         "10. 네이버 공식몰 링크 검색" & vbCrLf & _
-        "11. 네이버 업체 검색", _
+        "11. 네이버 업체 검색" & vbCrLf & _
+        "12. 광역시도 표기 변환", _
         "1")
 
     Select Case choice
@@ -16744,8 +16950,9 @@ Public Sub Toolkit_LaunchAddressSearch()
         Case "9": NaverLocal_CreateLegalDongMasterTemplate
         Case "10": NaverOfficialMall_FindLinksForSelection
         Case "11": NaverBusinessSearch_SearchSelection
+        Case "12": Address_ConvertProvinceNotation
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~11 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "주소/검색", "1~12 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -17561,6 +17768,10 @@ End Sub
 
 Public Sub Ribbon_AddressCombineDongAndRoad(control As IRibbonControl)
     Address_CombineDongAndRoad
+End Sub
+
+Public Sub Ribbon_AddressConvertProvinceNotation(control As IRibbonControl)
+    Address_ConvertProvinceNotation
 End Sub
 
 Public Sub Ribbon_BizNoSetApiKey(control As IRibbonControl)

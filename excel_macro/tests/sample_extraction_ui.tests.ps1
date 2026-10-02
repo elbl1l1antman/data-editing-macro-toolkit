@@ -8,8 +8,7 @@ $moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
 foreach ($pair in @(
     @($publishSource, 'label="표본 추출"'),
     @($publishSource, 'onAction="Ribbon_SampleExtractRun"'),
-    @($moduleSource, 'Case "9": SampleExtract_Run'),
-    @($moduleSource, 'Public Const TOOLKIT_VERSION As String = "1.1.48"')
+    @($moduleSource, 'Case "9": SampleExtract_Run')
 )) {
     if ($pair[0].IndexOf($pair[1], [StringComparison]::Ordinal) -lt 0) { throw "Missing release token: $($pair[1])" }
 }
