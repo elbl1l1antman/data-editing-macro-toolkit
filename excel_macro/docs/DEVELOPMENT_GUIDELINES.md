@@ -13,6 +13,9 @@ VBA, PowerShell, XML, 테스트 래퍼 코드에 한글 문자열을 추가하�
 ## 릴리스 전 확인
 
 - 기능 변경 시 `TOOLKIT_VERSION`, `README.md`, `docs/USER_MANUAL.md`를 함께 갱신한다.
+- 현재 버전의 `docs/releases/v버전.md`를 작성하며 `주요 변경`, `사용 방법`, `수정된 문제`, `주의사항`을 반드시 포함한다.
+- 패치노트는 내부 함수명 나열보다 사용자가 무엇을 할 수 있고 무엇을 주의해야 하는지 중심으로 작성한다.
+- 배포 스크립트가 패치노트를 `release/v버전/PATCH_NOTES.md`와 `release/latest/PATCH_NOTES.md`에 복사했는지 확인한다.
 - 새 버튼 또는 메뉴명은 리본, 통합실행 메뉴, 사용자 메뉴얼의 표현을 일치시킨다.
 - API 키가 필요한 기능은 버전별 릴리스 산출물에 키가 남지 않는지 manifest의 `versionedArtifactsSanitized` 값을 확인한다.
 - 커밋 전 `git diff --check`와 관련 테스트 스크립트를 실행한다.

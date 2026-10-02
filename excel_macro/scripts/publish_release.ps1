@@ -4065,6 +4065,10 @@ if (-not $Version) {
 $VersionTag = "v$Version"
 $VersionDir = Join-Path $ReleaseRoot $VersionTag
 $LatestDir = Join-Path $ReleaseRoot "latest"
+$PatchNotesSource = Join-Path $ProjectRoot ("docs\releases\v{0}.md" -f $Version)
+if (-not (Test-Path -LiteralPath $PatchNotesSource)) {
+    throw "Release patch notes not found: $PatchNotesSource"
+}
 $ReleaseWorkbookName = "DataEditingMacroToolkit_$VersionTag.xlsm"
 $ReleaseAddinName = "DataEditingMacroToolkit_$VersionTag.xlam"
 $LatestWorkbookName = "DataEditingMacroToolkit_latest.xlsm"
@@ -4084,6 +4088,8 @@ Copy-Item -Path $DevWorkbook -Destination $ReleaseWorkbook -Force
 Copy-Item -Path $DevWorkbook -Destination $LatestWorkbook -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $VersionDir "MacroToolkit.bas") -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $LatestDir "MacroToolkit.bas") -Force
+Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $VersionDir "PATCH_NOTES.md") -Force
+Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $LatestDir "PATCH_NOTES.md") -Force
 
 $moduleSource = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
 $cp949 = [System.Text.Encoding]::GetEncoding(949)
@@ -4245,6 +4251,7 @@ $baseManifest = [ordered]@{
     addin = $ReleaseAddinName
     workbook = $ReleaseWorkbookName
     sourceModule = "MacroToolkit.bas"
+    patchNotesFile = "PATCH_NOTES.md"
     installFile = $ReleaseAddinName
     containsVbaModule = $true
     containsRibbonTab = $true
