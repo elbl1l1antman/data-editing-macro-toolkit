@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.49"
+Public Const TOOLKIT_VERSION As String = "1.1.50"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -144,6 +144,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A53").Value = "NaverBusinessSearch_SearchSelection"
     ws.Range("A54").Value = "DataCheck_CreateCharacterCheckFormula"
     ws.Range("A55").Value = "Address_ConvertProvinceNotation"
+    ws.Range("A56").Value = "DataCleanup_ClearResidualBlankValues"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -725,6 +726,72 @@ ErrHandler:
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
            vbExclamation, "텍스트 숫자 변환"
 End Sub
+
+Public Sub DataCleanup_ClearResidualBlankValues()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("수식 빈값 정리", _
+        "XLOOKUP, VLOOKUP 등의 결과를 값으로 붙여넣은 범위를 선택하세요. 빈 문자열만 실제 빈셀로 바꿉니다.", _
+        targetRange) Then Exit Sub
+
+    If Not Toolkit_ValidateWorksheet(targetRange.Worksheet, "수식 빈값 정리", True) Then Exit Sub
+    If MsgBox("선택 범위에서 값 붙여넣기 후 남은 빈 문자열만 실제 빈셀로 변경합니다." & vbCrLf & vbCrLf & _
+              "수식 셀, 숫자 0, 일반 텍스트, 공백 문자는 유지됩니다." & vbCrLf & _
+              "이 작업은 선택한 셀을 제자리에서 수정합니다. 계속할까요?", _
+              vbQuestion + vbYesNo, "수식 빈값 정리") <> vbYes Then Exit Sub
+
+    Dim workRange As Range
+    Set workRange = Intersect(targetRange, targetRange.Worksheet.UsedRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에 정리할 값이 없습니다.", vbInformation, "수식 빈값 정리"
+        Exit Sub
+    End If
+
+    Dim candidates As Range
+    On Error Resume Next
+    Set candidates = workRange.SpecialCells(xlCellTypeConstants, xlTextValues)
+    On Error GoTo 0
+    If candidates Is Nothing Then
+        MsgBox "선택한 범위에 값으로 붙여넣은 빈 문자열이 없습니다.", vbInformation, "수식 빈값 정리"
+        Exit Sub
+    End If
+
+    Dim totalCells As Long, processedCells As Long, clearedCount As Long
+    totalCells = candidates.Cells.CountLarge
+
+    Dim cell As Range
+    On Error GoTo ErrHandler
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "수식 빈값 정리", totalCells, "빈 문자열 확인 준비 중"
+    For Each cell In candidates.Cells
+        If DataCleanup_IsResidualBlankValue(cell.Value2, cell.HasFormula) Then
+            cell.ClearContents
+            clearedCount = clearedCount + 1
+        End If
+        processedCells = processedCells + 1
+        Toolkit_RowProgressUpdate processedCells, totalCells, _
+            "수식 빈값 정리 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
+    Next cell
+
+    Toolkit_RowProgressClose totalCells
+    Application.ScreenUpdating = True
+    MsgBox CStr(clearedCount) & "개 셀을 실제 빈셀로 변경했습니다.", vbInformation, "수식 빈값 정리"
+    Exit Sub
+
+ErrHandler:
+    Toolkit_RowProgressClose totalCells
+    Application.ScreenUpdating = True
+    If Toolkit_ShowCancelMessage("수식 빈값 정리") Then Exit Sub
+    MsgBox "수식 빈값 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "수식 빈값 정리"
+End Sub
+
+Private Function DataCleanup_IsResidualBlankValue(ByVal cellValue As Variant, ByVal hasFormula As Boolean) As Boolean
+    If hasFormula Then Exit Function
+    DataCleanup_IsResidualBlankValue = (VarType(cellValue) = vbString And Len(CStr(cellValue)) = 0)
+End Function
+
+Public Function DataCleanup_IsResidualBlankForTest(ByVal cellValue As Variant, ByVal hasFormula As Boolean) As Boolean
+    DataCleanup_IsResidualBlankForTest = DataCleanup_IsResidualBlankValue(cellValue, hasFormula)
+End Function
 
 ' ============================================================
 ' 프로시저 : NormalizePhonesToCopiedColumns (내부 전용)
@@ -16902,7 +16969,8 @@ Public Sub Toolkit_LaunchDataCleanup()
         "5. 사업자등록번호 숫자만 남기기" & vbCrLf & _
         "6. 사업자등록번호 3열 병합" & vbCrLf & _
         "7. 기업/사업체명 정리" & vbCrLf & _
-        "8. 문자 검진 함수 생성", _
+        "8. 문자 검진 함수 생성" & vbCrLf & _
+        "9. 수식 빈값 정리", _
         "1")
 
     Select Case choice
@@ -16914,8 +16982,9 @@ Public Sub Toolkit_LaunchDataCleanup()
         Case "6": BizNo_MergeThreeColumns
         Case "7": CompanyName_CleanWithOptions
         Case "8": DataCheck_CreateCharacterCheckFormula
+        Case "9": DataCleanup_ClearResidualBlankValues
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~8 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~9 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -17756,6 +17825,10 @@ End Sub
 
 Public Sub Ribbon_DataCheckCreateCharacterFormula(control As IRibbonControl)
     DataCheck_CreateCharacterCheckFormula
+End Sub
+
+Public Sub Ribbon_DataCleanupClearResidualBlanks(control As IRibbonControl)
+    DataCleanup_ClearResidualBlankValues
 End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)
