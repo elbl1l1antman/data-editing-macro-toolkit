@@ -2941,7 +2941,7 @@ function Add-BizStatusFieldsOptionsUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "사업자등록 상태조회 반환값 선택"
     $form.Properties.Item("Width").Value = 560
-    $form.Properties.Item("Height").Value = 430
+    $form.Properties.Item("Height").Value = 380
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "조회 결과로 추가할 열을 선택하세요."
@@ -3457,85 +3457,60 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $form.Properties.Item("Height").Value = 430
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "분석에 사용할 항목을 선택하세요. 범위는 실행 후 열리는 Excel 범위 선택창에서 지정합니다."
+    $lblTitle.Caption = "검증에 사용할 항목을 체크하세요. 실행을 누르면 업체명, 주소 순서로 Excel 범위 선택창이 열립니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 12
     $lblTitle.Width = 520
-    $lblTitle.Height = 24
+    $lblTitle.Height = 32
 
     $chkUseName = $designer.Controls.Add("Forms.CheckBox.1", "chkUseName", $true)
-    $chkUseName.Caption = "업체명 사용"
+    $chkUseName.Caption = "업체명 범위 사용"
     $chkUseName.Left = 12
     $chkUseName.Top = 46
-    $chkUseName.Width = 100
+    $chkUseName.Width = 120
     $chkUseName.Height = 20
     $chkUseName.Value = $true
 
-    $txtNameRange = $designer.Controls.Add("Forms.TextBox.1", "txtNameRange", $true)
-    $txtNameRange.Left = 120
-    $txtNameRange.Top = 44
-    $txtNameRange.Width = 300
-    $txtNameRange.Height = 22
-
-    $cmdPickName = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickName", $true)
-    $cmdPickName.Caption = "선택 안내"
-    $cmdPickName.Left = 432
-    $cmdPickName.Top = 42
-    $cmdPickName.Width = 90
-    $cmdPickName.Height = 26
+    $lblNameRangeStep = $designer.Controls.Add("Forms.Label.1", "lblNameRangeStep", $true)
+    $lblNameRangeStep.Caption = "실행 후 업체명 범위 선택"
+    $lblNameRangeStep.Left = 144
+    $lblNameRangeStep.Top = 48
+    $lblNameRangeStep.Width = 260
+    $lblNameRangeStep.Height = 18
 
     $chkUseAddress = $designer.Controls.Add("Forms.CheckBox.1", "chkUseAddress", $true)
-    $chkUseAddress.Caption = "주소 사용"
+    $chkUseAddress.Caption = "주소 범위 사용"
     $chkUseAddress.Left = 12
     $chkUseAddress.Top = 82
-    $chkUseAddress.Width = 100
+    $chkUseAddress.Width = 120
     $chkUseAddress.Height = 20
     $chkUseAddress.Value = $true
 
-    $txtAddressRange = $designer.Controls.Add("Forms.TextBox.1", "txtAddressRange", $true)
-    $txtAddressRange.Left = 120
-    $txtAddressRange.Top = 80
-    $txtAddressRange.Width = 300
-    $txtAddressRange.Height = 22
-
-    $cmdPickAddress = $designer.Controls.Add("Forms.CommandButton.1", "cmdPickAddress", $true)
-    $cmdPickAddress.Caption = "선택 안내"
-    $cmdPickAddress.Left = 432
-    $cmdPickAddress.Top = 78
-    $cmdPickAddress.Width = 90
-    $cmdPickAddress.Height = 26
-
-    $lblMode = $designer.Controls.Add("Forms.Label.1", "lblMode", $true)
-    $lblMode.Caption = "검색 방식"
-    $lblMode.Left = 12
-    $lblMode.Top = 126
-    $lblMode.Width = 110
-    $lblMode.Height = 18
-
-    $cmbMode = $designer.Controls.Add("Forms.ComboBox.1", "cmbMode", $true)
-    $cmbMode.Left = 128
-    $cmbMode.Top = 122
-    $cmbMode.Width = 220
-    $cmbMode.Height = 22
+    $lblAddressRangeStep = $designer.Controls.Add("Forms.Label.1", "lblAddressRangeStep", $true)
+    $lblAddressRangeStep.Caption = "실행 후 주소 범위 선택"
+    $lblAddressRangeStep.Left = 144
+    $lblAddressRangeStep.Top = 84
+    $lblAddressRangeStep.Width = 260
+    $lblAddressRangeStep.Height = 18
 
     $chkHeader = $designer.Controls.Add("Forms.CheckBox.1", "chkHeader", $true)
     $chkHeader.Caption = "첫 행은 헤더"
-    $chkHeader.Left = 370
-    $chkHeader.Top = 124
-    $chkHeader.Width = 100
+    $chkHeader.Left = 12
+    $chkHeader.Top = 120
+    $chkHeader.Width = 120
     $chkHeader.Height = 20
     $chkHeader.Value = $true
 
     $lblDisplay = $designer.Controls.Add("Forms.Label.1", "lblDisplay", $true)
     $lblDisplay.Caption = "행별 후보 수"
     $lblDisplay.Left = 12
-    $lblDisplay.Top = 162
+    $lblDisplay.Top = 158
     $lblDisplay.Width = 110
     $lblDisplay.Height = 18
 
     $txtDisplay = $designer.Controls.Add("Forms.TextBox.1", "txtDisplay", $true)
     $txtDisplay.Left = 128
-    $txtDisplay.Top = 158
+    $txtDisplay.Top = 154
     $txtDisplay.Width = 60
     $txtDisplay.Height = 22
     $txtDisplay.Text = "5"
@@ -3543,13 +3518,13 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $lblDelay = $designer.Controls.Add("Forms.Label.1", "lblDelay", $true)
     $lblDelay.Caption = "요청 간격(초)"
     $lblDelay.Left = 220
-    $lblDelay.Top = 162
+    $lblDelay.Top = 158
     $lblDelay.Width = 90
     $lblDelay.Height = 18
 
     $txtDelay = $designer.Controls.Add("Forms.TextBox.1", "txtDelay", $true)
     $txtDelay.Left = 318
-    $txtDelay.Top = 158
+    $txtDelay.Top = 154
     $txtDelay.Width = 60
     $txtDelay.Height = 22
     $txtDelay.Text = "0.4"
@@ -3557,34 +3532,34 @@ function Add-NaverLocalVerifyOptionsUserForm {
     $lblSort = $designer.Controls.Add("Forms.Label.1", "lblSort", $true)
     $lblSort.Caption = "정렬"
     $lblSort.Left = 12
-    $lblSort.Top = 198
+    $lblSort.Top = 194
     $lblSort.Width = 110
     $lblSort.Height = 18
 
     $cmbSort = $designer.Controls.Add("Forms.ComboBox.1", "cmbSort", $true)
     $cmbSort.Left = 128
-    $cmbSort.Top = 194
+    $cmbSort.Top = 190
     $cmbSort.Width = 140
     $cmbSort.Height = 22
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "업체명만 또는 주소만 선택할 수 있습니다. 둘 다 선택하면 두 범위는 같은 시트와 같은 행 수여야 합니다. 실행 후 열리는 범위 선택창에서는 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다."
+    $lblTip.Caption = "체크한 항목만 범위를 선택합니다. 둘 다 체크하면 업체명 범위 다음에 주소 범위를 선택하며, 두 범위는 같은 시트와 같은 행 수여야 합니다. 범위 선택창에서는 마우스, Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다."
     $lblTip.Left = 12
-    $lblTip.Top = 236
+    $lblTip.Top = 226
     $lblTip.Width = 520
-    $lblTip.Height = 54
+    $lblTip.Height = 64
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 350
-    $cmdOk.Top = 332
+    $cmdOk.Top = 310
     $cmdOk.Width = 80
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 446
-    $cmdCancel.Top = 332
+    $cmdCancel.Top = 310
     $cmdCancel.Width = 80
     $cmdCancel.Height = 28
 
@@ -3592,34 +3567,12 @@ function Add-NaverLocalVerifyOptionsUserForm {
 Option Explicit
 
 Public Cancelled As Boolean
-Private mNameRange As Object
-Private mAddressRange As Object
 
 Private Sub UserForm_Initialize()
     Cancelled = True
-    cmbMode.AddItem "업체명+주소"
-    cmbMode.AddItem "업체명만"
-    cmbMode.AddItem "주소만"
-    cmbMode.Value = "업체명+주소"
     cmbSort.AddItem "comment"
     cmbSort.AddItem "random"
     cmbSort.Value = "comment"
-End Sub
-
-Private Sub cmdPickName_Click()
-    chkUseName.Value = True
-    MsgBox "실행 버튼을 누른 뒤 업체명 범위 선택창이 열립니다." & vbCrLf & _
-           "그 창에서 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다." & vbCrLf & _
-           "범위 주소를 알고 있으면 현재 입력칸에 직접 입력해도 됩니다.", vbInformation, Me.Caption
-    txtNameRange.SetFocus
-End Sub
-
-Private Sub cmdPickAddress_Click()
-    chkUseAddress.Value = True
-    MsgBox "실행 버튼을 누른 뒤 주소 범위 선택창이 열립니다." & vbCrLf & _
-           "그 창에서 Shift+방향키, Ctrl+Shift+방향키, 직접 주소 입력을 사용할 수 있습니다." & vbCrLf & _
-           "범위 주소를 알고 있으면 현재 입력칸에 직접 입력해도 됩니다.", vbInformation, Me.Caption
-    txtAddressRange.SetFocus
 End Sub
 
 Public Property Get QueryMode() As String
@@ -3628,14 +3581,7 @@ Public Property Get QueryMode() As String
     ElseIf UseAddress And Not UseName Then
         QueryMode = "address_only"
     Else
-        Select Case cmbMode.Value
-            Case "업체명만"
-                QueryMode = "name_only"
-            Case "주소만"
-                QueryMode = "address_only"
-            Case Else
-                QueryMode = "name_address"
-        End Select
+        QueryMode = "name_address"
     End If
 End Property
 
@@ -3645,22 +3591,6 @@ End Property
 
 Public Property Get UseAddress() As Boolean
     UseAddress = CBool(chkUseAddress.Value)
-End Property
-
-Public Property Get NameRange() As Object
-    Set NameRange = mNameRange
-End Property
-
-Public Property Get AddressRange() As Object
-    Set AddressRange = mAddressRange
-End Property
-
-Public Property Get NameRangeAddress() As String
-    NameRangeAddress = Trim$(txtNameRange.Value)
-End Property
-
-Public Property Get AddressRangeAddress() As String
-    AddressRangeAddress = Trim$(txtAddressRange.Value)
 End Property
 
 Public Property Get HasHeader() As Boolean

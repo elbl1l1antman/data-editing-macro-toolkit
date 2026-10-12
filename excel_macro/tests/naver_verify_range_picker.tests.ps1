@@ -1,111 +1,93 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
 
 $ErrorActionPreference = "Stop"
-
-$publishScriptPath = Join-Path $ProjectRoot "scripts\publish_release.ps1"
+$publishPath = Join-Path $ProjectRoot "scripts\publish_release.ps1"
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
-if (-not (Test-Path -LiteralPath $publishScriptPath)) { throw "publish_release.ps1 not found: $publishScriptPath" }
-if (-not (Test-Path -LiteralPath $modulePath)) { throw "MacroToolkit.bas not found: $modulePath" }
+$publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
+$moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
 
-$publishScript = Get-Content -LiteralPath $publishScriptPath -Raw -Encoding UTF8
-$formStart = $publishScript.IndexOf("function Add-NaverLocalVerifyOptionsUserForm")
-$formEnd = $publishScript.IndexOf("function Add-AdminDongMasterWorksheet", $formStart)
-if ($formStart -lt 0 -or $formEnd -lt 0) {
-    throw "Could not isolate Add-NaverLocalVerifyOptionsUserForm block."
+$tokens = $null; $errors = $null
+$ast = [Management.Automation.Language.Parser]::ParseFile($publishPath, [ref]$tokens, [ref]$errors)
+if ($errors.Count) { throw ($errors | Out-String) }
+$fn = $ast.FindAll({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq "Add-NaverLocalVerifyOptionsUserForm" }, $true) | Select-Object -First 1
+if ($null -eq $fn) { throw "Add-NaverLocalVerifyOptionsUserForm not found" }
+$formSource = $fn.Extent.Text
+
+foreach ($removed in @("txtNameRange", "txtAddressRange", "cmdPickName", "cmdPickAddress", "cmbMode")) {
+    if ($formSource.Contains($removed)) { throw "Obsolete Naver verify control remains: $removed" }
+}
+foreach ($required in @(
+    'chkUseName.Caption = "업체명 범위 사용"',
+    'chkUseAddress.Caption = "주소 범위 사용"',
+    '실행을 누르면 업체명, 주소 순서로 Excel 범위 선택창이 열립니다.',
+    '실행 후 업체명 범위 선택',
+    '실행 후 주소 범위 선택'
+)) {
+    if (-not $formSource.Contains($required)) { throw "Naver verify guidance missing: $required" }
+}
+if ($formSource -match "Application\.InputBox") {
+    throw "Naver verify UserForm must close before Excel range selection starts"
+}
+foreach ($required in @(
+    'Toolkit_GetRangeFromUserForm("네이버 주소 검증 - 업체명 범위"',
+    'Toolkit_GetRangeFromUserForm("네이버 주소 검증 - 주소 범위"'
+)) {
+    if (-not $moduleSource.Contains($required)) { throw "Post-form range picker missing: $required" }
 }
 
-$formBlock = $publishScript.Substring($formStart, $formEnd - $formStart)
-if ($formBlock -match "Application\.InputBox") {
-    throw "Naver verify UserForm must not call Application.InputBox directly; range picking must happen after the modal form closes."
-}
-
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
-
-function Get-VbaBlock {
-    param(
-        [string]$SourceText,
-        [string]$ProcedureName
-    )
-
-    $startMatch = [regex]::Match(
-        $SourceText,
-        "(?m)^(Public|Private)\s+(Function|Sub)\s+$([regex]::Escape($ProcedureName))\b.*$"
-    )
-    if (-not $startMatch.Success) {
-        throw "Procedure not found: $ProcedureName"
-    }
-
-    $procedureKind = $startMatch.Groups[2].Value
-    $endToken = if ($procedureKind -eq "Function") { "End Function" } else { "End Sub" }
-    $tail = $SourceText.Substring($startMatch.Index)
-    $endMatch = [regex]::Match($tail, "(?m)^$endToken\s*$")
-    if (-not $endMatch.Success) {
-        throw "Procedure end not found: $ProcedureName"
-    }
-
-    return $tail.Substring(0, $endMatch.Index + $endMatch.Length)
-}
-
-$procedureNames = @(
-    "NaverLocal_VerifyPromptListForTest",
-    "NaverLocal_VerifyPromptList"
-)
-
-$moduleCode = "Option Explicit`r`n" + (($procedureNames | ForEach-Object {
-    Get-VbaBlock -SourceText $source -ProcedureName $_
-}) -join "`r`n`r`n")
-
-$wrapperCode = @'
-Public Function NaverVerifyRangePickerRulesPassed() As String
-    Dim resultText As String
-    resultText = CheckCase(resultText, "both blank ranges should prompt both", NaverLocal_VerifyPromptListForTest(True, True, "", ""), "name,address")
-    resultText = CheckCase(resultText, "typed name range should prompt address only", NaverLocal_VerifyPromptListForTest(True, True, "Sheet1!A:A", ""), "address")
-    resultText = CheckCase(resultText, "address-only mode should prompt address", NaverLocal_VerifyPromptListForTest(False, True, "", ""), "address")
-    resultText = CheckCase(resultText, "name-only mode with typed range should not prompt", NaverLocal_VerifyPromptListForTest(True, False, "Sheet1!B:B", ""), "")
-
-    If Len(resultText) = 0 Then resultText = "PASS"
-    NaverVerifyRangePickerRulesPassed = resultText
-End Function
-
-Private Function CheckCase(ByVal resultText As String, ByVal caseName As String, ByVal actual As String, ByVal expected As String) As String
-    If actual <> expected Then
-        If Len(resultText) > 0 Then resultText = resultText & vbLf
-        resultText = resultText & caseName & ": expected " & expected & ", got " & actual
-    End If
-    CheckCase = resultText
-End Function
-'@
-
-$excel = $null
-$workbook = $null
-
+Invoke-Expression $formSource
+$excel = $null; $workbook = $null
 try {
     $excel = New-Object -ComObject Excel.Application
     $excel.Visible = $false
     $excel.DisplayAlerts = $false
     $excel.AutomationSecurity = 1
-
     $workbook = $excel.Workbooks.Add()
-    $module = $workbook.VBProject.VBComponents.Add(1)
-    $module.CodeModule.AddFromString($moduleCode)
-    $wrapper = $workbook.VBProject.VBComponents.Add(1)
-    $wrapper.CodeModule.AddFromString($wrapperCode)
+    Add-NaverLocalVerifyOptionsUserForm -Workbook $workbook
+    $component = $workbook.VBProject.VBComponents.Item("frmNaverLocalVerifyOptions")
+    $designer = $component.Designer
 
-    $result = $excel.Run("NaverVerifyRangePickerRulesPassed")
-    if ($result -ne "PASS") {
-        throw $result
+    $names = @($designer.Controls | ForEach-Object { [string]$_.Name })
+    foreach ($required in @("chkUseName", "lblNameRangeStep", "chkUseAddress", "lblAddressRangeStep", "cmdOK", "cmdCancel")) {
+        if ($names -notcontains $required) { throw "Required Naver verify control missing: $required" }
     }
+    foreach ($removed in @("txtNameRange", "txtAddressRange", "cmdPickName", "cmdPickAddress", "cmbMode")) {
+        if ($names -contains $removed) { throw "Obsolete Naver verify control created: $removed" }
+    }
+
+    $formWidth = [double]$component.Properties.Item("Width").Value
+    $formHeight = [double]$component.Properties.Item("Height").Value
+    foreach ($control in $designer.Controls) {
+        if (($control.Left + $control.Width) -gt ($formWidth - 8)) { throw "Control clipped horizontally: $($control.Name)" }
+        if (($control.Top + $control.Height) -gt ($formHeight - 18)) { throw "Control clipped vertically: $($control.Name)" }
+    }
+
+    $wrapper = $workbook.VBProject.VBComponents.Add(1)
+    $wrapper.CodeModule.AddFromString(@'
+Public Function NaverVerifyFormPassed() As String
+    Dim form As Object
+    Set form = VBA.UserForms.Add("frmNaverLocalVerifyOptions")
+    If form.QueryMode <> "name_address" Then
+        NaverVerifyFormPassed = "default query mode mismatch"
+    ElseIf Not form.UseName Or Not form.UseAddress Then
+        NaverVerifyFormPassed = "default range choices mismatch"
+    Else
+        NaverVerifyFormPassed = "PASS"
+    End If
+    Unload form
+End Function
+'@)
+    $result = [string]$excel.Run("NaverVerifyFormPassed")
+    if ($result -ne "PASS") { throw $result }
 
     Write-Host "Naver verify range picker tests passed."
 }
 finally {
-    if ($workbook -ne $null) {
-        $workbook.Close($false) | Out-Null
-    }
+    if ($workbook -ne $null) { $workbook.Close($false) | Out-Null }
     if ($excel -ne $null) {
         $excel.Quit() | Out-Null
-        [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
+        [Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
     }
 }

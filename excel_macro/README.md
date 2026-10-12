@@ -75,7 +75,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - 내장 행정동/법정동 마스터는 추가기능 내부 `VeryHidden` 시트로 보관되며, 신규 리스트 생성 또는 마스터 양식 생성 시에만 사용
 - 현재 통합문서에 `행정동_마스터`, `법정동_마스터` 양식 시트를 생성해 기준표를 사용자가 교체/수정 가능
 - 기존 업체명/주소 범위 선택 후 네이버 지역검색 결과, 유사도, 검증등급 열 생성
-- 네이버 주소 검증 옵션창에서 업체명만/주소만/업체명+주소 분석 여부를 지정하고, 실행 후 공통 범위 선택창에서 업체명/주소 범위를 키보드 또는 마우스로 지정
+- 네이버 주소 검증 옵션창에서 업체명 범위/주소 범위 사용 여부를 체크하고, 실행 후 체크한 범위를 키보드 또는 마우스로 지정
 - 업체명/기업체명 범위와 사용자가 입력한 검색 키워드를 결합해 네이버 지역검색 주소와 웹문서 공식 사이트 후보를 오른쪽 열에 생성
 
 - 업체명 범위 선택 후 네이버 웹문서 API로 `업체명 공식몰`을 검색하고 자체 쇼핑몰 후보 URL을 생성. 네이버 브랜드스토어/스마트스토어/오픈마켓은 공식몰로 인정하지 않고 제외 사유로 기록
@@ -140,10 +140,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.1.50/DataEditingMacroToolkit_v1.1.50.xlam`
-- `release/v1.1.50/DataEditingMacroToolkit_v1.1.50.xlsm`
-- `release/v1.1.50/MacroToolkit.bas`
-- `release/v1.1.50/manifest.json`
+- `release/v1.1.51/DataEditingMacroToolkit_v1.1.51.xlam`
+- `release/v1.1.51/DataEditingMacroToolkit_v1.1.51.xlsm`
+- `release/v1.1.51/MacroToolkit.bas`
+- `release/v1.1.51/manifest.json`
 
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
