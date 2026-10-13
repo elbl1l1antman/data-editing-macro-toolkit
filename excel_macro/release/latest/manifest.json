@@ -5,10 +5,10 @@
     "licenseFile":  "LICENSE.md",
     "copyright":  "Copyright (c) 2026 Jung Suhyun (정수현). All rights reserved.",
     "contact":  "elbr1ll1antant@gmail.com",
-    "version":  "1.1.51",
-    "versionTag":  "v1.1.51",
-    "publishedAt":  "2026-10-12 11:03:56 +09:00",
-    "gitCommit":  "8a84bc2-dirty",
+    "version":  "1.1.52",
+    "versionTag":  "v1.1.52",
+    "publishedAt":  "2026-10-13 14:31:21 +09:00",
+    "gitCommit":  "4cadec0-dirty",
     "addin":  "DataEditingMacroToolkit_latest.xlam",
     "workbook":  "DataEditingMacroToolkit_latest.xlsm",
     "sourceModule":  "MacroToolkit.bas",
@@ -21,9 +21,9 @@
     "ribbonInsertAfter":  "보기",
     "vbaImportEncoding":  "CP949",
     "apiKeyStorage":  "API credentials are read from the current Windows user profile via VBA SaveSetting/GetSetting.",
-    "apiKeyReleasePolicy":  "Only release/latest artifacts may keep workbook-scoped local API credentials. Versioned release artifacts are sanitized before save.",
+    "apiKeyReleasePolicy":  "All release artifacts are sanitized. API credentials remain only in the current Windows user profile.",
     "notes":  "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View.",
-    "credentialMode":  "latest-local",
-    "versionedArtifactsSanitized":  false,
-    "latestMayContainLocalCredentials":  true
+    "credentialMode":  "sanitized-latest",
+    "versionedArtifactsSanitized":  true,
+    "latestMayContainLocalCredentials":  false
 }

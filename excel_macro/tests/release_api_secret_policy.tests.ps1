@@ -38,13 +38,15 @@ function Assert-Matches {
 
 Assert-Contains "workbook sanitizer" $publishSource "function Clear-WorkbookStoredApiSecrets"
 Assert-Contains "file sanitizer" $publishSource "function Clear-WorkbookFileStoredApiSecrets"
-Assert-Contains "latest credential mode" $publishSource 'latestMayContainLocalCredentials = $true'
+Assert-Contains "latest credential mode" $publishSource 'latestMayContainLocalCredentials = $false'
 Assert-Contains "versioned credential mode" $publishSource 'versionedArtifactsSanitized = $true'
 Assert-Contains "manifest policy" $publishSource "apiKeyReleasePolicy"
+Assert-Contains "secret absence verifier" $publishSource "function Assert-WorkbookApiSecretsCleared"
+Assert-Matches "saved artifacts rechecked for secrets" $publishSource 'Workbooks\.Open\(\$artifact.*Assert-WorkbookApiSecretsCleared\s+-Workbook\s+\$verifyWorkbook'
 
-Assert-Matches "versioned workbook copy is sanitized" $publishSource 'Copy-Item\s+-Path\s+\$DevWorkbook\s+-Destination\s+\$ReleaseWorkbook\s+-Force.*Clear-WorkbookFileStoredApiSecrets\s+-Excel\s+\$excel\s+-Path\s+\$ReleaseWorkbook'
-Assert-Matches "latest addin is saved before workbook sanitizer" $publishSource '\$workbook\.SaveAs\(\$tempLatestAddin,\s*55\).*Clear-WorkbookStoredApiSecrets\s+-Workbook\s+\$workbook.*\$workbook\.SaveAs\(\$tempReleaseAddin,\s*55\)'
-Assert-Matches "latest addin copy uses latest temp" $publishSource 'Copy-Item\s+-Path\s+\$tempLatestAddin\s+-Destination\s+\$LatestAddin\s+-Force'
+Assert-Matches "all artifacts sanitized before save" $publishSource 'Clear-WorkbookStoredApiSecrets\s+-Workbook\s+\$workbook.*\$workbook\.SaveAs\(\$tempReleaseWorkbook,\s*52\).*\$workbook\.SaveAs\(\$tempReleaseAddin,\s*55\)'
+Assert-Matches "latest workbook uses sanitized assembled temp" $publishSource 'Copy-Item\s+-Path\s+\$tempReleaseWorkbook\s+-Destination\s+\$LatestWorkbook\s+-Force'
+Assert-Matches "latest addin uses sanitized assembled temp" $publishSource 'Copy-Item\s+-Path\s+\$tempReleaseAddin\s+-Destination\s+\$LatestAddin\s+-Force'
 Assert-Matches "release addin copy uses sanitized release temp" $publishSource 'Copy-Item\s+-Path\s+\$tempReleaseAddin\s+-Destination\s+\$ReleaseAddin\s+-Force'
 
 if ($failures.Count -gt 0) {

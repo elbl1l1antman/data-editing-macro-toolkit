@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.1.51"
+Public Const TOOLKIT_VERSION As String = "1.1.52"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Private Const VERSION_SHEET As String = "_MacroToolkit"
@@ -44,6 +44,8 @@ Private Const API_RECEIVE_TIMEOUT_MS As Long = 30000
 Private Const TOOLKIT_PROGRESS_ROW_THRESHOLD As Long = 1000
 Private Const TOOLKIT_PROGRESS_BATCH_ROWS As Long = 500
 Private Const TOOLKIT_PROGRESS_PAIR_BATCH As Long = 10000
+Private Const TOOLKIT_PROGRESS_REFRESH_SECONDS As Double = 0.1
+Private Const DBMERGE_OUTPUT_BATCH_ROWS As Long = 500
 Private Const TOOLKIT_CANCEL_ERROR_NUMBER As Long = vbObjectError + 9130
 
 Private mToolkitOperationDepth As Long
@@ -55,6 +57,7 @@ Private mToolkitPrevStatusBar As Variant
 
 Private gProgressForm As Object
 Private mToolkitCancelRequested As Boolean
+Private mToolkitLastProgressRefresh As Double
 
 ' ============================================================
 ' 프로시저 : Toolkit_About
@@ -73,6 +76,10 @@ Public Sub Toolkit_About()
            "- 표본설계 시트 생성 및 표본할당 계산", _
            vbInformation, "매크로 툴킷"
 End Sub
+
+Public Function Toolkit_CompileSmokeTest() As String
+    Toolkit_CompileSmokeTest = TOOLKIT_VERSION & "|forms=14"
+End Function
 
 ' ============================================================
 ' 프로시저 : Toolkit_SetupWorkbook
@@ -202,12 +209,17 @@ Private Sub Toolkit_ProgressShow(ByVal title As String, ByVal message As String,
         gProgressForm.Show vbModeless
     End If
     Application.StatusBar = title & " - " & message
+    mToolkitLastProgressRefresh = Timer
     DoEvents
     On Error GoTo 0
 End Sub
 
 Private Sub Toolkit_ProgressUpdate(ByVal currentCount As Long, ByVal totalCount As Long, ByVal message As String)
     Dim cancelRequested As Boolean
+
+    If currentCount < totalCount Then
+        If Not Toolkit_ShouldRefreshProgress() Then Exit Sub
+    End If
 
     On Error Resume Next
     If Not gProgressForm Is Nothing Then
@@ -224,6 +236,16 @@ Private Sub Toolkit_ProgressUpdate(ByVal currentCount As Long, ByVal totalCount 
     If cancelRequested Then mToolkitCancelRequested = True
     Toolkit_RaiseIfCancelled
 End Sub
+
+Private Function Toolkit_ShouldRefreshProgress() As Boolean
+    Dim currentTick As Double
+    currentTick = Timer
+    If currentTick < mToolkitLastProgressRefresh Or _
+       currentTick - mToolkitLastProgressRefresh >= TOOLKIT_PROGRESS_REFRESH_SECONDS Then
+        mToolkitLastProgressRefresh = currentTick
+        Toolkit_ShouldRefreshProgress = True
+    End If
+End Function
 
 Private Sub Toolkit_ProgressClose()
     On Error Resume Next
@@ -518,6 +540,33 @@ Private Sub Toolkit_EndOperation()
     On Error GoTo 0
 End Sub
 
+Private Function Toolkit_CreateRangeSnapshot(ByVal targetRange As Range) As Collection
+    Dim snapshots As New Collection
+    Dim area As Range
+
+    For Each area In targetRange.Areas
+        Dim item As Object
+        Set item = CreateObject("Scripting.Dictionary")
+        item.Add "worksheet", area.Worksheet
+        item.Add "address", area.Address
+        item.Add "formula2", area.Formula2
+        snapshots.Add item
+    Next area
+
+    Set Toolkit_CreateRangeSnapshot = snapshots
+End Function
+
+Private Sub Toolkit_RestoreRangeSnapshot(ByVal snapshots As Collection)
+    If snapshots Is Nothing Then Exit Sub
+
+    Dim item As Variant
+    For Each item In snapshots
+        Dim ws As Worksheet
+        Set ws = item("worksheet")
+        ws.Range(CStr(item("address"))).Formula2 = item("formula2")
+    Next item
+End Sub
+
 Private Function Toolkit_ValidateWorksheet(ByVal ws As Worksheet, ByVal purpose As String, _
                                            Optional ByVal requiresWrite As Boolean = True) As Boolean
     If ws Is Nothing Then
@@ -693,9 +742,11 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
     Dim newValue As Variant      ' 변환된 숫자 값을 임시 저장
     Dim processedCells As Long
     Dim totalCells As Long
+    Dim snapshot As Collection
     totalCells = target.Cells.CountLarge
 
     On Error GoTo ErrHandler
+    Set snapshot = Toolkit_CreateRangeSnapshot(target)
     ' 화면 갱신 중지: 셀 업데이트마다 화면을 다시 그리지 않아 속도 향상
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart "텍스트 숫자 변환", totalCells, "변환 준비 중"
@@ -720,10 +771,19 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
     Exit Sub
 
 ErrHandler:
+    Dim errorNumber As Long, errorDescription As String
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    Toolkit_RestoreRangeSnapshot snapshot
+    On Error GoTo 0
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
-    If Toolkit_ShowCancelMessage("텍스트 숫자 변환") Then Exit Sub
-    MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
+    If Toolkit_IsCancelError(errorNumber) Then
+        MsgBox "작업을 취소해 변경 전 값으로 복구했습니다.", vbInformation, "텍스트 숫자 변환"
+        Exit Sub
+    End If
+    MsgBox "오류가 발생해 변경 전 값으로 복구했습니다." & vbCrLf & errorDescription, _
            vbExclamation, "텍스트 숫자 변환"
 End Sub
 
@@ -756,10 +816,12 @@ Public Sub DataCleanup_ClearResidualBlankValues()
     End If
 
     Dim totalCells As Long, processedCells As Long, clearedCount As Long
+    Dim snapshot As Collection
     totalCells = candidates.Cells.CountLarge
 
     Dim cell As Range
     On Error GoTo ErrHandler
+    Set snapshot = Toolkit_CreateRangeSnapshot(candidates)
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart "수식 빈값 정리", totalCells, "빈 문자열 확인 준비 중"
     For Each cell In candidates.Cells
@@ -778,10 +840,19 @@ Public Sub DataCleanup_ClearResidualBlankValues()
     Exit Sub
 
 ErrHandler:
+    Dim errorNumber As Long, errorDescription As String
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    Toolkit_RestoreRangeSnapshot snapshot
+    On Error GoTo 0
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
-    If Toolkit_ShowCancelMessage("수식 빈값 정리") Then Exit Sub
-    MsgBox "수식 빈값 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "수식 빈값 정리"
+    If Toolkit_IsCancelError(errorNumber) Then
+        MsgBox "작업을 취소해 변경 전 값으로 복구했습니다.", vbInformation, "수식 빈값 정리"
+        Exit Sub
+    End If
+    MsgBox "수식 빈값 정리 중 오류가 발생해 변경 전 값으로 복구했습니다." & vbCrLf & errorDescription, vbExclamation, "수식 빈값 정리"
 End Sub
 
 Private Function DataCleanup_IsResidualBlankValue(ByVal cellValue As Variant, ByVal hasFormula As Boolean) As Boolean
@@ -7107,6 +7178,7 @@ Private Function NaverLocal_GetVerifyOptions() As Object
 Fallback:
     On Error Resume Next
     If Not form Is Nothing Then Unload form
+    Toolkit_ProgressClose
     On Error GoTo 0
     MsgBox "주소 검증 옵션창을 열 수 없습니다." & vbCrLf & Err.Description, vbCritical, "네이버 지역검색"
 End Function
@@ -15486,11 +15558,21 @@ ContinueWizard:
     Set form = Nothing
 
     Dim outWs As Worksheet
-    Set outWs = DBMerge_PrepareOutputSheet(wb, outputSheetName, outputPosition)
+    Dim existingOutWs As Worksheet
+    Dim sourceIdRollback As Collection
+    Dim outputCommitted As Boolean
+    Set outWs = DBMerge_PrepareTemporaryOutputSheet(wb, outputSheetName, outputPosition, existingOutWs)
     If outWs Is Nothing Then Exit Sub
 
     Dim writtenRows As Long
     writtenRows = DBMerge_WriteMergedSheet(plan, outWs)
+    If CStr(plan("idMode")) = "source_auto" Then
+        Set sourceIdRollback = DBMerge_CreateSourceIdRollbackPlan(plan)
+        DBMerge_ApplySourceIds plan, sourceIdRollback
+    End If
+    DBMerge_CommitTemporaryOutputSheet outWs, existingOutWs, outputSheetName
+    outputCommitted = True
+    Set outWs = wb.Worksheets(outputSheetName)
     outWs.Activate
     MsgBox sheets.Count & "개 시트를 통합했습니다." & vbCrLf & _
            "생성 행 수: " & writtenRows & vbCrLf & _
@@ -15502,6 +15584,10 @@ ErrHandler:
     errorText = Err.Description
     On Error Resume Next
     If Not form Is Nothing Then Unload form
+    If Not outputCommitted Then
+        DBMerge_RollbackSourceIds sourceIdRollback
+        DBMerge_DeleteWorksheetQuietly outWs
+    End If
     On Error GoTo 0
     MsgBox "시트 통합 중 오류가 발생했습니다." & vbCrLf & errorText, vbExclamation, "시트 데이터 통합"
 End Sub
@@ -16565,51 +16651,50 @@ End Function
 
 Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As Worksheet) As Long
     outWs.Cells.Clear
-    If CStr(plan("idMode")) = "source_auto" Then DBMerge_ApplySourceIds plan
 
     Dim dataHeaders As Collection
     Set dataHeaders = DBMerge_DataHeaders(plan("headers"), CStr(plan("keyHeader")))
 
-    outWs.Cells(1, 1).Value = "__DBMERGE_SOURCE_SHEET"
-    outWs.Cells(1, 2).Value = "__DBMERGE_SOURCE_ROW"
-    outWs.Cells(1, 3).Value = "__DBMERGE_KEY"
-    outWs.Cells(2, 1).Value = "원본시트"
-    outWs.Cells(2, 2).Value = "원본행"
-    outWs.Cells(2, 3).Value = CStr(plan("keyHeader"))
-
-    Dim c As Long
+    Dim headerData() As Variant, c As Long
+    ReDim headerData(1 To 2, 1 To dataHeaders.Count + 3)
+    headerData(1, 1) = "__DBMERGE_SOURCE_SHEET"
+    headerData(1, 2) = "__DBMERGE_SOURCE_ROW"
+    headerData(1, 3) = "__DBMERGE_KEY"
+    headerData(2, 1) = "원본시트"
+    headerData(2, 2) = "원본행"
+    headerData(2, 3) = CStr(plan("keyHeader"))
     For c = 1 To dataHeaders.Count
-        outWs.Cells(1, c + 3).Value = "__FIELD:" & CStr(dataHeaders(c))
-        outWs.Cells(2, c + 3).Value = CStr(dataHeaders(c))
+        headerData(1, c + 3) = "__FIELD:" & CStr(dataHeaders(c))
+        headerData(2, c + 3) = CStr(dataHeaders(c))
     Next c
+    outWs.Cells(1, 1).Resize(2, UBound(headerData, 2)).Value = headerData
 
-    Dim outRow As Long
-    outRow = 3
-
-    Dim i As Long
+    Dim totalRows As Long, processedRows As Long, writtenRows As Long
+    Dim i As Long, sheetPlan As Object
     For i = 1 To plan("sheets").Count
-        Dim sheetPlan As Object
         Set sheetPlan = plan("sheets")(i)
-        Dim ws As Worksheet
-        Set ws = sheetPlan("worksheet")
-        Dim headerMap As Object
-        Set headerMap = sheetPlan("headerMap")
-
-        Dim r As Long
-        For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
-            If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers"), CStr(plan("keyHeader"))) Then
-                outWs.Cells(outRow, 1).Value = ws.Name
-                outWs.Cells(outRow, 2).Value = r
-                outWs.Cells(outRow, 3).Value = DBMerge_KeyValueForRow(ws, r, headerMap, CStr(plan("keyHeader")))
-
-                For c = 1 To dataHeaders.Count
-                    outWs.Cells(outRow, c + 3).Value = DBMerge_CellByHeader(ws, r, headerMap, CStr(dataHeaders(c)))
-                Next c
-
-                outRow = outRow + 1
-            End If
-        Next r
+        totalRows = totalRows + CLng(sheetPlan("lastRow")) - CLng(sheetPlan("dataStartRow")) + 1
     Next i
+    Toolkit_ProgressShow "시트 데이터 통합", "원본 데이터를 배치 단위로 읽는 중", totalRows
+
+    Dim batchStart As Long, batchEnd As Long, batchCount As Long, outputBatch As Variant
+    For i = 1 To plan("sheets").Count
+        Set sheetPlan = plan("sheets")(i)
+        batchStart = CLng(sheetPlan("dataStartRow"))
+        Do While batchStart <= CLng(sheetPlan("lastRow"))
+            batchEnd = batchStart + DBMERGE_OUTPUT_BATCH_ROWS - 1
+            If batchEnd > CLng(sheetPlan("lastRow")) Then batchEnd = CLng(sheetPlan("lastRow"))
+            outputBatch = DBMerge_BuildOutputBatch(plan, sheetPlan, batchStart, batchEnd, dataHeaders, batchCount)
+            If batchCount > 0 Then
+                outWs.Cells(writtenRows + 3, 1).Resize(batchCount, UBound(outputBatch, 2)).Value = outputBatch
+                writtenRows = writtenRows + batchCount
+            End If
+            processedRows = processedRows + batchEnd - batchStart + 1
+            Toolkit_ProgressUpdate processedRows, totalRows, CStr(sheetPlan("sheetName")) & " 읽는 중"
+            batchStart = batchEnd + 1
+        Loop
+    Next i
+    Toolkit_ProgressClose
 
     Dim lastCol As Long
     lastCol = dataHeaders.Count + 3
@@ -16617,12 +16702,106 @@ Private Function DBMerge_WriteMergedSheet(ByVal plan As Object, ByVal outWs As W
     outWs.Rows(1).Interior.Color = RGB(235, 235, 235)
     outWs.Rows(2).Font.Bold = True
     outWs.Rows(2).Interior.Color = RGB(220, 235, 250)
-    With outWs.Range(outWs.Cells(1, 1), outWs.Cells(Application.Max(2, outRow - 1), lastCol))
+    With outWs.Range(outWs.Cells(1, 1), outWs.Cells(Application.Max(2, writtenRows + 2), lastCol))
         .Borders.LineStyle = xlContinuous
         .Columns.AutoFit
     End With
 
-    DBMerge_WriteMergedSheet = outRow - 3
+    DBMerge_WriteMergedSheet = writtenRows
+End Function
+
+Private Function DBMerge_BuildOutputBatch(ByVal plan As Object, ByVal sheetPlan As Object, _
+                                          ByVal firstRow As Long, ByVal lastRow As Long, _
+                                          ByVal dataHeaders As Collection, ByRef batchCount As Long) As Variant
+    Dim ws As Worksheet, headerMap As Object
+    Set ws = sheetPlan("worksheet")
+    Set headerMap = sheetPlan("headerMap")
+
+    Dim minCol As Long, maxCol As Long, i As Long, colNo As Long, norm As String
+    minCol = ws.Columns.Count
+    For i = 1 To plan("headers").Count
+        norm = DBMerge_NormalizeHeader(CStr(plan("headers")(i)))
+        If headerMap.Exists(norm) Then
+            colNo = CLng(headerMap(norm))
+            If colNo < minCol Then minCol = colNo
+            If colNo > maxCol Then maxCol = colNo
+        End If
+    Next i
+    If maxCol = 0 Then
+        batchCount = 0
+        Exit Function
+    End If
+
+    Dim sourceData As Variant
+    sourceData = ws.Range(ws.Cells(firstRow, minCol), ws.Cells(lastRow, maxCol)).Value2
+    Dim capacity As Long
+    capacity = lastRow - firstRow + 1
+    Dim pending() As Variant
+    ReDim pending(1 To capacity, 1 To dataHeaders.Count + 3)
+
+    Dim relativeRow As Long, c As Long, keyValue As String
+    batchCount = 0
+    For relativeRow = 1 To capacity
+        If DBMerge_ArrayRowHasSelectedData(sourceData, relativeRow, minCol, headerMap, plan("headers"), CStr(plan("keyHeader"))) Then
+            batchCount = batchCount + 1
+            pending(batchCount, 1) = ws.Name
+            pending(batchCount, 2) = firstRow + relativeRow - 1
+            keyValue = Trim$(CStr(DBMerge_ArrayCellByHeader(sourceData, relativeRow, minCol, headerMap, CStr(plan("keyHeader")))))
+            If Len(keyValue) = 0 Then keyValue = DBMerge_AutoId(ws.Name, firstRow + relativeRow - 1)
+            pending(batchCount, 3) = keyValue
+            For c = 1 To dataHeaders.Count
+                pending(batchCount, c + 3) = DBMerge_ArrayCellByHeader(sourceData, relativeRow, minCol, headerMap, CStr(dataHeaders(c)))
+            Next c
+        End If
+    Next relativeRow
+
+    If batchCount = 0 Then Exit Function
+    If batchCount = capacity Then
+        DBMerge_BuildOutputBatch = pending
+    Else
+        Dim trimmed() As Variant, outputCol As Long
+        ReDim trimmed(1 To batchCount, 1 To dataHeaders.Count + 3)
+        For relativeRow = 1 To batchCount
+            For outputCol = 1 To dataHeaders.Count + 3
+                trimmed(relativeRow, outputCol) = pending(relativeRow, outputCol)
+            Next outputCol
+        Next relativeRow
+        DBMerge_BuildOutputBatch = trimmed
+    End If
+End Function
+
+Private Function DBMerge_ArrayRowHasSelectedData(ByVal sourceData As Variant, ByVal relativeRow As Long, _
+                                                  ByVal firstSourceCol As Long, ByVal headerMap As Object, _
+                                                  ByVal headers As Collection, ByVal keyHeader As String) As Boolean
+    Dim keyNorm As String, norm As String, i As Long
+    keyNorm = DBMerge_NormalizeHeader(keyHeader)
+    For i = 1 To headers.Count
+        norm = DBMerge_NormalizeHeader(CStr(headers(i)))
+        If norm <> keyNorm And headerMap.Exists(norm) Then
+            If Len(Trim$(CStr(DBMerge_ArrayValue(sourceData, relativeRow, CLng(headerMap(norm)) - firstSourceCol + 1)))) > 0 Then
+                DBMerge_ArrayRowHasSelectedData = True
+                Exit Function
+            End If
+        End If
+    Next i
+End Function
+
+Private Function DBMerge_ArrayCellByHeader(ByVal sourceData As Variant, ByVal relativeRow As Long, _
+                                            ByVal firstSourceCol As Long, ByVal headerMap As Object, _
+                                            ByVal headerText As String) As Variant
+    Dim norm As String
+    norm = DBMerge_NormalizeHeader(headerText)
+    If headerMap.Exists(norm) Then
+        DBMerge_ArrayCellByHeader = DBMerge_ArrayValue(sourceData, relativeRow, CLng(headerMap(norm)) - firstSourceCol + 1)
+    End If
+End Function
+
+Private Function DBMerge_ArrayValue(ByVal sourceData As Variant, ByVal rowIndex As Long, ByVal colIndex As Long) As Variant
+    If IsArray(sourceData) Then
+        DBMerge_ArrayValue = sourceData(rowIndex, colIndex)
+    ElseIf rowIndex = 1 And colIndex = 1 Then
+        DBMerge_ArrayValue = sourceData
+    End If
 End Function
 
 Private Function DBMerge_DataHeaders(ByVal headers As Collection, ByVal keyHeader As String) As Collection
@@ -16722,7 +16901,7 @@ Private Sub DBMerge_UpdateIdStats(ByVal sheetPlan As Object, ByVal keyHeader As 
     sheetPlan.Add "idBlankFilledCount", blankFilledCount
 End Sub
 
-Private Sub DBMerge_ApplySourceIds(ByVal plan As Object)
+Private Sub DBMerge_ApplySourceIds(ByVal plan As Object, ByVal rollbackPlan As Collection)
     Dim i As Long
     For i = 1 To plan("sheets").Count
         Dim sheetPlan As Object
@@ -16736,6 +16915,9 @@ Private Sub DBMerge_ApplySourceIds(ByVal plan As Object)
         keyHeader = CStr(plan("keyHeader"))
         Dim keyNorm As String
         keyNorm = DBMerge_NormalizeHeader(keyHeader)
+        Dim rollbackItem As Object, changedCells As Collection
+        Set rollbackItem = rollbackPlan(i)
+        Set changedCells = rollbackItem("changedCells")
 
         Dim keyCol As Long
         If headerMap.Exists(keyNorm) Then
@@ -16743,6 +16925,7 @@ Private Sub DBMerge_ApplySourceIds(ByVal plan As Object)
         Else
             keyCol = 1
             ws.Columns(keyCol).Insert Shift:=xlToRight
+            rollbackItem("insertedColumn") = True
             DBMerge_WriteSourceIdHeader ws, CLng(sheetPlan("headerRow")), CStr(plan("headerMode")), keyHeader
             Set headerMap = DBMerge_HeaderMap(ws, CLng(sheetPlan("headerRow")), CStr(plan("headerMode")))
             sheetPlan.Remove "headerMap"
@@ -16753,6 +16936,14 @@ Private Sub DBMerge_ApplySourceIds(ByVal plan As Object)
         For r = CLng(sheetPlan("dataStartRow")) To CLng(sheetPlan("lastRow"))
             If DBMerge_RowHasSelectedData(ws, r, headerMap, plan("headers"), keyHeader) Then
                 If Len(Trim$(CStr(ws.Cells(r, keyCol).Value))) = 0 Then
+                    If Not CBool(rollbackItem("insertedColumn")) Then
+                        Dim cellState As Object
+                        Set cellState = CreateObject("Scripting.Dictionary")
+                        cellState.Add "address", ws.Cells(r, keyCol).Address
+                        cellState.Add "formula2", ws.Cells(r, keyCol).Formula2
+                        cellState.Add "numberFormat", ws.Cells(r, keyCol).NumberFormat
+                        changedCells.Add cellState
+                    End If
                     ws.Cells(r, keyCol).NumberFormat = "@"
                     ws.Cells(r, keyCol).Value = DBMerge_AutoId(ws.Name, r)
                 End If
@@ -16775,17 +16966,16 @@ Private Sub DBMerge_WriteSourceIdHeader(ByVal ws As Worksheet, ByVal headerRow A
     End Select
 End Sub
 
-Private Function DBMerge_PrepareOutputSheet(ByVal wb As Workbook, ByVal sheetName As String, ByVal outputPosition As String) As Worksheet
+Private Function DBMerge_PrepareTemporaryOutputSheet(ByVal wb As Workbook, ByVal sheetName As String, _
+                                                     ByVal outputPosition As String, _
+                                                     ByRef existingOutput As Worksheet) As Worksheet
     Dim ws As Worksheet
     On Error Resume Next
-    Set ws = wb.Worksheets(sheetName)
+    Set existingOutput = wb.Worksheets(sheetName)
     On Error GoTo 0
 
-    If Not ws Is Nothing Then
+    If Not existingOutput Is Nothing Then
         If MsgBox(sheetName & " 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?", vbQuestion + vbYesNo, "시트 데이터 통합") = vbNo Then Exit Function
-        ws.Cells.Clear
-        Set DBMerge_PrepareOutputSheet = ws
-        Exit Function
     End If
 
     Select Case outputPosition
@@ -16796,9 +16986,101 @@ Private Function DBMerge_PrepareOutputSheet(ByVal wb As Workbook, ByVal sheetNam
         Case Else
             Set ws = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
     End Select
-    ws.Name = sheetName
-    Set DBMerge_PrepareOutputSheet = ws
+    ws.Name = DBMerge_UniqueSheetName(wb, "__DBMERGE_TEMP")
+    Set DBMerge_PrepareTemporaryOutputSheet = ws
 End Function
+
+Private Sub DBMerge_CommitTemporaryOutputSheet(ByVal temporarySheet As Worksheet, _
+                                               ByVal existingOutput As Worksheet, _
+                                               ByVal outputName As String)
+    Dim backupName As String
+    Dim previousAlerts As Boolean
+    previousAlerts = Application.DisplayAlerts
+    On Error GoTo CommitFailed
+
+    If Not existingOutput Is Nothing Then
+        backupName = DBMerge_UniqueSheetName(existingOutput.Parent, "__DBMERGE_BACKUP")
+        existingOutput.Name = backupName
+    End If
+    temporarySheet.Name = outputName
+
+    If Not existingOutput Is Nothing Then
+        Application.DisplayAlerts = False
+        existingOutput.Delete
+    End If
+    Application.DisplayAlerts = previousAlerts
+    Exit Sub
+
+CommitFailed:
+    Dim errorNumber As Long, errorDescription As String
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    If Not existingOutput Is Nothing And Len(backupName) > 0 Then
+        If StrComp(temporarySheet.Name, outputName, vbTextCompare) = 0 Then
+            temporarySheet.Name = DBMerge_UniqueSheetName(temporarySheet.Parent, "__DBMERGE_FAILED")
+        End If
+        existingOutput.Name = outputName
+    End If
+    Application.DisplayAlerts = previousAlerts
+    On Error GoTo 0
+    Err.Raise errorNumber, "DBMerge_CommitTemporaryOutputSheet", errorDescription
+End Sub
+
+Private Function DBMerge_CreateSourceIdRollbackPlan(ByVal plan As Object) As Collection
+    Dim rollbackPlan As New Collection
+    Dim i As Long
+
+    For i = 1 To plan("sheets").Count
+        Dim sheetPlan As Object, item As Object, ws As Worksheet, headerMap As Object
+        Dim keyNorm As String, changedCells As Collection
+        Set sheetPlan = plan("sheets")(i)
+        Set ws = sheetPlan("worksheet")
+        Set headerMap = sheetPlan("headerMap")
+        keyNorm = DBMerge_NormalizeHeader(CStr(plan("keyHeader")))
+
+        Set item = CreateObject("Scripting.Dictionary")
+        Set changedCells = New Collection
+        item.Add "worksheet", ws
+        item.Add "insertedColumn", False
+        item.Add "changedCells", changedCells
+        rollbackPlan.Add item
+    Next i
+
+    Set DBMerge_CreateSourceIdRollbackPlan = rollbackPlan
+End Function
+
+Private Sub DBMerge_RollbackSourceIds(ByVal rollbackPlan As Collection)
+    If rollbackPlan Is Nothing Then Exit Sub
+
+    Dim i As Long
+    For i = rollbackPlan.Count To 1 Step -1
+        Dim item As Object, ws As Worksheet, changedCells As Collection, cellState As Variant
+        Set item = rollbackPlan(i)
+        Set ws = item("worksheet")
+        If CBool(item("insertedColumn")) Then
+            ws.Columns(1).Delete
+        Else
+            Set changedCells = item("changedCells")
+            For Each cellState In changedCells
+                ws.Range(CStr(cellState("address"))).Formula2 = cellState("formula2")
+                ws.Range(CStr(cellState("address"))).NumberFormat = cellState("numberFormat")
+            Next cellState
+        End If
+    Next i
+End Sub
+
+Private Sub DBMerge_DeleteWorksheetQuietly(ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+
+    Dim previousAlerts As Boolean
+    previousAlerts = Application.DisplayAlerts
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    ws.Delete
+    Application.DisplayAlerts = previousAlerts
+    On Error GoTo 0
+End Sub
 
 Private Function DBMerge_NameIsSelected(ByVal selectedSheetNames As String, ByVal sheetName As String) As Boolean
     Dim lines As Variant

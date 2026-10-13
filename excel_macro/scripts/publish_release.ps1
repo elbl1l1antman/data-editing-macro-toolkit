@@ -72,6 +72,38 @@ function Clear-ComNamedValues {
     } catch {}
 }
 
+function Assert-ComNamedValuesCleared {
+    param($Collection, [string]$Label)
+
+    if ($null -eq $Collection) { return }
+    for ($i = 1; $i -le $Collection.Count; $i++) {
+        $item = $Collection.Item($i)
+        $itemName = ""
+        try { $itemName = [string]$item.Name } catch { continue }
+        if (Test-ApiSecretStorageName $itemName) {
+            throw "API credential storage remains in ${Label}: $itemName"
+        }
+    }
+}
+
+function Assert-WorkbookApiSecretsCleared {
+    param($Workbook)
+
+    if ($null -eq $Workbook) { throw "Workbook is required for API credential verification." }
+    Assert-ComNamedValuesCleared -Collection $Workbook.Names -Label "workbook names"
+    try { Assert-ComNamedValuesCleared -Collection $Workbook.CustomDocumentProperties -Label "custom properties" } catch {
+        if ($_.Exception.Message -like "API credential storage remains*") { throw }
+    }
+    try { Assert-ComNamedValuesCleared -Collection $Workbook.Variables -Label "workbook variables" } catch {
+        if ($_.Exception.Message -like "API credential storage remains*") { throw }
+    }
+    foreach ($worksheet in @($Workbook.Worksheets)) {
+        if (Test-ApiSecretWorksheetName $worksheet.Name) {
+            throw "API credential worksheet remains: $($worksheet.Name)"
+        }
+    }
+}
+
 function Clear-WorkbookStoredApiSecrets {
     param($Workbook)
 
@@ -88,6 +120,19 @@ function Clear-WorkbookStoredApiSecrets {
             }
         }
     } catch {}
+
+    Assert-WorkbookApiSecretsCleared -Workbook $Workbook
+}
+
+function Assert-NoBrokenKoreanText {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    $text = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+    foreach ($pattern in @([string][char]0xFFFD, "怨듭떇", "寃", "吏", "癤")) {
+        if ($text.Contains($pattern)) {
+            throw "Broken Korean encoding pattern found in ${Path}: $pattern"
+        }
+    }
 }
 
 function Clear-WorkbookFileStoredApiSecrets {
@@ -4013,16 +4058,15 @@ $ReleaseAddin = Join-Path $VersionDir $ReleaseAddinName
 $LatestWorkbook = Join-Path $LatestDir $LatestWorkbookName
 $LatestAddin = Join-Path $LatestDir $LatestAddinName
 $ImportModulePath = Join-Path $VersionDir "_tmp_MacroToolkit_cp949.bas"
-$tempLatestAddin = $null
+$tempReleaseWorkbook = $null
 $tempReleaseAddin = $null
 
-Copy-Item -Path $DevWorkbook -Destination $ReleaseWorkbook -Force
-Copy-Item -Path $DevWorkbook -Destination $LatestWorkbook -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $VersionDir "MacroToolkit.bas") -Force
 Copy-Item -Path $ModulePath -Destination (Join-Path $LatestDir "MacroToolkit.bas") -Force
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $VersionDir "PATCH_NOTES.md") -Force
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $LatestDir "PATCH_NOTES.md") -Force
 
+Assert-NoBrokenKoreanText -Path $ModulePath
 $moduleSource = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
 $cp949 = [System.Text.Encoding]::GetEncoding(949)
 [System.IO.File]::WriteAllText($ImportModulePath, $moduleSource, $cp949)
@@ -4033,9 +4077,6 @@ $excel.DisplayAlerts = $false
 $workbook = $null
 $publishStage = "start"
 try {
-    $publishStage = "sanitize versioned workbook API credentials"
-    Clear-WorkbookFileStoredApiSecrets -Excel $excel -Path $ReleaseWorkbook
-
     $workbook = $excel.Workbooks.Open($DevWorkbook)
     try {
         $publishStage = "remove old VBA components"
@@ -4079,34 +4120,42 @@ try {
         Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
         $publishStage = "add legal dong master"
         Add-LegalDongMasterWorksheet -Workbook $workbook -CsvPath $LegalDongMasterCsv
+        $publishStage = "compile smoke test"
+        $smokeMacro = "'{0}'!Toolkit_CompileSmokeTest" -f $workbook.Name.Replace("'", "''")
+        $smokeResult = [string]$excel.Run($smokeMacro)
+        if (-not $smokeResult.StartsWith($Version + "|forms=")) {
+            throw "Unexpected VBA compile smoke result: $smokeResult"
+        }
     }
     catch {
         throw "Could not import VBA module into .xlam. Stage: $publishStage. Enable Excel Trust Center > Macro Settings > Trust access to the VBA project object model. Details: $($_.Exception.Message)"
     }
 
-    $workbook.IsAddin = $true
-    $tempLatestAddin = Join-Path $LatestDir ("_tmp_" + $LatestAddinName)
-    $tempReleaseAddin = Join-Path $VersionDir ("_tmp_" + $ReleaseAddinName)
-    if (Test-Path -LiteralPath $tempLatestAddin) { Remove-Item -LiteralPath $tempLatestAddin -Force }
-    if (Test-Path -LiteralPath $tempReleaseAddin) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
-
-    $publishStage = "save latest add-in with local credentials"
-    $workbook.SaveAs($tempLatestAddin, 55)
-    Add-RibbonCustomUi -PackagePath $tempLatestAddin
-    Copy-Item -Path $tempLatestAddin -Destination $LatestAddin -Force
-
-    $publishStage = "sanitize versioned add-in API credentials"
+    $publishStage = "sanitize all release API credentials"
     Clear-WorkbookStoredApiSecrets -Workbook $workbook
 
-    $publishStage = "save sanitized versioned add-in"
+    $tempReleaseWorkbook = Join-Path $VersionDir ("_tmp_" + $ReleaseWorkbookName)
+    $tempReleaseAddin = Join-Path $VersionDir ("_tmp_" + $ReleaseAddinName)
+    if (Test-Path -LiteralPath $tempReleaseWorkbook) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
+    if (Test-Path -LiteralPath $tempReleaseAddin) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
+
+    $publishStage = "save assembled workbook"
+    $workbook.IsAddin = $false
+    $workbook.SaveAs($tempReleaseWorkbook, 52)
+    $publishStage = "save assembled add-in"
+    $workbook.IsAddin = $true
     $workbook.SaveAs($tempReleaseAddin, 55)
     $workbook.Close($false)
     $workbook = $null
 
+    Add-RibbonCustomUi -PackagePath $tempReleaseWorkbook
     Add-RibbonCustomUi -PackagePath $tempReleaseAddin
 
+    Copy-Item -Path $tempReleaseWorkbook -Destination $ReleaseWorkbook -Force
+    Copy-Item -Path $tempReleaseWorkbook -Destination $LatestWorkbook -Force
     Copy-Item -Path $tempReleaseAddin -Destination $ReleaseAddin -Force
-    Remove-Item -LiteralPath $tempLatestAddin -Force
+    Copy-Item -Path $tempReleaseAddin -Destination $LatestAddin -Force
+    Remove-Item -LiteralPath $tempReleaseWorkbook -Force
     Remove-Item -LiteralPath $tempReleaseAddin -Force
 }
 finally {
@@ -4114,7 +4163,7 @@ finally {
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
     if (Test-Path -LiteralPath $ImportModulePath) { Remove-Item -LiteralPath $ImportModulePath -Force }
-    if ($tempLatestAddin -and (Test-Path -LiteralPath $tempLatestAddin)) { Remove-Item -LiteralPath $tempLatestAddin -Force }
+    if ($tempReleaseWorkbook -and (Test-Path -LiteralPath $tempReleaseWorkbook)) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
     if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 }
 
@@ -4127,7 +4176,7 @@ if (-not $vbaPassword) {
 }
 
 $env:DATA_EDITING_TOOLKIT_VBA_PASSWORD = $vbaPassword
-foreach ($artifact in @($ReleaseAddin, $LatestAddin)) {
+foreach ($artifact in @($ReleaseWorkbook, $LatestWorkbook, $ReleaseAddin, $LatestAddin)) {
     & python $VbaProtector $artifact
     if ($LASTEXITCODE -ne 0) { throw "Could not protect VBA project: $artifact" }
 }
@@ -4136,11 +4185,17 @@ $verifyExcel = New-Object -ComObject Excel.Application
 $verifyExcel.Visible = $false
 $verifyExcel.DisplayAlerts = $false
 try {
-    foreach ($artifact in @($ReleaseAddin, $LatestAddin)) {
+    foreach ($artifact in @($ReleaseWorkbook, $LatestWorkbook, $ReleaseAddin, $LatestAddin)) {
         $verifyWorkbook = $verifyExcel.Workbooks.Open($artifact, 0, $true)
         try {
             if ($verifyWorkbook.VBProject.Protection -ne 1) {
                 throw "VBA project protection verification failed: $artifact"
+            }
+            Assert-WorkbookApiSecretsCleared -Workbook $verifyWorkbook
+            $verifySmokeMacro = "'{0}'!Toolkit_CompileSmokeTest" -f $verifyWorkbook.Name.Replace("'", "''")
+            $verifySmokeResult = [string]$verifyExcel.Run($verifySmokeMacro)
+            if (-not $verifySmokeResult.StartsWith($Version + "|forms=14")) {
+                throw "Final artifact compile smoke failed for ${artifact}: $verifySmokeResult"
             }
         }
         finally {
@@ -4167,7 +4222,7 @@ function Copy-OrderedDictionary {
 }
 
 $versionedArtifactsSanitized = $true
-$latestMayContainLocalCredentials = $true
+$latestMayContainLocalCredentials = $false
 
 $baseManifest = [ordered]@{
     name = "Data Editing Macro Toolkit"
@@ -4192,7 +4247,7 @@ $baseManifest = [ordered]@{
     ribbonInsertAfter = "보기"
     vbaImportEncoding = "CP949"
     apiKeyStorage = "API credentials are read from the current Windows user profile via VBA SaveSetting/GetSetting."
-    apiKeyReleasePolicy = "Only release/latest artifacts may keep workbook-scoped local API credentials. Versioned release artifacts are sanitized before save."
+    apiKeyReleasePolicy = "All release artifacts are sanitized. API credentials remain only in the current Windows user profile."
     notes = "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View."
 }
 
@@ -4205,8 +4260,8 @@ $latestManifest = Copy-OrderedDictionary $baseManifest
 $latestManifest["addin"] = $LatestAddinName
 $latestManifest["workbook"] = $LatestWorkbookName
 $latestManifest["installFile"] = $LatestAddinName
-$latestManifest["credentialMode"] = "latest-local"
-$latestManifest["versionedArtifactsSanitized"] = $false
+$latestManifest["credentialMode"] = "sanitized-latest"
+$latestManifest["versionedArtifactsSanitized"] = $true
 $latestManifest["latestMayContainLocalCredentials"] = $latestMayContainLocalCredentials
 
 $versionManifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $VersionDir "manifest.json")
