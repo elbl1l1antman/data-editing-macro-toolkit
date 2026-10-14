@@ -2,6 +2,8 @@
 
 Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷입니다.
 
+전체 버전별 변경 사항은 [CHANGELOG.md](CHANGELOG.md)에서 확인할 수 있습니다.
+
 ## 라이선스
 
 이 저장소 `data-editing-macro-toolkit`은 `data-editing-macro-toolkit Non-Commercial Software Use License`를 따릅니다.
