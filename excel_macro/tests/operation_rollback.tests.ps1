@@ -1,11 +1,12 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Assert-Contains([string]$Name, [string]$Expected) {
     if (-not $source.Contains($Expected)) {
@@ -13,8 +14,8 @@ function Assert-Contains([string]$Name, [string]$Expected) {
     }
 }
 
-Assert-Contains "rollback snapshot type" "Private Function Toolkit_CreateRangeSnapshot"
-Assert-Contains "rollback restore type" "Private Sub Toolkit_RestoreRangeSnapshot"
+Assert-Contains "rollback snapshot type" "Function Toolkit_CreateRangeSnapshot"
+Assert-Contains "rollback restore type" "Sub Toolkit_RestoreRangeSnapshot"
 Assert-Contains "formula2 snapshot" 'item.Add "formula2", area.Formula2'
 Assert-Contains "text number rollback" "Toolkit_RestoreRangeSnapshot snapshot"
 Assert-Contains "residual blank rollback" "Toolkit_RestoreRangeSnapshot snapshot"

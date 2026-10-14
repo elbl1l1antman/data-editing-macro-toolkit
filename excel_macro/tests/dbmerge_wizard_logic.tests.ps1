@@ -1,11 +1,12 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
 $fixturePath = Join-Path $ProjectRoot "dev\dbmerge_wizard_test.xlsx"
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Get-VbaBlock {
     param([string]$SourceText, [string]$ProcedureName)

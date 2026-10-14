@@ -1,12 +1,17 @@
 ﻿param(
-    [string]$WorkbookPath = "C:\Users\COM\OneDrive\Program\excel_macro\dev\DataEditingMacroToolkit_dev.xlsm",
-    [string]$ModulePath = "C:\Users\COM\OneDrive\Program\excel_macro\src\MacroToolkit.bas"
+    [string]$WorkbookPath,
+    [string]$ModulePath
 )
 
 $ErrorActionPreference = "Stop"
 
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+if (-not $WorkbookPath) { $WorkbookPath = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm" }
+if (-not $ModulePath) { $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas" }
+
 if (-not (Test-Path -LiteralPath $WorkbookPath)) { throw "Workbook not found: $WorkbookPath" }
 if (-not (Test-Path -LiteralPath $ModulePath)) { throw "Module not found: $ModulePath" }
+$ModulePaths = @(Get-ChildItem -LiteralPath (Split-Path -Parent $ModulePath) -Filter "*.bas" -File | Sort-Object @{ Expression = { if ($_.Name -eq "MacroToolkit.bas") { 0 } else { 1 } } }, Name | Select-Object -ExpandProperty FullName)
 
 $moduleText = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
 $toolkitVersion = "unknown"
@@ -49,11 +54,11 @@ try {
     $readme.Range("A4").Value = "현재 버전"
     $readme.Range("B4").Value = $toolkitVersion
     $readme.Range("A5").Value = "구현 위치"
-    $readme.Range("B5").Value = "src\MacroToolkit.bas"
+    $readme.Range("B5").Value = "src 폴더의 기능별 BAS 모듈"
     $readme.Range("A6").Value = "이 통합문서에서 확인할 곳"
-    $readme.Range("B6").Value = "VBA 소스 미리보기 시트에서 src\MacroToolkit.bas 내용을 그대로 확인할 수 있습니다."
+    $readme.Range("B6").Value = "VBA 소스 미리보기 시트에서 기능별 모듈 내용을 확인할 수 있습니다."
     $readme.Range("A7").Value = "매크로 실행 방법"
-    $readme.Range("B7").Value = "VBA 편집기에서 src\MacroToolkit.bas를 가져오거나, Excel의 'VBA 프로젝트 개체 모델 접근 신뢰' 옵션을 켠 뒤 다시 빌드하세요."
+    $readme.Range("B7").Value = "VBA 편집기에서 src 폴더의 BAS 파일을 가져오거나, Excel의 'VBA 프로젝트 개체 모델 접근 신뢰' 옵션을 켠 뒤 다시 빌드하세요."
     $readme.Range("A9").Value = "주의"
     $readme.Range("B9").Value = "Excel 보안 설정이 자동 삽입을 막으면 이 파일에는 실행 가능한 VBA 모듈이 없을 수 있습니다. 이 경우 소스 미리보기와 .bas 파일이 기준입니다."
     $readme.Range("A1:B1").Font.Bold = $true
@@ -87,9 +92,14 @@ try {
 
     $source = Add-SheetAfter $workbook "VBA 소스 미리보기"
     $source.Range("A1").Value = "줄"
-    $source.Range("B1").Value = "src\MacroToolkit.bas 코드"
+    $source.Range("B1").Value = "src 기능별 BAS 모듈 코드"
     $source.Range("A1:B1").Font.Bold = $true
-    $lines = Get-Content -Encoding UTF8 -Path $ModulePath
+    $lines = New-Object System.Collections.Generic.List[string]
+    foreach ($sourceModulePath in $ModulePaths) {
+        $lines.Add("===== $([System.IO.Path]::GetFileName($sourceModulePath)) =====")
+        foreach ($line in Get-Content -LiteralPath $sourceModulePath -Encoding UTF8) { $lines.Add($line) }
+        $lines.Add("")
+    }
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $source.Cells.Item($i + 2, 1).Value2 = [string]($i + 1)
         $source.Cells.Item($i + 2, 2).Value2 = [string]$lines[$i]

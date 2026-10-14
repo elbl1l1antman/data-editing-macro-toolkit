@@ -1,9 +1,13 @@
 ﻿param(
-    [string]$WorkbookPath = "C:\Users\COM\OneDrive\Program\excel_macro\dev\DataEditingMacroToolkit_dev.xlsm",
-    [string]$ModulePath = "C:\Users\COM\OneDrive\Program\excel_macro\src\MacroToolkit.bas"
+    [string]$WorkbookPath,
+    [string]$ModulePath
 )
 
 $ErrorActionPreference = "Stop"
+
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+if (-not $WorkbookPath) { $WorkbookPath = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm" }
+if (-not $ModulePath) { $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas" }
 
 $moduleText = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
 $toolkitVersion = "unknown"

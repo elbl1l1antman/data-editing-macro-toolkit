@@ -1,6 +1,7 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 
@@ -14,7 +15,7 @@ if (-not (Test-Path -LiteralPath $publishPath)) {
     throw "publish_release.ps1 not found: $publishPath"
 }
 
-$moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$moduleSource = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 $publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
 
 $failures = New-Object System.Collections.Generic.List[string]
@@ -45,11 +46,11 @@ function Assert-Matches {
 
 Assert-Contains "module cancel flag" $moduleSource "Private mToolkitCancelRequested As Boolean"
 Assert-Contains "module cancel function" $moduleSource "Private Function Toolkit_ProgressCancelRequested() As Boolean"
-Assert-Contains "module cancel raise" $moduleSource "Private Sub Toolkit_RaiseIfCancelled()"
+Assert-Contains "module cancel raise" $moduleSource "Sub Toolkit_RaiseIfCancelled()"
 Assert-Contains "module cancel error number" $moduleSource "TOOLKIT_CANCEL_ERROR_NUMBER"
-Assert-Matches "progress update checks cancel after events" $moduleSource "Private Sub Toolkit_ProgressUpdate\b.*DoEvents\s+Toolkit_RaiseIfCancelled"
-Assert-Matches "row progress starts for every positive row count" $moduleSource "Private Function Toolkit_ShouldShowRowProgress\b.*Toolkit_ShouldShowRowProgress\s*=\s*\(totalRows\s*>\s*0\)"
-Assert-Matches "row progress updates every call" $moduleSource "Private Sub Toolkit_RowProgressUpdate\b(?!.*TOOLKIT_PROGRESS_BATCH_ROWS).*Toolkit_ProgressUpdate processedRows, totalRows, message"
+Assert-Matches "progress update checks cancel after events" $moduleSource "(?:Public|Private) Sub Toolkit_ProgressUpdate\b.*DoEvents\s+Toolkit_RaiseIfCancelled"
+Assert-Matches "row progress starts for every positive row count" $moduleSource "(?:Public|Private) Function Toolkit_ShouldShowRowProgress\b.*Toolkit_ShouldShowRowProgress\s*=\s*\(totalRows\s*>\s*0\)"
+Assert-Matches "row progress updates every call" $moduleSource "(?:Public|Private) Sub Toolkit_RowProgressUpdate\b(?!.*TOOLKIT_PROGRESS_BATCH_ROWS).*Toolkit_ProgressUpdate processedRows, totalRows, message"
 Assert-Contains "pair loop checks cancel" $moduleSource "Toolkit_RaiseIfCancelled"
 
 Assert-Contains "progress form cancel button" $publishSource '$cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)'

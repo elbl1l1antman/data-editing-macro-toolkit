@@ -4008,7 +4008,15 @@ function Add-RibbonCustomUi {
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 if (-not $ProjectRoot) { $ProjectRoot = Split-Path -Parent $ScriptDir }
 
-$ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
+function Get-ToolkitModulePaths {
+    param([string]$Root)
+
+    $sourceDir = Join-Path $Root "src"
+    return @(Get-ChildItem -LiteralPath $sourceDir -Filter "*.bas" -File | Sort-Object @{ Expression = { if ($_.Name -eq "MacroToolkit.bas") { 0 } else { 1 } } }, Name | Select-Object -ExpandProperty FullName)
+}
+
+$ModulePaths = @(Get-ToolkitModulePaths -Root $ProjectRoot)
+$ModulePath = $ModulePaths | Where-Object { [System.IO.Path]::GetFileName($_) -eq "MacroToolkit.bas" } | Select-Object -First 1
 $AdminDongMasterCsv = Join-Path $ProjectRoot "resources\admin_dong_master.csv"
 $LegalDongMasterCsv = Join-Path $ProjectRoot "resources\legal_dong_master.csv"
 $DevWorkbook = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
@@ -4029,7 +4037,8 @@ try {
     if ($prePublishStatus) { $wasDirtyBeforePublish = $true }
 } catch {}
 
-if (-not (Test-Path -LiteralPath $ModulePath)) { throw "VBA module not found: $ModulePath" }
+if (-not $ModulePath -or -not (Test-Path -LiteralPath $ModulePath)) { throw "Core VBA module not found: $ModulePath" }
+if ($ModulePaths.Count -lt 2) { throw "Functional VBA modules not found under src." }
 if (-not (Test-Path -LiteralPath $DevWorkbook)) { throw "Development workbook not found: $DevWorkbook" }
 if (-not (Test-Path -LiteralPath $VbaProtector)) { throw "VBA protector not found: $VbaProtector" }
 
@@ -4057,19 +4066,28 @@ $ReleaseWorkbook = Join-Path $VersionDir $ReleaseWorkbookName
 $ReleaseAddin = Join-Path $VersionDir $ReleaseAddinName
 $LatestWorkbook = Join-Path $LatestDir $LatestWorkbookName
 $LatestAddin = Join-Path $LatestDir $LatestAddinName
-$ImportModulePath = Join-Path $VersionDir "_tmp_MacroToolkit_cp949.bas"
+$ImportModulePaths = New-Object System.Collections.Generic.List[string]
 $tempReleaseWorkbook = $null
 $tempReleaseAddin = $null
 
-Copy-Item -Path $ModulePath -Destination (Join-Path $VersionDir "MacroToolkit.bas") -Force
-Copy-Item -Path $ModulePath -Destination (Join-Path $LatestDir "MacroToolkit.bas") -Force
+Get-ChildItem -LiteralPath $VersionDir,$LatestDir -Filter "*.bas" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+foreach ($sourceModulePath in $ModulePaths) {
+    $moduleFileName = [System.IO.Path]::GetFileName($sourceModulePath)
+    Copy-Item -LiteralPath $sourceModulePath -Destination (Join-Path $VersionDir $moduleFileName) -Force
+    Copy-Item -LiteralPath $sourceModulePath -Destination (Join-Path $LatestDir $moduleFileName) -Force
+}
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $VersionDir "PATCH_NOTES.md") -Force
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $LatestDir "PATCH_NOTES.md") -Force
 
-Assert-NoBrokenKoreanText -Path $ModulePath
-$moduleSource = Get-Content -Raw -Encoding UTF8 -Path $ModulePath
 $cp949 = [System.Text.Encoding]::GetEncoding(949)
-[System.IO.File]::WriteAllText($ImportModulePath, $moduleSource, $cp949)
+foreach ($sourceModulePath in $ModulePaths) {
+    Assert-NoBrokenKoreanText -Path $sourceModulePath
+    $moduleSource = Get-Content -Raw -Encoding UTF8 -LiteralPath $sourceModulePath
+    $moduleName = [System.IO.Path]::GetFileNameWithoutExtension($sourceModulePath)
+    $importPath = Join-Path $VersionDir ("_tmp_{0}_cp949.bas" -f $moduleName)
+    [System.IO.File]::WriteAllText($importPath, $moduleSource, $cp949)
+    $ImportModulePaths.Add($importPath)
+}
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
@@ -4080,15 +4098,19 @@ try {
     $workbook = $excel.Workbooks.Open($DevWorkbook)
     try {
         $publishStage = "remove old VBA components"
+        $toolkitModuleNames = @($ModulePaths | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) })
         foreach ($component in @($workbook.VBProject.VBComponents)) {
-            if (($component.Type -eq 1 -and ($component.Name -eq "MacroToolkit" -or $component.Name -like "Module*")) -or
+            if (($component.Type -eq 1 -and $toolkitModuleNames -contains $component.Name) -or
                 ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmSampleDesignSetup" -or $component.Name -eq "frmSampleDesignBandBuilder" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
         }
-        $publishStage = "import MacroToolkit module"
-        $imported = $workbook.VBProject.VBComponents.Import($ImportModulePath)
-        $imported.Name = "MacroToolkit"
+        $publishStage = "import toolkit modules"
+        foreach ($importModulePath in $ImportModulePaths) {
+            $imported = $workbook.VBProject.VBComponents.Import($importModulePath)
+            $temporaryModuleName = [System.IO.Path]::GetFileNameWithoutExtension($importModulePath)
+            $imported.Name = $temporaryModuleName.Substring(5, $temporaryModuleName.Length - 11)
+        }
         $publishStage = "add frmToolkitButtonMenu"
         Add-ToolkitButtonMenuUserForm -Workbook $workbook
         $publishStage = "add frmToolkitCheckListMenu"
@@ -4162,7 +4184,9 @@ finally {
     if ($null -ne $workbook) { try { $workbook.Close($false) | Out-Null } catch {} }
     $excel.Quit()
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
-    if (Test-Path -LiteralPath $ImportModulePath) { Remove-Item -LiteralPath $ImportModulePath -Force }
+    foreach ($importModulePath in $ImportModulePaths) {
+        if (Test-Path -LiteralPath $importModulePath) { Remove-Item -LiteralPath $importModulePath -Force }
+    }
     if ($tempReleaseWorkbook -and (Test-Path -LiteralPath $tempReleaseWorkbook)) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
     if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 }
@@ -4209,6 +4233,8 @@ finally {
     [System.Runtime.InteropServices.Marshal]::ReleaseComObject($verifyExcel) | Out-Null
 }
 
+Get-ChildItem -LiteralPath $VersionDir -Filter "_tmp_*" -File -ErrorAction SilentlyContinue | Remove-Item -Force
+
 if ($wasDirtyBeforePublish) { $commit = "$commit-dirty" }
 
 function Copy-OrderedDictionary {
@@ -4238,6 +4264,7 @@ $baseManifest = [ordered]@{
     addin = $ReleaseAddinName
     workbook = $ReleaseWorkbookName
     sourceModule = "MacroToolkit.bas"
+    sourceModules = @($ModulePaths | ForEach-Object { [System.IO.Path]::GetFileName($_) })
     patchNotesFile = "PATCH_NOTES.md"
     installFile = $ReleaseAddinName
     containsVbaModule = $true

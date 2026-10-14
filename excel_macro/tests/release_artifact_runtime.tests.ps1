@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
-$moduleText = Get-Content -LiteralPath (Join-Path $ProjectRoot "src\MacroToolkit.bas") -Raw -Encoding UTF8
+$moduleText = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 $version = [regex]::Match($moduleText, 'TOOLKIT_VERSION As String = "([^"]+)"').Groups[1].Value
 if (-not $version) { throw "Could not read TOOLKIT_VERSION." }
 

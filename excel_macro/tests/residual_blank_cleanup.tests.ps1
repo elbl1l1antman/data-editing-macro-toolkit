@@ -1,11 +1,12 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
 $publishPath = Join-Path $ProjectRoot "scripts\publish_release.ps1"
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 $publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
 
 foreach ($token in @(

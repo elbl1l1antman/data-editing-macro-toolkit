@@ -1,7 +1,8 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $modulePath = Join-Path $projectRoot "src\MacroToolkit.bas"
-$module = Get-Content -Raw -Encoding UTF8 $modulePath
+$module = Get-ToolkitVbaSource -ProjectRoot $projectRoot
 
 if ($module -notmatch 'Public Sub DataCheck_CreateCharacterCheckFormula\(\)') { throw "Character check macro is missing." }
 if ($module -notmatch 'outputCell\.Formula2 = formulaText') { throw "Formula2 generation is missing." }

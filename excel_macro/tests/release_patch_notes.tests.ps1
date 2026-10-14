@@ -1,12 +1,13 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
 $publishPath = Join-Path $ProjectRoot "scripts\publish_release.ps1"
-$moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$moduleSource = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 $publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
 
 if ($moduleSource -notmatch 'TOOLKIT_VERSION\s+As\s+String\s*=\s*"([^"]+)"') {

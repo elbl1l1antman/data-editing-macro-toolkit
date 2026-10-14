@@ -1,9 +1,10 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
-$source = Get-Content -LiteralPath (Join-Path $ProjectRoot "src\MacroToolkit.bas") -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Assert-Contains([string]$Name, [string]$Expected) {
     if (-not $source.Contains($Expected)) { throw "$Name missing: $Expected" }

@@ -1,9 +1,10 @@
 ﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
-$source = Get-Content -LiteralPath (Join-Path $ProjectRoot "src\MacroToolkit.bas") -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 $publishSource = Get-Content -LiteralPath (Join-Path $ProjectRoot "scripts\publish_release.ps1") -Raw -Encoding UTF8
 foreach ($token in @("Ribbon_AddressConvertProvinceNotation", 'label="광역시도 표기"', "12. 광역시도 표기 변환")) {
     if (-not ($source.Contains($token) -or $publishSource.Contains($token))) {

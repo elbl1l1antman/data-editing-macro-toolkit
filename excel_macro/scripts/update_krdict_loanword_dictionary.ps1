@@ -31,7 +31,7 @@ if ([string]::IsNullOrWhiteSpace($OutputPath)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($ModulePath)) {
-    $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
+    $ModulePath = Join-Path $ProjectRoot "src\CompanyNameTools.bas"
 }
 
 function ConvertFrom-HtmlAttribute {

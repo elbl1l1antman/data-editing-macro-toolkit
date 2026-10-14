@@ -1,10 +1,11 @@
 ﻿param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = 'Stop'
 $publishPath = Join-Path $ProjectRoot 'scripts\publish_release.ps1'
 $modulePath = Join-Path $ProjectRoot 'src\MacroToolkit.bas'
 $publishSource = Get-Content -LiteralPath $publishPath -Raw -Encoding UTF8
-$moduleSource = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$moduleSource = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 foreach ($pair in @(
     @($publishSource, 'label="표본 추출"'),
     @($publishSource, 'onAction="Ribbon_SampleExtractRun"'),

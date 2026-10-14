@@ -12,12 +12,17 @@ if (-not $OutputPath) {
     $OutputPath = Join-Path $ProjectRoot "dev\DataEditingMacroToolkit_dev.xlsm"
 }
 
-if (-not $ModulePath) {
-    $ModulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
+function Get-ToolkitModulePaths {
+    param([string]$Root)
+
+    return @(Get-ChildItem -LiteralPath (Join-Path $Root "src") -Filter "*.bas" -File | Sort-Object @{ Expression = { if ($_.Name -eq "MacroToolkit.bas") { 0 } else { 1 } } }, Name | Select-Object -ExpandProperty FullName)
 }
 
-if (-not (Test-Path -LiteralPath $ModulePath)) {
-    throw "VBA module not found: $ModulePath"
+$ModulePaths = if ($ModulePath) { @($ModulePath) } else { @(Get-ToolkitModulePaths -Root $ProjectRoot) }
+$ModulePath = $ModulePaths | Where-Object { [System.IO.Path]::GetFileName($_) -eq "MacroToolkit.bas" } | Select-Object -First 1
+if (-not $ModulePath) { throw "MacroToolkit.bas not found under src." }
+foreach ($sourceModulePath in $ModulePaths) {
+    if (-not (Test-Path -LiteralPath $sourceModulePath)) { throw "VBA module not found: $sourceModulePath" }
 }
 
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $OutputPath) | Out-Null
@@ -44,7 +49,7 @@ try {
     $sheet.Range("B4").Value = "VBA 모듈 자동 삽입 대기"
     $sheet.Range("A6").Value = "설치 마무리 방법"
     $sheet.Range("A7").Value = "1. Excel에서 'VBA 프로젝트 개체 모델 접근 신뢰' 옵션을 켭니다."
-    $sheet.Range("A8").Value = "2. 이 스크립트를 다시 실행하거나, VBA 편집기에서 src\MacroToolkit.bas를 가져옵니다."
+    $sheet.Range("A8").Value = "2. 이 스크립트를 다시 실행하거나, VBA 편집기에서 src 폴더의 BAS 모듈을 가져옵니다."
     $sheet.Range("A10").Value = "포함 매크로"
     $sheet.Range("A11").Value = "ConvertTextNumbersInSelection"
     $sheet.Range("A12").Value = "ConvertTextNumbersInUsedRange"
@@ -58,7 +63,9 @@ try {
 
     try {
         if ($null -ne $workbook.VBProject) {
-            $workbook.VBProject.VBComponents.Import($ModulePath) | Out-Null
+            foreach ($sourceModulePath in $ModulePaths) {
+                $workbook.VBProject.VBComponents.Import($sourceModulePath) | Out-Null
+            }
             $excel.Run("'" + $workbook.Name + "'!Toolkit_SetupWorkbook")
             $workbook.Worksheets.Item("_MacroToolkit").Visible = 2
             $sheet.Range("B4").Value = "VBA 모듈 삽입 완료"

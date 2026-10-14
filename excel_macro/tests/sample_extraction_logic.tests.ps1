@@ -1,8 +1,10 @@
 ﻿param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path)
 
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
+
 $ErrorActionPreference = 'Stop'
 $modulePath = Join-Path $ProjectRoot 'src\MacroToolkit.bas'
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Assert-Contains([string]$Actual, [string]$Expected) {
     if ($Actual.IndexOf($Expected, [StringComparison]::Ordinal) -lt 0) { throw "Missing: $Expected" }

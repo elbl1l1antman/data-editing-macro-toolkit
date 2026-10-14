@@ -1,6 +1,7 @@
-param(
+﻿param(
     [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
+. (Join-Path $PSScriptRoot "test_helpers.ps1")
 
 $ErrorActionPreference = "Stop"
 
@@ -9,7 +10,7 @@ if (-not (Test-Path -LiteralPath $modulePath)) {
     throw "MacroToolkit.bas not found: $modulePath"
 }
 
-$source = Get-Content -LiteralPath $modulePath -Raw -Encoding UTF8
+$source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Get-VbaBlock {
     param(
