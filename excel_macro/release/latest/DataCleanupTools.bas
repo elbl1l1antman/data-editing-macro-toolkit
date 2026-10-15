@@ -731,6 +731,39 @@ Private Function Phone_IsSequentialPlaceholderDigits(ByVal digits As String) As 
     Phone_IsSequentialPlaceholderDigits = Phone_IsSequentialRun(Phone_SubscriberDigitsForSequenceCheck(digits))
 End Function
 
+Private Function Phone_BlockHasDistinctDigits(ByVal blockText As String) As Boolean
+    If Len(blockText) < 2 Then Exit Function
+
+    Dim i As Long
+    For i = 2 To Len(blockText)
+        If Mid$(blockText, i, 1) <> Left$(blockText, 1) Then
+            Phone_BlockHasDistinctDigits = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Private Function Phone_HasRepeatedBlockPattern(ByVal digits As String) As Boolean
+    Dim subscriberDigits As String
+    subscriberDigits = Phone_SubscriberDigitsForSequenceCheck(digits)
+    If Len(subscriberDigits) < 4 Then Exit Function
+
+    Dim blockLength As Long
+    Dim startPos As Long
+    Dim blockText As String
+    For blockLength = 2 To Len(subscriberDigits) \ 2
+        For startPos = 1 To Len(subscriberDigits) - (blockLength * 2) + 1
+            blockText = Mid$(subscriberDigits, startPos, blockLength)
+            If Phone_BlockHasDistinctDigits(blockText) Then
+                If blockText = Mid$(subscriberDigits, startPos + blockLength, blockLength) Then
+                    Phone_HasRepeatedBlockPattern = True
+                    Exit Function
+                End If
+            End If
+        Next startPos
+    Next blockLength
+End Function
+
 Private Function NormalizeKoreanPhoneWithOptions(ByVal valueIn As String, ByRef valueOut As String, ByVal options As Object) As Boolean
     Dim source As String
     Dim digits As String  ' 숫자만 추출한 문자열
@@ -952,6 +985,12 @@ Public Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     ElseIf Phone_IsSequentialPlaceholderDigits(digits) Then
         phoneType = "오류 패턴"
         statusText = "오류"
+    ElseIf Phone_HasRepeatedDigitRun(digits, 6) Then
+        phoneType = "오류 패턴"
+        statusText = "오류"
+    ElseIf Phone_HasRepeatedBlockPattern(digits) Then
+        phoneType = "오류 패턴"
+        statusText = "오류"
     ElseIf Phone_IsSafeNumberDigits(digits) Then
         phoneType = "안심번호"
         If Len(digits) = 11 Or Len(digits) = 12 Then statusText = "정상" Else statusText = "확인 필요"
@@ -975,7 +1014,7 @@ Public Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
         statusText = "확인 필요"
     End If
 
-    If statusText = "정상" And Phone_HasRepeatedDigitRun(digits, 4) Then statusText = "확인 필요"
+    If statusText = "정상" And Phone_HasRepeatedDigitRun(digits, 5) Then statusText = "확인 필요"
     Phone_ClassifyOne = Array(phoneType, statusText)
 End Function
 

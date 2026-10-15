@@ -51,6 +51,8 @@ $procedureNames = @(
     "Phone_IsSequentialPlaceholderDigits",
     "Phone_SubscriberDigitsForSequenceCheck",
     "Phone_IsSequentialRun",
+    "Phone_BlockHasDistinctDigits",
+    "Phone_HasRepeatedBlockPattern",
     "Phone_ClassifyOne",
     "Phone_IsPlaceholderZeroPattern",
     "Phone_HasRepeatedDigitRun",
@@ -69,7 +71,12 @@ Public Function PhoneRulesPassed() As String
     resultText = CheckCase(resultText, "normalize 8-digit representative number", Phone_NormalizeForTest("15881222"), "1588-1222")
     resultText = CheckCase(resultText, "classify 000-0000 as error", Phone_ClassifyForTest("000-0000"), KoErrorPattern() & "|" & KoError())
     resultText = CheckCase(resultText, "classify 0000-0000 as error", Phone_ClassifyForTest("0000-0000"), KoErrorPattern() & "|" & KoError())
-    resultText = CheckCase(resultText, "flag four repeated digits for review", Phone_ClassifyForTest("02-231-4444"), KoSeoulArea() & "|" & KoReview())
+    resultText = CheckCase(resultText, "keep four repeated digits normal", Phone_ClassifyForTest("02-231-4444"), KoSeoulArea() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "flag five repeated digits for review", Phone_ClassifyForTest("02-1111-1222"), KoSeoulArea() & "|" & KoReview())
+    resultText = CheckCase(resultText, "classify six repeated digits as error", Phone_ClassifyForTest("02-1111-1122"), KoErrorPattern() & "|" & KoError())
+    resultText = CheckCase(resultText, "classify repeated two digit block as error", Phone_ClassifyForTest("02-1212-3456"), KoErrorPattern() & "|" & KoError())
+    resultText = CheckCase(resultText, "classify repeated three digit block as error", Phone_ClassifyForTest("031-456-4567"), KoErrorPattern() & "|" & KoError())
+    resultText = CheckCase(resultText, "classify repeated four digit block as error", Phone_ClassifyForTest("010-1234-1234"), KoErrorPattern() & "|" & KoError())
     resultText = CheckCase(resultText, "keep ordinary 8-digit representative number normal", Phone_ClassifyForTest("1588-1222"), KoRepresentative() & "|" & KoNormal())
     resultText = CheckCase(resultText, "prepend zero option repairs missing Seoul prefix", Phone_NormalizeForTestWithOptions("221345678", True, False, False), "02-2134-5678")
     resultText = CheckCase(resultText, "repeated run option writes review text instead of number", Phone_NormalizeForTestWithOptions("02-231-4444", False, True, False), KoReview())
@@ -78,6 +85,7 @@ Public Function PhoneRulesPassed() As String
     resultText = CheckCase(resultText, "delete sequential local phone during normalization", Phone_NormalizeResultForTest("02-123-4567"), "TRUE|")
     resultText = CheckCase(resultText, "delete sequential 8 digit placeholder during normalization", Phone_NormalizeResultForTest("12345678"), "TRUE|")
     resultText = CheckCase(resultText, "classify sequential local phone as error", Phone_ClassifyForTest("02-123-4567"), KoErrorPattern() & "|" & KoError())
+    resultText = CheckCase(resultText, "classify sequential mobile subscriber digits as error", Phone_ClassifyForTest("010-1234-5678"), KoErrorPattern() & "|" & KoError())
 
     If Len(resultText) = 0 Then resultText = "PASS"
     PhoneRulesPassed = resultText
