@@ -61,6 +61,7 @@ $procedureNames = @(
     "Phone_HasRepeatedDigitRun",
     "Phone_DigitsForKoreanRules",
     "Phone_IsSafeNumberDigits",
+    "Phone_IsSafeNumberText",
     "DigitsOnly"
 )
 
@@ -82,6 +83,15 @@ Public Function PhoneRulesPassed() As String
     Next representativePrefix
 
     resultText = CheckCase(resultText, "normalize 8-digit representative number", Phone_NormalizeForTest("15881222"), "1588-1222")
+    resultText = CheckCase(resultText, "keep valid safe number classification", Phone_ClassifyForTest("0507-2468-1357"), KoSafeNumber() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "keep unformatted safe number classification", Phone_ClassifyForTest("050724681357"), KoSafeNumber() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "restore missing zero safe number classification", Phone_ClassifyForTest("5072468135"), KoSafeNumber() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "keep international safe number classification", Phone_ClassifyForTest("+82-507-246-8135"), KoSafeNumber() & "|" & KoNormal())
+    resultText = CheckCase(resultText, "reject three digit 050 group as safe number", Phone_ClassifyForTest("050-7246-8135"), KoUnknown() & "|" & KoReview())
+    resultText = CheckCase(resultText, "reject trailing 0507 digits as safe number", Phone_ClassifyForTest("050-2468-0507"), KoUnknown() & "|" & KoReview())
+    resultText = CheckCase(resultText, "do not normalize malformed 050 group as safe number", Phone_NormalizeResultForTest("050-7246-8135"), "FALSE|")
+    resultText = CheckCase(resultText, "do not normalize trailing 0507 digits as safe number", Phone_NormalizeResultForTest("050-2468-0507"), "FALSE|")
+    resultText = CheckCase(resultText, "keep mobile ending in 0507 as mobile", Phone_ClassifyForTest("010-1234-0507"), KoMobile() & "|" & KoNormal())
     resultText = CheckCase(resultText, "split compact multiple representative number", Phone_SplitRepresentativeForTest("1588-12345"), "TRUE|1588-1234|1588-1235")
     resultText = CheckCase(resultText, "split tilde multiple representative number", Phone_SplitRepresentativeForTest("1588-1234~5"), "TRUE|1588-1234|1588-1235")
     resultText = CheckCase(resultText, "classify multiple representative number for review", Phone_ClassifyForTest("1588-12345"), KoRepresentative() & "|" & KoRepresentativeMultipleReview())
@@ -141,6 +151,18 @@ End Function
 
 Private Function KoNormal() As String
     KoNormal = ChrW(&HC815) & ChrW(&HC0C1)
+End Function
+
+Private Function KoSafeNumber() As String
+    KoSafeNumber = ChrW(&HC548) & ChrW(&HC2EC) & ChrW(&HBC88) & ChrW(&HD638)
+End Function
+
+Private Function KoUnknown() As String
+    KoUnknown = ChrW(&HC54C) & " " & ChrW(&HC218) & " " & ChrW(&HC5C6) & ChrW(&HC74C)
+End Function
+
+Private Function KoMobile() As String
+    KoMobile = ChrW(&HD734) & ChrW(&HB300) & ChrW(&HD3F0)
 End Function
 '@
 

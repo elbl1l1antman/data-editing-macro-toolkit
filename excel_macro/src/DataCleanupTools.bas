@@ -875,7 +875,7 @@ Private Function NormalizeKoreanPhoneWithOptions(ByVal valueIn As String, ByRef 
     ElseIf Phone_IsKnownRepresentativePrefix(digits) And Len(digits) = 9 Then
         Dim secondRepresentative As String
         If Not Phone_TrySplitRepresentative(valueIn, valueOut, secondRepresentative) Then Exit Function
-    ElseIf Phone_IsSafeNumberDigits(digits) Then
+    ElseIf Phone_IsSafeNumberText(valueIn, digits) Then
         ' ── 안심번호 (0507 등 050X 계열) ─────────────────────
         ' 11자리: 050X-XXX-XXXX
         ' 12자리: 050X-XXXX-XXXX
@@ -887,6 +887,8 @@ Private Function NormalizeKoreanPhoneWithOptions(ByVal valueIn As String, ByRef 
             Case Else
                 Exit Function
         End Select
+    ElseIf Left$(digits, 3) = "050" Then
+        Exit Function
     ElseIf Len(digits) = 8 And Phone_NormalizeOptionEnabled(options, "eightDigitAsMobile010") Then
         ' ── 휴대폰 본문 8자리만 있는 경우 사용자가 선택하면 010을 붙여 처리
         valueOut = "010-" & Left$(digits, 4) & "-" & Right$(digits, 4)
@@ -980,6 +982,45 @@ End Function
 Private Function Phone_IsSafeNumberDigits(ByVal digits As String) As Boolean
     If Len(digits) < 4 Then Exit Function
     Phone_IsSafeNumberDigits = (Left$(digits, 4) Like "050#")
+End Function
+
+Private Function Phone_IsSafeNumberText(ByVal source As String, ByVal normalizedDigits As String) As Boolean
+    If Not Phone_IsSafeNumberDigits(normalizedDigits) Then Exit Function
+
+    Dim firstGroup As String
+    Dim secondGroup As String
+    Dim currentGroup As String
+    Dim groupCount As Long
+    Dim i As Long
+    Dim ch As String
+
+    For i = 1 To Len(source) + 1
+        If i <= Len(source) Then ch = Mid$(source, i, 1) Else ch = ""
+        If ch >= "0" And ch <= "9" Then
+            currentGroup = currentGroup & ch
+        ElseIf Len(currentGroup) > 0 Then
+            groupCount = groupCount + 1
+            If groupCount = 1 Then firstGroup = currentGroup
+            If groupCount = 2 Then secondGroup = currentGroup
+            currentGroup = ""
+            If groupCount = 2 Then Exit For
+        End If
+    Next i
+
+    If groupCount <= 1 Then
+        If Left$(firstGroup, 4) Like "050#" Then
+            Phone_IsSafeNumberText = True
+        ElseIf Left$(firstGroup, 3) Like "50#" And Left$(normalizedDigits, 4) = "0" & Left$(firstGroup, 3) Then
+            Phone_IsSafeNumberText = True
+        End If
+    ElseIf Len(firstGroup) = 4 And firstGroup Like "050#" Then
+        Phone_IsSafeNumberText = True
+    ElseIf Len(firstGroup) = 3 And firstGroup Like "50#" Then
+        Phone_IsSafeNumberText = True
+    ElseIf firstGroup = "82" Or firstGroup = "0082" Then
+        If (Len(secondGroup) = 3 And secondGroup Like "50#") Or _
+           (Len(secondGroup) = 4 And secondGroup Like "050#") Then Phone_IsSafeNumberText = True
+    End If
 End Function
 
 Private Function Phone_IsPlaceholderZeroPattern(ByVal digits As String) As Boolean
@@ -1082,9 +1123,12 @@ Public Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     ElseIf Phone_HasRepeatedBlockPattern(digits) Then
         phoneType = "오류 패턴"
         statusText = "오류"
-    ElseIf Phone_IsSafeNumberDigits(digits) Then
+    ElseIf Phone_IsSafeNumberText(phoneText, digits) Then
         phoneType = "안심번호"
         If Len(digits) = 11 Or Len(digits) = 12 Then statusText = "정상" Else statusText = "확인 필요"
+    ElseIf Left$(digits, 3) = "050" Then
+        phoneType = "알 수 없음"
+        statusText = "확인 필요"
     ElseIf Left$(digits, 3) = "010" And Len(digits) = 11 Then
         phoneType = "휴대폰"
         statusText = "정상"
