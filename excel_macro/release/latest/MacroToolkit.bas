@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.2.0"
+Public Const TOOLKIT_VERSION As String = "1.2.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Public Const VERSION_SHEET As String = "_MacroToolkit"
@@ -152,6 +152,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A54").Value = "DataCheck_CreateCharacterCheckFormula"
     ws.Range("A55").Value = "Address_ConvertProvinceNotation"
     ws.Range("A56").Value = "DataCleanup_ClearResidualBlankValues"
+    ws.Range("A57").Value = "DataCleanup_ClearErrorAndZeroValues"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -627,7 +628,8 @@ Public Sub Toolkit_LaunchDataCleanup()
         "6. 사업자등록번호 3열 병합" & vbCrLf & _
         "7. 기업/사업체명 정리" & vbCrLf & _
         "8. 문자 검진 함수 생성" & vbCrLf & _
-        "9. 수식 빈값 정리", _
+        "9. 수식 빈값 정리" & vbCrLf & _
+        "10. 오류값/0 지우기", _
         "1")
 
     Select Case choice
@@ -640,8 +642,9 @@ Public Sub Toolkit_LaunchDataCleanup()
         Case "7": CompanyName_CleanWithOptions
         Case "8": DataCheck_CreateCharacterCheckFormula
         Case "9": DataCleanup_ClearResidualBlankValues
+        Case "10": DataCleanup_ClearErrorAndZeroValues
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~9 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~10 중 하나를 선택하세요."
     End Select
 End Sub
 
@@ -967,6 +970,10 @@ End Sub
 
 Public Sub Ribbon_DataCleanupClearResidualBlanks(control As IRibbonControl)
     DataCleanup_ClearResidualBlankValues
+End Sub
+
+Public Sub Ribbon_DataCleanupClearErrorsAndZeros(control As IRibbonControl)
+    DataCleanup_ClearErrorAndZeroValues
 End Sub
 
 Public Sub Ribbon_AddressConvertOldToRoad(control As IRibbonControl)

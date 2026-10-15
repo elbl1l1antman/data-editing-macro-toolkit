@@ -276,6 +276,100 @@ Public Function DataCleanup_IsResidualBlankForTest(ByVal cellValue As Variant, B
     DataCleanup_IsResidualBlankForTest = DataCleanup_IsResidualBlankValue(cellValue, hasFormula)
 End Function
 
+Public Sub DataCleanup_ClearErrorAndZeroValues()
+    Dim targetRange As Range
+    If Not Toolkit_GetRangeFromUserForm("오류값/0 지우기", _
+        "#N/A, #VALUE!, #REF!, #DIV/0! 등의 Excel 오류값과 숫자 0을 지울 범위를 선택하세요.", _
+        targetRange) Then Exit Sub
+
+    If Not Toolkit_ValidateWorksheet(targetRange.Worksheet, "오류값/0 지우기", True) Then Exit Sub
+    If MsgBox("선택 범위에서 Excel 오류값과 숫자 0이 있는 셀의 내용을 지웁니다." & vbCrLf & vbCrLf & _
+              "수식 결과가 오류 또는 0인 셀은 수식도 함께 지워집니다." & vbCrLf & _
+              "문자열 '0', 빈셀, 일반 텍스트, 0이 아닌 숫자는 유지됩니다." & vbCrLf & _
+              "행과 열은 삭제하지 않습니다. 계속할까요?", _
+              vbQuestion + vbYesNo, "오류값/0 지우기") <> vbYes Then Exit Sub
+
+    Dim workRange As Range
+    Set workRange = Intersect(targetRange, targetRange.Worksheet.UsedRange)
+    If workRange Is Nothing Then
+        MsgBox "선택한 범위에 확인할 값이 없습니다.", vbInformation, "오류값/0 지우기"
+        Exit Sub
+    End If
+
+    Dim snapshot As Collection
+    Dim values As Variant
+    Dim rowIndex As Long, columnIndex As Long
+    Dim totalRows As Long, errorCount As Long, zeroCount As Long
+    Dim valueKind As Long
+
+    totalRows = workRange.Rows.Count
+    values = workRange.Value2
+
+    On Error GoTo ErrHandler
+    Set snapshot = Toolkit_CreateRangeSnapshot(workRange)
+    Application.ScreenUpdating = False
+    Toolkit_RowProgressStart "오류값/0 지우기", totalRows, "정리할 셀 확인 준비 중"
+
+    For rowIndex = 1 To workRange.Rows.Count
+        For columnIndex = 1 To workRange.Columns.Count
+            If workRange.Cells.CountLarge = 1 Then
+                valueKind = DataCleanup_ClearValueKind(values)
+            Else
+                valueKind = DataCleanup_ClearValueKind(values(rowIndex, columnIndex))
+            End If
+
+            If valueKind > 0 Then
+                workRange.Cells(rowIndex, columnIndex).ClearContents
+                If valueKind = 1 Then
+                    errorCount = errorCount + 1
+                Else
+                    zeroCount = zeroCount + 1
+                End If
+            End If
+        Next columnIndex
+        Toolkit_RowProgressUpdate rowIndex, totalRows, _
+            "오류값/0 지우는 중: " & CStr(rowIndex) & "/" & CStr(totalRows) & "행"
+    Next rowIndex
+
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    MsgBox "Excel 오류값 " & CStr(errorCount) & "개와 숫자 0 " & CStr(zeroCount) & _
+           "개 셀의 내용을 지웠습니다.", vbInformation, "오류값/0 지우기"
+    Exit Sub
+
+ErrHandler:
+    Dim errorNumber As Long, errorDescription As String
+    errorNumber = Err.Number
+    errorDescription = Err.Description
+    On Error Resume Next
+    Toolkit_RestoreRangeSnapshot snapshot
+    On Error GoTo 0
+    Toolkit_RowProgressClose totalRows
+    Application.ScreenUpdating = True
+    If Toolkit_IsCancelError(errorNumber) Then
+        MsgBox "작업을 취소해 변경 전 값으로 복구했습니다.", vbInformation, "오류값/0 지우기"
+        Exit Sub
+    End If
+    MsgBox "오류값/0 정리 중 문제가 발생해 변경 전 값으로 복구했습니다." & vbCrLf & _
+           errorDescription, vbExclamation, "오류값/0 지우기"
+End Sub
+
+Private Function DataCleanup_ClearValueKind(ByVal cellValue As Variant) As Long
+    If IsError(cellValue) Then
+        DataCleanup_ClearValueKind = 1
+        Exit Function
+    End If
+
+    Select Case VarType(cellValue)
+        Case vbByte, vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbDecimal
+            If CDbl(cellValue) = 0 Then DataCleanup_ClearValueKind = 2
+    End Select
+End Function
+
+Public Function DataCleanup_ClearValueKindForTest(ByVal cellValue As Variant) As Long
+    DataCleanup_ClearValueKindForTest = DataCleanup_ClearValueKind(cellValue)
+End Function
+
 ' ============================================================
 ' 프로시저 : NormalizePhonesToCopiedColumns (내부 전용)
 ' 설  명  : 선택 범위를 오른쪽 새 열에 복사한 뒤 복사본만 전화번호
