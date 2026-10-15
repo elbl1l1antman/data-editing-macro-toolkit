@@ -1,6 +1,8 @@
 Attribute VB_Name = "DataCleanupTools"
 Option Explicit
 
+Private Const PHONE_NORMALIZE_CHUNK_ROWS As Long = 500
+
 
 ' ============================================================
 ' 프로시저 : ConvertTextNumbersInSelection
@@ -472,17 +474,15 @@ End Function
 
 ' ============================================================
 ' 프로시저 : NormalizePhonesInRange (내부 전용)
-' 설  명  : 주어진 Range 내 각 셀을 순회하며
+' 설  명  : 주어진 Range를 행 청크 단위로 읽어
 '           한국 전화번호를 표준 형식으로 정규화한다.
 '           셀 서식을 텍스트(@)로 변경해 앞자리 0이 유지되도록 한다.
 '           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
 ' 파라미터 : target - 정규화 대상 Range
 ' ============================================================
 Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화", Optional ByVal normalizeOptions As Variant, Optional ByVal splitCount As Long = 0)
-    Dim cell As Range
     Dim changedCount As Long         ' 실제 변경된 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
-    Dim normalized As String         ' 정규화된 전화번호 문자열
     Dim processedCells As Long
     Dim totalCells As Long
     Dim options As Object
@@ -496,22 +496,26 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart resultTitle, totalCells, "전화번호 정리 준비 중"
-    For Each cell In target.Cells
-        If cell.HasFormula Then
-            skippedFormulaCount = skippedFormulaCount + 1
-        ElseIf NormalizeKoreanPhoneWithOptions(CStr(cell.Value), normalized, options) Then
-            ' 값이 실제로 바뀐 경우에만 셀을 업데이트
-            If CStr(cell.Value) <> normalized Then
-                ' 텍스트 서식으로 설정해야 "010-..."처럼 하이픈이 포함된
-                ' 번호가 날짜/수식으로 오해되지 않고 앞자리 0도 보존됨
-                cell.NumberFormat = "@"
-                cell.Value = normalized
-                changedCount = changedCount + 1
+
+    Dim area As Range
+    Dim chunkRange As Range
+    Dim rowOffset As Long
+    Dim chunkRowCount As Long
+    For Each area In target.Areas
+        For rowOffset = 1 To area.Rows.Count Step PHONE_NORMALIZE_CHUNK_ROWS
+            chunkRowCount = PHONE_NORMALIZE_CHUNK_ROWS
+            If rowOffset + chunkRowCount - 1 > area.Rows.Count Then
+                chunkRowCount = area.Rows.Count - rowOffset + 1
             End If
-        End If
-        processedCells = processedCells + 1
-        Toolkit_RowProgressUpdate processedCells, totalCells, "전화번호 정리 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
-    Next cell
+
+            Set chunkRange = area.Rows(rowOffset).Resize(chunkRowCount, area.Columns.Count)
+            Phone_NormalizeChunk chunkRange, options, changedCount, skippedFormulaCount
+
+            processedCells = processedCells + chunkRange.Cells.CountLarge
+            Toolkit_RowProgressUpdate processedCells, totalCells, _
+                "전화번호 정리 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
+        Next rowOffset
+    Next area
 
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
@@ -531,6 +535,77 @@ ErrHandler:
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, _
            vbExclamation, resultTitle
 End Sub
+
+Private Sub Phone_NormalizeChunk(ByVal chunkRange As Range, ByVal options As Object, _
+                                 ByRef changedCount As Long, ByRef skippedFormulaCount As Long)
+    Dim values As Variant
+    Dim formulas As Variant
+    values = Phone_ReadRangeMatrix(chunkRange, False)
+    formulas = Phone_ReadRangeMatrix(chunkRange, True)
+
+    Dim changedCells() As Boolean
+    ReDim changedCells(1 To chunkRange.Rows.Count, 1 To chunkRange.Columns.Count)
+
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    Dim normalized As String
+    Dim sourceText As String
+    Dim hasFormula As Boolean
+    For rowIndex = 1 To chunkRange.Rows.Count
+        For columnIndex = 1 To chunkRange.Columns.Count
+            If Phone_IsFormulaValue(formulas(rowIndex, columnIndex)) Then
+                skippedFormulaCount = skippedFormulaCount + 1
+                hasFormula = True
+            ElseIf Not IsError(values(rowIndex, columnIndex)) Then
+                sourceText = CStr(values(rowIndex, columnIndex))
+                If NormalizeKoreanPhoneWithOptions(sourceText, normalized, options) Then
+                    If sourceText <> normalized Then
+                        values(rowIndex, columnIndex) = normalized
+                        changedCells(rowIndex, columnIndex) = True
+                        changedCount = changedCount + 1
+                    End If
+                End If
+            End If
+        Next columnIndex
+    Next rowIndex
+
+    If Not hasFormula Then
+        chunkRange.Value2 = values
+        Exit Sub
+    End If
+
+    ' 수식이 있는 청크는 수식을 보존하기 위해 변경된 일반 셀만 기록한다.
+    For rowIndex = 1 To chunkRange.Rows.Count
+        For columnIndex = 1 To chunkRange.Columns.Count
+            If changedCells(rowIndex, columnIndex) Then
+                chunkRange.Cells(rowIndex, columnIndex).Value2 = values(rowIndex, columnIndex)
+            End If
+        Next columnIndex
+    Next rowIndex
+End Sub
+
+Private Function Phone_ReadRangeMatrix(ByVal sourceRange As Range, ByVal readFormulas As Boolean) As Variant
+    Dim rawValues As Variant
+    If readFormulas Then
+        rawValues = sourceRange.Formula
+    Else
+        rawValues = sourceRange.Value2
+    End If
+
+    If sourceRange.Cells.CountLarge > 1 Then
+        Phone_ReadRangeMatrix = rawValues
+        Exit Function
+    End If
+
+    Dim result(1 To 1, 1 To 1) As Variant
+    result(1, 1) = rawValues
+    Phone_ReadRangeMatrix = result
+End Function
+
+Private Function Phone_IsFormulaValue(ByVal valueIn As Variant) As Boolean
+    If VarType(valueIn) <> vbString Then Exit Function
+    Phone_IsFormulaValue = (Left$(CStr(valueIn), 1) = "=")
+End Function
 
 Public Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal headerSuffix As String) As Range
     On Error GoTo ErrHandler
