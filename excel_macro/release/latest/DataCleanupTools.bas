@@ -382,7 +382,7 @@ Private Function Phone_GetNormalizeOptionsFromUser() As Object
     Dim optionsText As String
     optionsText = "prepend_zero" & vbTab & "앞자리가 0이 아니면 0을 붙인 후 정리 (우선 실행)" & vbLf & _
                   "repeat_review" & vbTab & "같은 숫자 4개 이상 반복 시 번호 대신 '확인 필요' 입력" & vbLf & _
-                  "mobile_010" & vbTab & "8자리 값을 휴대폰 개인전화 010-XXXX-XXXX 형식으로 정리"
+                  "mobile_010" & vbTab & "대표번호 접두어가 아닌 8자리 값을 휴대폰 010-XXXX-XXXX 형식으로 정리"
 
     Dim selectedKeys As String
     selectedKeys = Toolkit_CheckListMenu( _
@@ -417,8 +417,58 @@ Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range, Optional ByVal
     Set outputRange = CopyRangeToAdjacentColumns(workRange, "전화번호_정리")
     If outputRange Is Nothing Then Exit Sub
 
-    NormalizePhonesInRange outputRange, "전화번호 정리 복사본", options
+    Dim splitCount As Long
+    splitCount = Phone_CreateRepresentativeSplitColumns(workRange, outputRange)
+    NormalizePhonesInRange outputRange, "전화번호 정리 복사본", options, splitCount
 End Sub
+
+Private Function Phone_CreateRepresentativeSplitColumns(ByVal sourceRange As Range, ByVal normalizedRange As Range) As Long
+    Dim cell As Range
+    Dim firstNumber As String
+    Dim secondNumber As String
+    Dim splitCount As Long
+
+    For Each cell In sourceRange.Cells
+        If Not cell.HasFormula Then
+            If Phone_TrySplitRepresentative(CStr(cell.Value), firstNumber, secondNumber) Then splitCount = splitCount + 1
+        End If
+    Next cell
+    If splitCount = 0 Then Exit Function
+
+    Dim ws As Worksheet
+    Dim secondOutputCol As Long
+    Set ws = sourceRange.Worksheet
+    secondOutputCol = normalizedRange.Column + normalizedRange.Columns.Count
+    If Not Toolkit_CanInsertColumns(ws, secondOutputCol, sourceRange.Columns.Count, "복수 대표번호 분할") Then Exit Function
+
+    ws.Columns(secondOutputCol).Resize(, sourceRange.Columns.Count).Insert Shift:=xlToRight
+
+    Dim secondRange As Range
+    Set secondRange = ws.Range(ws.Cells(sourceRange.Row, secondOutputCol), _
+                               ws.Cells(sourceRange.Row + sourceRange.Rows.Count - 1, secondOutputCol + sourceRange.Columns.Count - 1))
+    secondRange.NumberFormat = "@"
+
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    For columnIndex = 1 To sourceRange.Columns.Count
+        If Len(Phone_DigitsForKoreanRules(CStr(sourceRange.Cells(1, columnIndex).Value))) < 7 Then
+            normalizedRange.Cells(1, columnIndex).Value = CStr(sourceRange.Cells(1, columnIndex).Value) & "_정리1"
+            secondRange.Cells(1, columnIndex).Value = CStr(sourceRange.Cells(1, columnIndex).Value) & "_정리2"
+        End If
+
+        For rowIndex = 1 To sourceRange.Rows.Count
+            If Not sourceRange.Cells(rowIndex, columnIndex).HasFormula Then
+                If Phone_TrySplitRepresentative(CStr(sourceRange.Cells(rowIndex, columnIndex).Value), firstNumber, secondNumber) Then
+                    normalizedRange.Cells(rowIndex, columnIndex).NumberFormat = "@"
+                    normalizedRange.Cells(rowIndex, columnIndex).Value = firstNumber
+                    secondRange.Cells(rowIndex, columnIndex).Value = secondNumber
+                End If
+            End If
+        Next rowIndex
+    Next columnIndex
+
+    Phone_CreateRepresentativeSplitColumns = splitCount
+End Function
 
 ' ============================================================
 ' 프로시저 : NormalizePhonesInRange (내부 전용)
@@ -428,7 +478,7 @@ End Sub
 '           수식 셀은 건너뛰고 완료 후 통계를 표시한다.
 ' 파라미터 : target - 정규화 대상 Range
 ' ============================================================
-Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화", Optional ByVal normalizeOptions As Variant)
+Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultTitle As String = "전화번호 정규화", Optional ByVal normalizeOptions As Variant, Optional ByVal splitCount As Long = 0)
     Dim cell As Range
     Dim changedCount As Long         ' 실제 변경된 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
@@ -465,7 +515,10 @@ Private Sub NormalizePhonesInRange(ByVal target As Range, Optional ByVal resultT
 
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
+    Dim splitMessage As String
+    If splitCount > 0 Then splitMessage = splitCount & "개 복수 대표번호를 두 개 열로 분할했습니다." & vbCrLf
     MsgBox changedCount & "개 전화번호가 정규화되었습니다." & vbCrLf & _
+           splitMessage & _
            skippedFormulaCount & "개 수식 셀은 건너뛰었습니다." & vbCrLf & _
            "원본 범위는 변경하지 않았습니다.", _
            vbInformation, resultTitle
@@ -681,12 +734,43 @@ Private Function Phone_ApplyLeadingZeroOption(ByVal digits As String, ByVal opti
     If Len(digits) = 0 Then Exit Function
     If Left$(digits, 1) = "0" Then Exit Function
     If Left$(digits, 4) = "0082" Or Left$(digits, 2) = "82" Then Exit Function
+    If Phone_IsKnownRepresentativePrefix(digits) Then Exit Function
     Phone_ApplyLeadingZeroOption = "0" & digits
 End Function
 
 Private Function Phone_ShouldWriteReviewInstead(ByVal digits As String, ByVal options As Object) As Boolean
     If Not Phone_NormalizeOptionEnabled(options, "repeatRunAsReview") Then Exit Function
     Phone_ShouldWriteReviewInstead = Phone_HasRepeatedDigitRun(digits, 4)
+End Function
+
+Private Function Phone_IsKnownRepresentativePrefix(ByVal digits As String) As Boolean
+    If Len(digits) < 4 Then Exit Function
+
+    Select Case Left$(digits, 4)
+        Case "1588", "1577", "1899", _
+             "1544", "1644", "1661", _
+             "1566", "1600", "1670", _
+             "1688", "1666", "1599", _
+             "1877", "1855", "1800"
+            Phone_IsKnownRepresentativePrefix = True
+    End Select
+End Function
+
+Private Function Phone_TrySplitRepresentative(ByVal valueIn As String, ByRef firstNumber As String, ByRef secondNumber As String) As Boolean
+    firstNumber = ""
+    secondNumber = ""
+
+    Dim digits As String
+    digits = Phone_DigitsForKoreanRules(valueIn)
+    If Len(digits) <> 9 Then Exit Function
+    If Not Phone_IsKnownRepresentativePrefix(digits) Then Exit Function
+    If Mid$(digits, 8, 1) = Mid$(digits, 9, 1) Then Exit Function
+
+    Dim sharedDigits As String
+    sharedDigits = Mid$(digits, 5, 3)
+    firstNumber = Left$(digits, 4) & "-" & sharedDigits & Mid$(digits, 8, 1)
+    secondNumber = Left$(digits, 4) & "-" & sharedDigits & Mid$(digits, 9, 1)
+    Phone_TrySplitRepresentative = True
 End Function
 
 Private Function Phone_SubscriberDigitsForSequenceCheck(ByVal digits As String) As String
@@ -786,6 +870,11 @@ Private Function NormalizeKoreanPhoneWithOptions(ByVal valueIn As String, ByRef 
         valueOut = ""
     ElseIf Phone_ShouldWriteReviewInstead(digits, options) Then
         valueOut = "확인 필요"
+    ElseIf Phone_IsKnownRepresentativePrefix(digits) And Len(digits) = 8 Then
+        valueOut = Left$(digits, 4) & "-" & Right$(digits, 4)
+    ElseIf Phone_IsKnownRepresentativePrefix(digits) And Len(digits) = 9 Then
+        Dim secondRepresentative As String
+        If Not Phone_TrySplitRepresentative(valueIn, valueOut, secondRepresentative) Then Exit Function
     ElseIf Phone_IsSafeNumberDigits(digits) Then
         ' ── 안심번호 (0507 등 050X 계열) ─────────────────────
         ' 11자리: 050X-XXX-XXXX
@@ -975,6 +1064,8 @@ Public Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     Dim digits As String: digits = Phone_DigitsForKoreanRules(phoneText)
     Dim phoneType As String
     Dim statusText As String
+    Dim firstNumber As String
+    Dim secondNumber As String
 
     If Len(digits) = 0 Then
         phoneType = "빈값"
@@ -1000,6 +1091,15 @@ Public Function Phone_ClassifyOne(ByVal phoneText As String) As Variant
     ElseIf Left$(digits, 2) = "02" And (Len(digits) = 9 Or Len(digits) = 10) Then
         phoneType = "서울 지역번호"
         statusText = "정상"
+    ElseIf Phone_IsKnownRepresentativePrefix(digits) Then
+        phoneType = "대표번호"
+        If Len(digits) = 8 Then
+            statusText = "정상"
+        ElseIf Len(digits) = 9 And Phone_TrySplitRepresentative(phoneText, firstNumber, secondNumber) Then
+            statusText = "대표번호 복수 확인 필요"
+        Else
+            statusText = "확인 필요"
+        End If
     ElseIf Left$(digits, 2) = "15" Or Left$(digits, 2) = "16" Or Left$(digits, 2) = "18" Then
         phoneType = "대표번호"
         If Len(digits) = 8 Then statusText = "정상" Else statusText = "확인 필요"
@@ -1050,4 +1150,14 @@ Public Function Phone_ClassifyForTest(ByVal phoneText As String) As String
     Dim result As Variant
     result = Phone_ClassifyOne(phoneText)
     Phone_ClassifyForTest = CStr(result(0)) & "|" & CStr(result(1))
+End Function
+
+Public Function Phone_SplitRepresentativeForTest(ByVal phoneText As String) As String
+    Dim firstNumber As String
+    Dim secondNumber As String
+    If Phone_TrySplitRepresentative(phoneText, firstNumber, secondNumber) Then
+        Phone_SplitRepresentativeForTest = "TRUE|" & firstNumber & "|" & secondNumber
+    Else
+        Phone_SplitRepresentativeForTest = "FALSE||"
+    End If
 End Function

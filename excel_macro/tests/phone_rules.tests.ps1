@@ -42,12 +42,15 @@ $procedureNames = @(
     "Phone_NormalizeForTestWithOptions",
     "Phone_NormalizeResultForTest",
     "Phone_ClassifyForTest",
+    "Phone_SplitRepresentativeForTest",
     "NormalizeKoreanPhone",
     "NormalizeKoreanPhoneWithOptions",
     "Phone_DefaultNormalizeOptions",
     "Phone_NormalizeOptionEnabled",
     "Phone_ApplyLeadingZeroOption",
     "Phone_ShouldWriteReviewInstead",
+    "Phone_IsKnownRepresentativePrefix",
+    "Phone_TrySplitRepresentative",
     "Phone_IsSequentialPlaceholderDigits",
     "Phone_SubscriberDigitsForSequenceCheck",
     "Phone_IsSequentialRun",
@@ -68,7 +71,20 @@ $moduleCode = "Option Explicit`r`n" + (($procedureNames | ForEach-Object {
 $wrapperCode = @'
 Public Function PhoneRulesPassed() As String
     Dim resultText As String
+    Dim representativePrefixes As Variant
+    Dim representativePrefix As Variant
+
+    representativePrefixes = Array("1588", "1577", "1899", "1544", "1644", "1661", "1566", "1600", "1670", "1688", "1666", "1599", "1877", "1855", "1800")
+    For Each representativePrefix In representativePrefixes
+        resultText = CheckCase(resultText, "prioritize representative prefix " & CStr(representativePrefix), _
+            Phone_NormalizeForTestWithOptions(CStr(representativePrefix) & "1234", False, False, True), _
+            CStr(representativePrefix) & "-1234")
+    Next representativePrefix
+
     resultText = CheckCase(resultText, "normalize 8-digit representative number", Phone_NormalizeForTest("15881222"), "1588-1222")
+    resultText = CheckCase(resultText, "split compact multiple representative number", Phone_SplitRepresentativeForTest("1588-12345"), "TRUE|1588-1234|1588-1235")
+    resultText = CheckCase(resultText, "split tilde multiple representative number", Phone_SplitRepresentativeForTest("1588-1234~5"), "TRUE|1588-1234|1588-1235")
+    resultText = CheckCase(resultText, "classify multiple representative number for review", Phone_ClassifyForTest("1588-12345"), KoRepresentative() & "|" & KoRepresentativeMultipleReview())
     resultText = CheckCase(resultText, "classify 000-0000 as error", Phone_ClassifyForTest("000-0000"), KoErrorPattern() & "|" & KoError())
     resultText = CheckCase(resultText, "classify 0000-0000 as error", Phone_ClassifyForTest("0000-0000"), KoErrorPattern() & "|" & KoError())
     resultText = CheckCase(resultText, "keep four repeated digits normal", Phone_ClassifyForTest("02-231-4444"), KoSeoulArea() & "|" & KoNormal())
@@ -117,6 +133,10 @@ End Function
 
 Private Function KoRepresentative() As String
     KoRepresentative = ChrW(&HB300) & ChrW(&HD45C) & ChrW(&HBC88) & ChrW(&HD638)
+End Function
+
+Private Function KoRepresentativeMultipleReview() As String
+    KoRepresentativeMultipleReview = KoRepresentative() & " " & ChrW(&HBCF5) & ChrW(&HC218) & " " & KoReview()
 End Function
 
 Private Function KoNormal() As String

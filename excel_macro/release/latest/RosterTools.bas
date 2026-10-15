@@ -181,7 +181,7 @@ Public Sub Roster_QualityReport()
     If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 빈값", blankPhone, "빈값 여부"): outRow = outRow + 1
     If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 빈값", blankBiz, "빈값 여부"): outRow = outRow + 1
     If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 오류", errorPhone, "영값, 동일 숫자 6회 이상, 반복 블록, 순차 숫자 패턴"): outRow = outRow + 1
-    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴/동일 숫자 5회 반복 기준"): outRow = outRow + 1
+    If phoneCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/복수 대표번호/동일 숫자 5회 반복 기준"): outRow = outRow + 1
     If bizCol > 0 Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If addressCol > 0 Then
         Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
@@ -459,7 +459,7 @@ Private Sub Roster_QualityReportManual()
     If selectedItems.Exists("1") Then Roster_WriteArray outWs, outRow, 1, Array("업체명 빈값", blankName, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
     If selectedItems.Exists("2") Then Roster_WriteArray outWs, outRow, 1, Array("주소 빈값", blankAddress, "수동 선택 범위 빈값 여부"): outRow = outRow + 1
     If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 오류", errorPhone, "영값, 동일 숫자 6회 이상, 반복 블록, 순차 숫자 패턴"): outRow = outRow + 1
-    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/대표번호 패턴/동일 숫자 5회 반복 기준"): outRow = outRow + 1
+    If selectedItems.Exists("3") Then Roster_WriteArray outWs, outRow, 1, Array("전화번호 확인 필요", invalidPhone, "숫자 길이/복수 대표번호/동일 숫자 5회 반복 기준"): outRow = outRow + 1
     If selectedItems.Exists("4") Then Roster_WriteArray outWs, outRow, 1, Array("사업자번호 확인 필요", invalidBiz, "숫자 10자리 여부 기준"): outRow = outRow + 1
     If selectedItems.Exists("5") Then
         Roster_WriteArray outWs, outRow, 1, Array("도로명주소", roadAddress, "주소 유형 판별 기준"): outRow = outRow + 1
