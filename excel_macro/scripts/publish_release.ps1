@@ -2894,8 +2894,10 @@ Private Sub ClearOrderNumbers()
     For Each ctl In Me.Controls
         If TypeName(ctl) = "CheckBox" Then
             dotPos = InStr(1, ctl.Caption, ". ", vbBinaryCompare)
-            If dotPos > 1 And IsNumeric(Left$(ctl.Caption, dotPos - 1)) Then
-                ctl.Caption = Mid$(ctl.Caption, dotPos + 2)
+            If dotPos > 1 Then
+                If IsNumeric(Left$(ctl.Caption, dotPos - 1)) Then
+                    ctl.Caption = Mid$(ctl.Caption, dotPos + 2)
+                End If
             End If
         End If
     Next ctl
