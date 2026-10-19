@@ -2,6 +2,7 @@ Attribute VB_Name = "DataCleanupTools"
 Option Explicit
 
 Private Const PHONE_NORMALIZE_CHUNK_ROWS As Long = 500
+Private Const DATA_CLEANUP_CHUNK_ROWS As Long = 500
 
 
 ' ============================================================
@@ -150,10 +151,8 @@ End Sub
 ' 파라미터 : target - 변환 대상 Range
 ' ============================================================
 Private Sub ConvertTextNumbersInRange(ByVal target As Range)
-    Dim cell As Range
     Dim convertedCount As Long   ' 변환 성공 셀 수
     Dim skippedFormulaCount As Long  ' 수식 셀이라 건너뛴 수
-    Dim newValue As Variant      ' 변환된 숫자 값을 임시 저장
     Dim processedCells As Long
     Dim totalCells As Long
     Dim snapshot As Collection
@@ -164,18 +163,24 @@ Private Sub ConvertTextNumbersInRange(ByVal target As Range)
     ' 화면 갱신 중지: 셀 업데이트마다 화면을 다시 그리지 않아 속도 향상
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart "텍스트 숫자 변환", totalCells, "변환 준비 중"
-    For Each cell In target.Cells
-        If cell.HasFormula Then
-            ' 수식 셀은 값을 덮어쓰면 수식이 사라지므로 건너뜀
-            skippedFormulaCount = skippedFormulaCount + 1
-        ElseIf TryNumberFromText(cell.Value, newValue) Then
-            ' 텍스트를 숫자로 파싱 성공 시 셀 값 교체
-            cell.Value = newValue
-            convertedCount = convertedCount + 1
-        End If
-        processedCells = processedCells + 1
-        Toolkit_RowProgressUpdate processedCells, totalCells, "텍스트 숫자 변환 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
-    Next cell
+
+    Dim area As Range
+    Dim chunkRange As Range
+    Dim rowOffset As Long
+    Dim chunkRows As Long
+    For Each area In target.Areas
+        For rowOffset = 1 To area.Rows.Count Step DATA_CLEANUP_CHUNK_ROWS
+            chunkRows = DATA_CLEANUP_CHUNK_ROWS
+            If rowOffset + chunkRows - 1 > area.Rows.Count Then chunkRows = area.Rows.Count - rowOffset + 1
+
+            Set chunkRange = area.Rows(rowOffset).Resize(chunkRows, area.Columns.Count)
+            DataCleanup_ConvertTextNumberChunk chunkRange, convertedCount, skippedFormulaCount
+
+            processedCells = processedCells + chunkRange.Cells.CountLarge
+            Toolkit_RowProgressUpdate processedCells, totalCells, _
+                "텍스트 숫자 변환 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
+        Next rowOffset
+    Next area
 
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
@@ -200,6 +205,71 @@ ErrHandler:
     MsgBox "오류가 발생해 변경 전 값으로 복구했습니다." & vbCrLf & errorDescription, _
            vbExclamation, "텍스트 숫자 변환"
 End Sub
+
+Private Sub DataCleanup_ConvertTextNumberChunk(ByVal chunkRange As Range, _
+                                               ByRef convertedCount As Long, _
+                                               ByRef skippedFormulaCount As Long)
+    Dim values As Variant
+    Dim formulas As Variant
+    values = DataCleanup_ReadRangeMatrix(chunkRange, False)
+    formulas = DataCleanup_ReadRangeMatrix(chunkRange, True)
+
+    Dim changedCells() As Boolean
+    ReDim changedCells(1 To chunkRange.Rows.Count, 1 To chunkRange.Columns.Count)
+
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    Dim newValue As Variant
+    Dim hasFormula As Boolean
+    For rowIndex = 1 To chunkRange.Rows.Count
+        For columnIndex = 1 To chunkRange.Columns.Count
+            If DataCleanup_IsFormulaValue(formulas(rowIndex, columnIndex)) Then
+                skippedFormulaCount = skippedFormulaCount + 1
+                hasFormula = True
+            ElseIf TryNumberFromText(values(rowIndex, columnIndex), newValue) Then
+                values(rowIndex, columnIndex) = newValue
+                changedCells(rowIndex, columnIndex) = True
+                convertedCount = convertedCount + 1
+            End If
+        Next columnIndex
+    Next rowIndex
+
+    If Not hasFormula Then
+        chunkRange.Value2 = values
+        Exit Sub
+    End If
+
+    For rowIndex = 1 To chunkRange.Rows.Count
+        For columnIndex = 1 To chunkRange.Columns.Count
+            If changedCells(rowIndex, columnIndex) Then
+                chunkRange.Cells(rowIndex, columnIndex).Value2 = values(rowIndex, columnIndex)
+            End If
+        Next columnIndex
+    Next rowIndex
+End Sub
+
+Private Function DataCleanup_ReadRangeMatrix(ByVal sourceRange As Range, ByVal readFormulas As Boolean) As Variant
+    Dim rawValues As Variant
+    If readFormulas Then
+        rawValues = sourceRange.Formula
+    Else
+        rawValues = sourceRange.Value2
+    End If
+
+    If sourceRange.Cells.CountLarge > 1 Then
+        DataCleanup_ReadRangeMatrix = rawValues
+        Exit Function
+    End If
+
+    Dim result(1 To 1, 1 To 1) As Variant
+    result(1, 1) = rawValues
+    DataCleanup_ReadRangeMatrix = result
+End Function
+
+Private Function DataCleanup_IsFormulaValue(ByVal valueIn As Variant) As Boolean
+    If VarType(valueIn) <> vbString Then Exit Function
+    DataCleanup_IsFormulaValue = (Left$(CStr(valueIn), 1) = "=")
+End Function
 
 Public Sub DataCleanup_ClearResidualBlankValues()
     Dim targetRange As Range
@@ -425,16 +495,27 @@ Private Sub NormalizePhonesToCopiedColumns(ByVal target As Range, Optional ByVal
 End Sub
 
 Private Function Phone_CreateRepresentativeSplitColumns(ByVal sourceRange As Range, ByVal normalizedRange As Range) As Long
-    Dim cell As Range
     Dim firstNumber As String
     Dim secondNumber As String
     Dim splitCount As Long
+    Dim sourceValues As Variant
+    Dim sourceFormulas As Variant
+    sourceValues = DataCleanup_ReadRangeMatrix(sourceRange, False)
+    sourceFormulas = DataCleanup_ReadRangeMatrix(sourceRange, True)
 
-    For Each cell In sourceRange.Cells
-        If Not cell.HasFormula Then
-            If Phone_TrySplitRepresentative(CStr(cell.Value), firstNumber, secondNumber) Then splitCount = splitCount + 1
-        End If
-    Next cell
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    For rowIndex = 1 To sourceRange.Rows.Count
+        For columnIndex = 1 To sourceRange.Columns.Count
+            If Not DataCleanup_IsFormulaValue(sourceFormulas(rowIndex, columnIndex)) Then
+                If Not IsError(sourceValues(rowIndex, columnIndex)) Then
+                    If Phone_TrySplitRepresentative(CStr(sourceValues(rowIndex, columnIndex)), firstNumber, secondNumber) Then
+                        splitCount = splitCount + 1
+                    End If
+                End If
+            End If
+        Next columnIndex
+    Next rowIndex
     If splitCount = 0 Then Exit Function
 
     Dim ws As Worksheet
@@ -450,24 +531,48 @@ Private Function Phone_CreateRepresentativeSplitColumns(ByVal sourceRange As Ran
                                ws.Cells(sourceRange.Row + sourceRange.Rows.Count - 1, secondOutputCol + sourceRange.Columns.Count - 1))
     secondRange.NumberFormat = "@"
 
-    Dim rowIndex As Long
-    Dim columnIndex As Long
+    Dim normalizedValues As Variant
+    Dim secondValues() As Variant
+    Dim changedFirst() As Boolean
+    Dim hasFormula As Boolean
+    normalizedValues = DataCleanup_ReadRangeMatrix(normalizedRange, False)
+    ReDim secondValues(1 To sourceRange.Rows.Count, 1 To sourceRange.Columns.Count)
+    ReDim changedFirst(1 To sourceRange.Rows.Count, 1 To sourceRange.Columns.Count)
+
     For columnIndex = 1 To sourceRange.Columns.Count
-        If Len(Phone_DigitsForKoreanRules(CStr(sourceRange.Cells(1, columnIndex).Value))) < 7 Then
-            normalizedRange.Cells(1, columnIndex).Value = CStr(sourceRange.Cells(1, columnIndex).Value) & "_정리1"
-            secondRange.Cells(1, columnIndex).Value = CStr(sourceRange.Cells(1, columnIndex).Value) & "_정리2"
+        If Not IsError(sourceValues(1, columnIndex)) Then
+            If Len(Phone_DigitsForKoreanRules(CStr(sourceValues(1, columnIndex)))) < 7 Then
+                normalizedValues(1, columnIndex) = CStr(sourceValues(1, columnIndex)) & "_정리1"
+                secondValues(1, columnIndex) = CStr(sourceValues(1, columnIndex)) & "_정리2"
+                changedFirst(1, columnIndex) = True
+            End If
         End If
 
         For rowIndex = 1 To sourceRange.Rows.Count
-            If Not sourceRange.Cells(rowIndex, columnIndex).HasFormula Then
-                If Phone_TrySplitRepresentative(CStr(sourceRange.Cells(rowIndex, columnIndex).Value), firstNumber, secondNumber) Then
-                    normalizedRange.Cells(rowIndex, columnIndex).NumberFormat = "@"
-                    normalizedRange.Cells(rowIndex, columnIndex).Value = firstNumber
-                    secondRange.Cells(rowIndex, columnIndex).Value = secondNumber
+            If DataCleanup_IsFormulaValue(sourceFormulas(rowIndex, columnIndex)) Then
+                hasFormula = True
+            ElseIf Not IsError(sourceValues(rowIndex, columnIndex)) Then
+                If Phone_TrySplitRepresentative(CStr(sourceValues(rowIndex, columnIndex)), firstNumber, secondNumber) Then
+                    normalizedValues(rowIndex, columnIndex) = firstNumber
+                    secondValues(rowIndex, columnIndex) = secondNumber
+                    changedFirst(rowIndex, columnIndex) = True
                 End If
             End If
         Next rowIndex
     Next columnIndex
+
+    If Not hasFormula Then
+        normalizedRange.Value2 = normalizedValues
+    Else
+        For rowIndex = 1 To sourceRange.Rows.Count
+            For columnIndex = 1 To sourceRange.Columns.Count
+                If changedFirst(rowIndex, columnIndex) Then
+                    normalizedRange.Cells(rowIndex, columnIndex).Value2 = normalizedValues(rowIndex, columnIndex)
+                End If
+            Next columnIndex
+        Next rowIndex
+    End If
+    secondRange.Value2 = secondValues
 
     Phone_CreateRepresentativeSplitColumns = splitCount
 End Function
@@ -540,8 +645,8 @@ Private Sub Phone_NormalizeChunk(ByVal chunkRange As Range, ByVal options As Obj
                                  ByRef changedCount As Long, ByRef skippedFormulaCount As Long)
     Dim values As Variant
     Dim formulas As Variant
-    values = Phone_ReadRangeMatrix(chunkRange, False)
-    formulas = Phone_ReadRangeMatrix(chunkRange, True)
+    values = DataCleanup_ReadRangeMatrix(chunkRange, False)
+    formulas = DataCleanup_ReadRangeMatrix(chunkRange, True)
 
     Dim changedCells() As Boolean
     ReDim changedCells(1 To chunkRange.Rows.Count, 1 To chunkRange.Columns.Count)
@@ -553,7 +658,7 @@ Private Sub Phone_NormalizeChunk(ByVal chunkRange As Range, ByVal options As Obj
     Dim hasFormula As Boolean
     For rowIndex = 1 To chunkRange.Rows.Count
         For columnIndex = 1 To chunkRange.Columns.Count
-            If Phone_IsFormulaValue(formulas(rowIndex, columnIndex)) Then
+            If DataCleanup_IsFormulaValue(formulas(rowIndex, columnIndex)) Then
                 skippedFormulaCount = skippedFormulaCount + 1
                 hasFormula = True
             ElseIf Not IsError(values(rowIndex, columnIndex)) Then
@@ -583,29 +688,6 @@ Private Sub Phone_NormalizeChunk(ByVal chunkRange As Range, ByVal options As Obj
         Next columnIndex
     Next rowIndex
 End Sub
-
-Private Function Phone_ReadRangeMatrix(ByVal sourceRange As Range, ByVal readFormulas As Boolean) As Variant
-    Dim rawValues As Variant
-    If readFormulas Then
-        rawValues = sourceRange.Formula
-    Else
-        rawValues = sourceRange.Value2
-    End If
-
-    If sourceRange.Cells.CountLarge > 1 Then
-        Phone_ReadRangeMatrix = rawValues
-        Exit Function
-    End If
-
-    Dim result(1 To 1, 1 To 1) As Variant
-    result(1, 1) = rawValues
-    Phone_ReadRangeMatrix = result
-End Function
-
-Private Function Phone_IsFormulaValue(ByVal valueIn As Variant) As Boolean
-    If VarType(valueIn) <> vbString Then Exit Function
-    Phone_IsFormulaValue = (Left$(CStr(valueIn), 1) = "=")
-End Function
 
 Public Function CopyRangeToAdjacentColumns(ByVal sourceRange As Range, ByVal headerSuffix As String) As Range
     On Error GoTo ErrHandler
@@ -660,35 +742,34 @@ Private Sub StripDigitsToCopiedColumns(ByVal target As Range, ByVal resultTitle 
     Set outputRange = CopyRangeToAdjacentColumns(workRange, "대시제거")
     If outputRange Is Nothing Then Exit Sub
 
-    Dim cell As Range
     Dim changedCount As Long
     Dim skippedFormulaCount As Long
-    Dim digits As String
     Dim processedCells As Long
     Dim totalCells As Long
+    Dim isPhone As Boolean
     totalCells = outputRange.Cells.CountLarge
+    isPhone = (InStr(1, resultTitle, "전화번호", vbTextCompare) > 0)
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart resultTitle, totalCells, "구분기호 제거 준비 중"
-    For Each cell In outputRange.Cells
-        If cell.HasFormula Then
-            skippedFormulaCount = skippedFormulaCount + 1
-        Else
-            If InStr(1, resultTitle, "전화번호", vbTextCompare) > 0 Then
-                digits = Phone_DigitsForKoreanRules(CStr(cell.Value))
-            Else
-                digits = DigitsOnly(CStr(cell.Value))
-            End If
-            If Len(digits) > 0 And CStr(cell.Value) <> digits Then
-                cell.NumberFormat = "@"
-                cell.Value = digits
-                changedCount = changedCount + 1
-            End If
+
+    Dim outputChunk As Range
+    Dim rowOffset As Long
+    Dim chunkRows As Long
+    For rowOffset = 1 To outputRange.Rows.Count Step DATA_CLEANUP_CHUNK_ROWS
+        chunkRows = DATA_CLEANUP_CHUNK_ROWS
+        If rowOffset + chunkRows - 1 > outputRange.Rows.Count Then
+            chunkRows = outputRange.Rows.Count - rowOffset + 1
         End If
-        processedCells = processedCells + 1
-        Toolkit_RowProgressUpdate processedCells, totalCells, "구분기호 제거 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
-    Next cell
+
+        Set outputChunk = outputRange.Rows(rowOffset).Resize(chunkRows, outputRange.Columns.Count)
+        DataCleanup_StripDigitsChunk outputChunk, isPhone, changedCount, skippedFormulaCount
+
+        processedCells = processedCells + outputChunk.Cells.CountLarge
+        Toolkit_RowProgressUpdate processedCells, totalCells, _
+            "구분기호 제거 중: " & CStr(processedCells) & "/" & CStr(totalCells) & "셀"
+    Next rowOffset
 
     Toolkit_RowProgressClose totalCells
     Application.ScreenUpdating = True
@@ -702,6 +783,56 @@ ErrHandler:
     Application.ScreenUpdating = True
     If Toolkit_ShowCancelMessage(resultTitle) Then Exit Sub
     MsgBox "오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, resultTitle
+End Sub
+
+Private Sub DataCleanup_StripDigitsChunk(ByVal outputChunk As Range, ByVal isPhone As Boolean, _
+                                         ByRef changedCount As Long, ByRef skippedFormulaCount As Long)
+    Dim values As Variant
+    Dim formulas As Variant
+    values = DataCleanup_ReadRangeMatrix(outputChunk, False)
+    formulas = DataCleanup_ReadRangeMatrix(outputChunk, True)
+
+    Dim changedCells() As Boolean
+    ReDim changedCells(1 To outputChunk.Rows.Count, 1 To outputChunk.Columns.Count)
+
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    Dim sourceText As String
+    Dim digits As String
+    Dim hasFormula As Boolean
+    For rowIndex = 1 To outputChunk.Rows.Count
+        For columnIndex = 1 To outputChunk.Columns.Count
+            If DataCleanup_IsFormulaValue(formulas(rowIndex, columnIndex)) Then
+                skippedFormulaCount = skippedFormulaCount + 1
+                hasFormula = True
+            ElseIf Not IsError(values(rowIndex, columnIndex)) Then
+                sourceText = CStr(values(rowIndex, columnIndex))
+                If isPhone Then
+                    digits = Phone_DigitsForKoreanRules(sourceText)
+                Else
+                    digits = DigitsOnly(sourceText)
+                End If
+                If Len(digits) > 0 And sourceText <> digits Then
+                    values(rowIndex, columnIndex) = digits
+                    changedCells(rowIndex, columnIndex) = True
+                    changedCount = changedCount + 1
+                End If
+            End If
+        Next columnIndex
+    Next rowIndex
+
+    If Not hasFormula Then
+        outputChunk.Value2 = values
+        Exit Sub
+    End If
+
+    For rowIndex = 1 To outputChunk.Rows.Count
+        For columnIndex = 1 To outputChunk.Columns.Count
+            If changedCells(rowIndex, columnIndex) Then
+                outputChunk.Cells(rowIndex, columnIndex).Value2 = values(rowIndex, columnIndex)
+            End If
+        Next columnIndex
+    Next rowIndex
 End Sub
 
 ' ============================================================

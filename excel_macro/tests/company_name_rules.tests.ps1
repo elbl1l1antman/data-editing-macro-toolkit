@@ -44,6 +44,7 @@ $procedureNames = @(
     "CompanyName_CleanOne",
     "CompanyName_ApplyOperation",
     "CompanyName_RemoveSpaces",
+    "CompanyName_GetRegex",
     "CompanyName_HasCorpMarker",
     "CompanyName_RemoveCorpMarkers",
     "CompanyName_RemoveParentheticalText",

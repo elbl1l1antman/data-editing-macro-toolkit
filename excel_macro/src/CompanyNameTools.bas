@@ -1,6 +1,8 @@
 Attribute VB_Name = "CompanyNameTools"
 Option Explicit
 
+Private Const COMPANY_NAME_CHUNK_ROWS As Long = 500
+
 
 Public Sub CompanyName_CleanWithOptions()
     Dim targetRange As Range
@@ -113,42 +115,32 @@ Private Sub CompanyName_CleanRangeToCopiedColumns(ByVal target As Range, ByVal o
     Set outputRange = CopyRangeToAdjacentColumns(workRange, "기업명_정리")
     If outputRange Is Nothing Then Exit Sub
 
-    Dim sourceCell As Range
-    Dim outputCell As Range
     Dim changedCount As Long
     Dim skippedFormulaCount As Long
     Dim blankPreventedCount As Long
-    Dim cleaned As String
-    Dim originalText As String
     Dim totalRows As Long
     totalRows = outputRange.Rows.Count
 
     On Error GoTo ErrHandler
     Application.ScreenUpdating = False
     Toolkit_RowProgressStart "기업/사업체명 정리", totalRows, "정리 준비 중"
-    Dim relRow As Long, relCol As Long
-    For relRow = 1 To outputRange.Rows.Count
-        For relCol = 1 To outputRange.Columns.Count
-            Set sourceCell = workRange.Cells(relRow, relCol)
-            Set outputCell = outputRange.Cells(relRow, relCol)
-            If sourceCell.HasFormula Then
-                skippedFormulaCount = skippedFormulaCount + 1
-            Else
-                originalText = CStr(sourceCell.Value)
-                cleaned = CompanyName_CleanOne(originalText, options)
-                If Len(Trim$(originalText)) > 0 And Len(Trim$(cleaned)) = 0 Then
-                    cleaned = originalText
-                    blankPreventedCount = blankPreventedCount + 1
-                End If
-                If originalText <> cleaned Then
-                    outputCell.NumberFormat = "@"
-                    outputCell.Value = cleaned
-                    changedCount = changedCount + 1
-                End If
-            End If
-        Next relCol
-        Toolkit_RowProgressUpdate relRow, totalRows, "기업/사업체명 정리 중: " & CStr(relRow) & "/" & CStr(totalRows) & "행"
-    Next relRow
+    Dim sourceChunk As Range
+    Dim outputChunk As Range
+    Dim rowOffset As Long
+    Dim chunkRows As Long
+    Dim processedRows As Long
+    For rowOffset = 1 To totalRows Step COMPANY_NAME_CHUNK_ROWS
+        chunkRows = COMPANY_NAME_CHUNK_ROWS
+        If rowOffset + chunkRows - 1 > totalRows Then chunkRows = totalRows - rowOffset + 1
+
+        Set sourceChunk = workRange.Rows(rowOffset).Resize(chunkRows, workRange.Columns.Count)
+        Set outputChunk = outputRange.Rows(rowOffset).Resize(chunkRows, outputRange.Columns.Count)
+        CompanyName_CleanChunk sourceChunk, outputChunk, options, changedCount, skippedFormulaCount, blankPreventedCount
+
+        processedRows = rowOffset + chunkRows - 1
+        Toolkit_RowProgressUpdate processedRows, totalRows, _
+            "기업/사업체명 정리 중: " & CStr(processedRows) & "/" & CStr(totalRows) & "행"
+    Next rowOffset
 
     outputRange.Columns.AutoFit
     Toolkit_RowProgressClose totalRows
@@ -165,6 +157,98 @@ ErrHandler:
     If Toolkit_ShowCancelMessage("기업/사업체명 정리") Then Exit Sub
     MsgBox "기업/사업체명 정리 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "기업/사업체명 정리"
 End Sub
+
+Private Sub CompanyName_CleanChunk(ByVal sourceChunk As Range, ByVal outputChunk As Range, _
+                                   ByVal options As Object, ByRef changedCount As Long, _
+                                   ByRef skippedFormulaCount As Long, ByRef blankPreventedCount As Long)
+    Dim sourceValues As Variant
+    Dim sourceFormulas As Variant
+    Dim outputValues As Variant
+    sourceValues = CompanyName_ReadRangeMatrix(sourceChunk, False)
+    sourceFormulas = CompanyName_ReadRangeMatrix(sourceChunk, True)
+    outputValues = CompanyName_ReadRangeMatrix(outputChunk, False)
+
+    Dim changedCells() As Boolean
+    ReDim changedCells(1 To sourceChunk.Rows.Count, 1 To sourceChunk.Columns.Count)
+
+    Dim rowIndex As Long
+    Dim columnIndex As Long
+    Dim originalText As String
+    Dim cleaned As String
+    Dim hasFormula As Boolean
+    For rowIndex = 1 To sourceChunk.Rows.Count
+        For columnIndex = 1 To sourceChunk.Columns.Count
+            If CompanyName_IsFormulaValue(sourceFormulas(rowIndex, columnIndex)) Then
+                skippedFormulaCount = skippedFormulaCount + 1
+                hasFormula = True
+            ElseIf Not IsError(sourceValues(rowIndex, columnIndex)) Then
+                originalText = CStr(sourceValues(rowIndex, columnIndex))
+                cleaned = CompanyName_CleanOne(originalText, options)
+                If Len(Trim$(originalText)) > 0 And Len(Trim$(cleaned)) = 0 Then
+                    cleaned = originalText
+                    blankPreventedCount = blankPreventedCount + 1
+                End If
+                If originalText <> cleaned Then
+                    outputValues(rowIndex, columnIndex) = cleaned
+                    changedCells(rowIndex, columnIndex) = True
+                    changedCount = changedCount + 1
+                End If
+            End If
+        Next columnIndex
+    Next rowIndex
+
+    If Not hasFormula Then
+        outputChunk.Value2 = outputValues
+        Exit Sub
+    End If
+
+    For rowIndex = 1 To sourceChunk.Rows.Count
+        For columnIndex = 1 To sourceChunk.Columns.Count
+            If changedCells(rowIndex, columnIndex) Then
+                outputChunk.Cells(rowIndex, columnIndex).Value2 = outputValues(rowIndex, columnIndex)
+            End If
+        Next columnIndex
+    Next rowIndex
+End Sub
+
+Private Function CompanyName_ReadRangeMatrix(ByVal sourceRange As Range, ByVal readFormulas As Boolean) As Variant
+    Dim rawValues As Variant
+    If readFormulas Then
+        rawValues = sourceRange.Formula
+    Else
+        rawValues = sourceRange.Value2
+    End If
+
+    If sourceRange.Cells.CountLarge > 1 Then
+        CompanyName_ReadRangeMatrix = rawValues
+        Exit Function
+    End If
+
+    Dim result(1 To 1, 1 To 1) As Variant
+    result(1, 1) = rawValues
+    CompanyName_ReadRangeMatrix = result
+End Function
+
+Private Function CompanyName_IsFormulaValue(ByVal valueIn As Variant) As Boolean
+    If VarType(valueIn) <> vbString Then Exit Function
+    CompanyName_IsFormulaValue = (Left$(CStr(valueIn), 1) = "=")
+End Function
+
+Private Function CompanyName_GetRegex(ByVal cacheKey As String, ByVal patternText As String, _
+                                      ByVal isGlobal As Boolean, ByVal ignoreCase As Boolean) As Object
+    Static cache As Object
+    If cache Is Nothing Then Set cache = CreateObject("Scripting.Dictionary")
+
+    If Not cache.Exists(cacheKey) Then
+        Dim re As Object
+        Set re = CreateObject("VBScript.RegExp")
+        re.Global = isGlobal
+        re.IgnoreCase = ignoreCase
+        re.Pattern = patternText
+        cache.Add cacheKey, re
+    End If
+    Set CompanyName_GetRegex = cache(cacheKey)
+End Function
 
 ' ============================================================
 ' 프로시저 : DataCheck_CreateCharacterCheckFormula
@@ -321,28 +405,19 @@ End Function
 
 Private Function CompanyName_HasCorpMarker(ByVal textValue As String) As Boolean
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = False
-    re.IgnoreCase = True
-    re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
+    Set re = CompanyName_GetRegex("hasCorpMarker", "[\(（]\s*주\s*[\)）]|㈜|주식회사", False, True)
     CompanyName_HasCorpMarker = re.Test(textValue)
 End Function
 
 Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As String
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\(（]\s*주\s*[\)）]|㈜|주식회사"
+    Set re = CompanyName_GetRegex("removeCorpMarkers", "[\(（]\s*주\s*[\)）]|㈜|주식회사", True, True)
     CompanyName_RemoveCorpMarkers = Trim$(re.Replace(textValue, ""))
 End Function
 
 Private Function CompanyName_RemoveParentheticalText(ByVal textValue As String) As String
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\(（][^\)）]*[\)）]"
+    Set re = CompanyName_GetRegex("removeParentheticalText", "[\(（][^\)）]*[\)）]", True, True)
     CompanyName_RemoveParentheticalText = Trim$(re.Replace(textValue, ""))
 End Function
 
@@ -351,10 +426,8 @@ Private Function CompanyName_RemoveBranchMarkers(ByVal textValue As String) As S
     result = Trim$(textValue)
 
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\(（]\s*(본점|지점|[A-Za-z0-9가-힣]{1,4}점)\s*[\)）]"
+    Set re = CompanyName_GetRegex("removeBranchMarkers", _
+        "[\(（]\s*(본점|지점|[A-Za-z0-9가-힣]{1,4}점)\s*[\)）]", True, True)
     result = Trim$(re.Replace(result, ""))
 
     result = CompanyName_RemoveLeadingBranchMarker(result)
@@ -380,10 +453,8 @@ Private Function CompanyName_RemoveKoreanLegalEntityMarkers(ByVal textValue As S
     result = Trim$(textValue)
 
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\(（]\s*(유|유한|유한회사|유한책임회사|합자|합명)\s*[\)）]"
+    Set re = CompanyName_GetRegex("removeKoreanLegalMarkers", _
+        "[\(（]\s*(유|유한|유한회사|유한책임회사|합자|합명)\s*[\)）]", True, True)
     result = Trim$(re.Replace(result, ""))
 
     Dim markers As Variant
@@ -421,16 +492,16 @@ Private Function CompanyName_RemoveForeignLegalEntityMarkers(ByVal textValue As 
     result = Trim$(textValue)
 
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\s,\.·ㆍ・\-_/\(\)（）]*(co\.?\s*,?\s*ltd\.?|company\s+limited|pvt\.?\s*ltd\.?|pte\.?\s*ltd\.?|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|llc|l\.l\.c\.?|llp|l\.l\.p\.?|plc|gmbh)[\s,\.·ㆍ・\-_/\(\)（）]*$"
+    Set re = CompanyName_GetRegex("removeForeignLegalMarkers", _
+        "[\s,\.·ㆍ・\-_/\(\)（）]*(co\.?\s*,?\s*ltd\.?|company\s+limited|pvt\.?\s*ltd\.?|pte\.?\s*ltd\.?|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|llc|l\.l\.c\.?|llp|l\.l\.p\.?|plc|gmbh)[\s,\.·ㆍ・\-_/\(\)（）]*$", _
+        True, True)
 
     Do While re.Test(result)
         result = Trim$(re.Replace(result, ""))
     Loop
 
-    re.Pattern = "[\s,\.·ㆍ・\-_/\(\)（）]+(s\.?a\.?|ag)[\s,\.·ㆍ・\-_/\(\)（）]*$"
+    Set re = CompanyName_GetRegex("removeForeignLegalMarkersShort", _
+        "[\s,\.·ㆍ・\-_/\(\)（）]+(s\.?a\.?|ag)[\s,\.·ㆍ・\-_/\(\)（）]*$", True, True)
     Do While re.Test(result)
         result = Trim$(re.Replace(result, ""))
     Loop
@@ -467,10 +538,7 @@ Private Function CompanyName_RemoveLeadingBranchMarker(ByVal textValue As String
     result = Trim$(textValue)
 
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = False
-    re.IgnoreCase = True
-    re.Pattern = "^(본점|지점)[\s_\-]+"
+    Set re = CompanyName_GetRegex("removeLeadingBranchMarker", "^(본점|지점)[\s_\-]+", False, True)
     result = re.Replace(result, "")
 
     CompanyName_RemoveLeadingBranchMarker = Trim$(result)
@@ -544,10 +612,7 @@ End Function
 
 Private Function CompanyName_NormalizeCorpSymbol(ByVal textValue As String) As String
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "[\(（]\s*주\s*[\)）]"
+    Set re = CompanyName_GetRegex("normalizeCorpSymbol", "[\(（]\s*주\s*[\)）]", True, True)
     textValue = re.Replace(textValue, "(주)")
     textValue = Replace(textValue, "㈜", "(주)")
     CompanyName_NormalizeCorpSymbol = textValue
@@ -563,14 +628,10 @@ Private Function CompanyName_ReplaceBusinessSymbols(ByVal textValue As String) A
     result = Replace(result, "＋", "플러스")
 
     Dim re As Object
-    Set re = CreateObject("VBScript.RegExp")
-    re.Global = True
-    re.IgnoreCase = True
-    re.Pattern = "(^|[^A-Za-z])co\.(?=$|[^A-Za-z])"
+    Set re = CompanyName_GetRegex("replaceBusinessCo", "(^|[^A-Za-z])co\.(?=$|[^A-Za-z])", True, True)
     result = re.Replace(result, "$1컴패니")
 
-    re.IgnoreCase = False
-    re.Pattern = "(Co|CO)\.$"
+    Set re = CompanyName_GetRegex("replaceBusinessCoTrailing", "(Co|CO)\.$", True, False)
     result = re.Replace(result, "컴패니")
 
     CompanyName_ReplaceBusinessSymbols = result
