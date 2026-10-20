@@ -2685,11 +2685,11 @@ function Add-CompanyNameOptionsUserForm {
         @("chkPronounceEnglishWords", "영어 단어를 한글 발음으로 변환", 250, 146, $false),
         @("chkSpellAlphabetKorean", "알파벳을 한글 읽기로 변환", 250, 172, $true),
         @("chkRemoveSpecialChars", "괄호·특수문자 제거", 250, 198, $false),
-        @("chkRemoveBranchMarkers", "본점/지점/점포명 제거", 250, 224, $false),
+        @("chkRemoveBranchMarkers", "사업장 표기 제거 (본사·지점·제1지점 등)", 250, 224, $false),
         @("chkRemoveLegalEntityMarkers", "Co.,Ltd./유한회사 등 법인표기 삭제", 250, 250, $false),
         @("chkRemoveParentheticalText", "괄호 안 문구까지 삭제", 250, 276, $false),
         @("chkRemoveBilingualDuplicates", "한글/영문 중복 병기 제거", 250, 302, $true),
-        @("chkRemoveLocationUnits", "지명+사업장 단위 제거 (행정동 기준)", 250, 328, $false)
+        @("chkRemoveLocationUnits", "지명까지 함께 제거 (행정동 기준)", 250, 328, $false)
     )
 
     foreach ($item in $labels) {
@@ -2717,7 +2717,7 @@ function Add-CompanyNameOptionsUserForm {
     $cboOrderPreset.Style = 2
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "결과는 원본 오른쪽 복사본에 생성됩니다. 지명+사업장 제거는 본점/지점 제거보다 먼저 선택하세요. 순서는 해제 후 다시 클릭해 바꿉니다."
+    $lblTip.Caption = "결과는 원본 오른쪽 복사본에 생성됩니다. 지명도 지우려면 지명 제거를 사업장 표기 제거보다 먼저 선택하세요. 순서는 해제 후 다시 클릭해 바꿉니다."
     $lblTip.Left = 12
     $lblTip.Top = 392
     $lblTip.Width = 540

@@ -47,6 +47,9 @@ Public Function TestCompanyOptionsRuntime() As String
     form.Controls("chkRemoveLocationUnits").Value = True
     If Not form.RemoveLocationUnits Then Err.Raise 513, , "Location option not returned"
     If InStr(form.OperationOrder, "removeLocationUnits") = 0 Then Err.Raise 513, , "Location step missing"
+    form.Controls("chkRemoveBranchMarkers").Value = True
+    If Not form.RemoveBranchMarkers Then Err.Raise 513, , "Business-unit option not returned"
+    If InStr(form.OperationOrder, "removeBranchMarkers") = 0 Then Err.Raise 513, , "Business-unit step missing"
     Dim ctl As Object
     For Each ctl In form.Controls
         If ctl.Left + ctl.Width > form.InsideWidth Then Err.Raise 513, , "Clipped horizontally: " & ctl.Name

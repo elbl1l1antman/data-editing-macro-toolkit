@@ -37,6 +37,15 @@ Public Function CheckPackagedCompanyRules(ByVal workbookName As String) As Strin
         actual = Application.Run(prefix & "CompanyName_CleanOne", CStr(unitText) & "한빛", options)
         If actual <> "한빛" Then Err.Raise 513, , "Corporate prefix: " & actual
     Next unitText
+    Set options = Application.Run(prefix & "CompanyName_DefaultOptions")
+    options("removeBranchMarkers") = True
+    Dim examples As Variant, expected As Variant, i As Long
+    examples = Array("신한은행본점", "국민은행본사", "삼성증권제1지점")
+    expected = Array("신한은행", "국민은행", "삼성증권")
+    For i = LBound(examples) To UBound(examples)
+        actual = Application.Run(prefix & "CompanyName_CleanOne", CStr(examples(i)), options)
+        If actual <> CStr(expected(i)) Then Err.Raise 513, , CStr(examples(i)) & ": " & actual
+    Next i
     CheckPackagedCompanyRules = "PASS"
     Exit Function
 Failed:

@@ -499,7 +499,7 @@ End Sub
 
 Private Function CompanyName_RemoveLocationUnits(ByVal textValue As String, ByVal names As Object) As String
     Dim re As Object, matches As Object, item As Object
-    Set re = CompanyName_GetRegex("locationUnits", "(영업소|사업소|본사|공장|지점|본점|분점|지사)(?=$|[\s　,·/()（）\[\]\-])", True, False)
+    Set re = CompanyName_GetRegex("locationUnits", CompanyName_BusinessUnitPattern() & "(?=$|[\s　\u00A0\u200B\uFEFF,·/()（）\[\]\-])", True, False)
     Set matches = re.Execute(textValue)
     Dim result As String, i As Long, unitStart As Long, candidateLen As Long, maxLen As Long
     Dim candidate As String, roadSuffix As Variant, found As Boolean
@@ -564,13 +564,17 @@ Private Function CompanyName_RemoveBranchMarkers(ByVal textValue As String) As S
 
     Dim re As Object
     Set re = CompanyName_GetRegex("removeBranchMarkers", _
-        "[\(（]\s*(본점|지점|[A-Za-z0-9가-힣]{1,4}점)\s*[\)）]", True, True)
+        "[\(（]\s*(" & CompanyName_BusinessUnitPattern() & "|[A-Za-z0-9가-힣]{1,4}점)\s*[\)）]", True, True)
     result = Trim$(re.Replace(result, ""))
 
     result = CompanyName_RemoveLeadingBranchMarker(result)
     result = CompanyName_RemoveTrailingBranchMarker(result)
 
     CompanyName_RemoveBranchMarkers = Trim$(result)
+End Function
+
+Private Function CompanyName_BusinessUnitPattern() As String
+    CompanyName_BusinessUnitPattern = "(?:제[\s　]*[0-9]+[\s　]*)?(?:영업소|사업소|본사|공장|지점|본점|분점|지사)"
 End Function
 
 Private Function CompanyName_RemoveLegalEntityMarkers(ByVal textValue As String) As String
@@ -675,7 +679,7 @@ Private Function CompanyName_RemoveLeadingBranchMarker(ByVal textValue As String
     result = Trim$(textValue)
 
     Dim re As Object
-    Set re = CompanyName_GetRegex("removeLeadingBranchMarker", "^(본점|지점)[\s_\-]+", False, True)
+    Set re = CompanyName_GetRegex("removeLeadingBranchMarker", "^" & CompanyName_BusinessUnitPattern() & "[\s_\-]+", False, True)
     result = re.Replace(result, "")
 
     CompanyName_RemoveLeadingBranchMarker = Trim$(result)
@@ -686,13 +690,12 @@ Private Function CompanyName_RemoveTrailingBranchMarker(ByVal textValue As Strin
     result = Trim$(textValue)
     If Len(result) = 0 Then Exit Function
 
-    Dim knownResult As String
-    If CompanyName_RemoveKnownTrailingBranch(result, "본점", knownResult) Then
-        CompanyName_RemoveTrailingBranchMarker = knownResult
-        Exit Function
-    End If
-    If CompanyName_RemoveKnownTrailingBranch(result, "지점", knownResult) Then
-        CompanyName_RemoveTrailingBranchMarker = knownResult
+    Dim re As Object, knownResult As String
+    Set re = CompanyName_GetRegex("trailingBusinessUnit", CompanyName_BusinessUnitPattern() & "[\s　\u00A0\u200B\uFEFF]*$", False, False)
+    If re.Test(result) Then
+        knownResult = Trim$(re.Replace(result, ""))
+        If CompanyName_VisibleLength(knownResult) >= 2 Then result = knownResult
+        CompanyName_RemoveTrailingBranchMarker = result
         Exit Function
     End If
 
@@ -715,18 +718,6 @@ Private Function CompanyName_RemoveTrailingBranchMarker(ByVal textValue As Strin
     End If
 
     CompanyName_RemoveTrailingBranchMarker = result
-End Function
-
-Private Function CompanyName_RemoveKnownTrailingBranch(ByVal textValue As String, ByVal suffixText As String, ByRef resultOut As String) As Boolean
-    If Len(textValue) <= Len(suffixText) Then Exit Function
-    If Right$(textValue, Len(suffixText)) <> suffixText Then Exit Function
-
-    Dim baseName As String
-    baseName = Trim$(Left$(textValue, Len(textValue) - Len(suffixText)))
-    If CompanyName_VisibleLength(baseName) < 2 Then Exit Function
-
-    resultOut = baseName
-    CompanyName_RemoveKnownTrailingBranch = True
 End Function
 
 Private Function CompanyName_IsBranchSuffix(ByVal suffixText As String) As Boolean

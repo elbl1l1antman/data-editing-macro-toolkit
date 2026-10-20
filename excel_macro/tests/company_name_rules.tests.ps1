@@ -38,6 +38,9 @@ function Get-VbaBlock {
 
 $procedureNames = @(
     "CompanyName_DefaultOptions",
+    "CompanyName_CleanChunk",
+    "CompanyName_ReadRangeMatrix",
+    "CompanyName_IsFormulaValue",
     "CompanyName_DefaultOperationOrder",
     "CompanyName_UserRequestedOperationOrder",
     "CompanyName_PreserveParentheticalFirstOrder",
@@ -53,6 +56,7 @@ $procedureNames = @(
     "CompanyName_RemoveLocationUnits",
     "CompanyName_RemoveParentheticalText",
     "CompanyName_RemoveBranchMarkers",
+    "CompanyName_BusinessUnitPattern",
     "CompanyName_RemoveLegalEntityMarkers",
     "CompanyName_RemoveKoreanLegalEntityMarkers",
     "CompanyName_RemoveLegalMarkerAtEdges",
@@ -62,7 +66,6 @@ $procedureNames = @(
     "CompanyName_IsLegalSeparator",
     "CompanyName_RemoveLeadingBranchMarker",
     "CompanyName_RemoveTrailingBranchMarker",
-    "CompanyName_RemoveKnownTrailingBranch",
     "CompanyName_IsBranchSuffix",
     "CompanyName_VisibleLength",
     "CompanyName_NormalizeCorpSymbol",
@@ -213,6 +216,21 @@ Public Function CompanyNameRulesPassed() As String
     options("normalizeCorpSymbol") = False
     options("removeCorpMarkers") = True
 
+    options("removeBranchMarkers") = True
+    resultText = CheckCase(resultText, "user case: bank headquarters", CompanyName_CleanOne("신한은행본점", options), "신한은행")
+    resultText = CheckCase(resultText, "user case: bank head office", CompanyName_CleanOne("국민은행본사", options), "국민은행")
+    resultText = CheckCase(resultText, "user case: numbered branch", CompanyName_CleanOne("삼성증권제1지점", options), "삼성증권")
+    resultText = CheckCase(resultText, "company number without ordinal retained", CompanyName_CleanOne("삼성증권1지점", options), "삼성증권1")
+    resultText = CheckCase(resultText, "alphanumeric company number retained", CompanyName_CleanOne("A4본사", options), "A4")
+    resultText = CheckCase(resultText, "headquarters with line break", CompanyName_CleanOne("신한은행본점" & vbCrLf, options), "신한은행")
+    resultText = CheckCase(resultText, "headquarters with invisible trailing separator", CompanyName_CleanOne("신한은행본점" & ChrW(&H200B), options), "신한은행")
+    resultText = CheckCase(resultText, "spaced numbered branch", CompanyName_CleanOne("삼성증권 제 1 지점", options), "삼성증권")
+    resultText = CheckCase(resultText, "numbered parenthesized office", CompanyName_CleanOne("삼성증권(제1영업소)", options), "삼성증권")
+    resultText = CheckCase(resultText, "factory suffix", CompanyName_CleanOne("한빛제2공장", options), "한빛")
+    resultText = CheckCase(resultText, "unit inside a name is not suffix", CompanyName_CleanOne("본사랑테크", options), "본사랑테크")
+    resultText = CheckCase(resultText, "unit-only value is preserved", CompanyName_CleanOne("제1지점", options), "제1지점")
+    options("removeBranchMarkers") = False
+
     Dim master As Worksheet
     Set master = ActiveWorkbook.Worksheets.Add
     master.Name = "행정동_마스터"
@@ -227,6 +245,7 @@ Public Function CompanyNameRulesPassed() As String
         resultText = CheckCase(resultText, "location option disabled: " & CStr(unitText), CompanyName_CleanOne("한빛" & CStr(unitText), options), "한빛" & CStr(unitText))
     Next unitText
     options("removeLocationUnits") = True
+    resultText = CheckCase(resultText, "location with numbered branch", CompanyName_CleanOne("한빛판교제1지점", options), "한빛")
     For Each unitText In Array("판교지점", "판교본사", "판교공장", "대구지점", "청주사업소", "수원영업소", "세종대로지점", "세종대로영업소", "판교본점", "판교분점", "판교지사", "성내1동공장")
         resultText = CheckCase(resultText, "remove location unit: " & CStr(unitText), CompanyName_CleanOne("한빛" & CStr(unitText), options), "한빛")
     Next unitText
@@ -241,6 +260,24 @@ Public Function CompanyNameRulesPassed() As String
     options("removeLocationUnits") = True
     resultText = CheckCase(resultText, "next run refreshes updated user master", CompanyName_CleanOne("한빛신규지역공장", options), "한빛")
     resultText = CheckCase(resultText, "updated master does not retain stale aliases", CompanyName_CleanOne("한빛판교공장", options), "한빛판교공장")
+
+    Dim batchSheet As Worksheet, branchNames As Variant, expectedNames As Variant, branchRow As Long
+    Dim changedRows As Long, skippedRows As Long, preventedRows As Long
+    Set batchSheet = ActiveWorkbook.Worksheets.Add
+    branchNames = Array("신한은행본점", "국민은행본사", "삼성증권제1지점")
+    expectedNames = Array("신한은행", "국민은행", "삼성증권")
+    For branchRow = 0 To 2
+        batchSheet.Cells(branchRow + 1, 1).Value2 = branchNames(branchRow)
+        batchSheet.Cells(branchRow + 1, 2).Value2 = branchNames(branchRow)
+    Next branchRow
+    Set options = CompanyName_DefaultOptions()
+    options("removeBranchMarkers") = True
+    CompanyName_CleanChunk batchSheet.Range("A1:A3"), batchSheet.Range("B1:B3"), options, changedRows, skippedRows, preventedRows
+    For branchRow = 0 To 2
+        resultText = CheckCase(resultText, "chunk output: " & CStr(branchNames(branchRow)), CStr(batchSheet.Cells(branchRow + 1, 2).Value2), CStr(expectedNames(branchRow)))
+        resultText = CheckCase(resultText, "chunk source preserved", CStr(batchSheet.Cells(branchRow + 1, 1).Value2), CStr(branchNames(branchRow)))
+    Next branchRow
+    resultText = CheckCase(resultText, "chunk changed count", CStr(changedRows), "3")
 
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText
