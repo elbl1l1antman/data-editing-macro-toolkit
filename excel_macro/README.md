@@ -34,7 +34,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.2.6`
+`1.2.7`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -142,15 +142,17 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.2.6/DataEditingMacroToolkit_v1.2.6.xlam`
-- `release/v1.2.6/DataEditingMacroToolkit_v1.2.6.xlsm`
-- `release/v1.2.6/*.bas`
-- `release/v1.2.6/manifest.json`
+- `release/v1.2.7/DataEditingMacroToolkit_v1.2.7.xlam`
+- `release/v1.2.7/DataEditingMacroToolkit_v1.2.7.xlsm`
+- `release/v1.2.7/*.bas`
+- `release/v1.2.7/manifest.json`
 
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`
 
 ## Excel 추가 기능 설치
+
+기업명 정리의 `지명+사업장 단위 제거`를 선택하면 행정동 자료를 참고해 판교지점·청주사업소·세종대로영업소 등의 표현을 제거합니다. 공백이 섞인 `( 주 )`와 이름 앞 `주)`도 법인표기 삭제에서 지원합니다. 상세한 범위와 주의사항은 사용자 메뉴얼을 확인하세요.
 
 Excel에서 다음 경로로 `.xlam` 파일을 설치합니다.
 

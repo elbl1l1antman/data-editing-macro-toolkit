@@ -5,6 +5,7 @@ Private Const COMPANY_NAME_CHUNK_ROWS As Long = 500
 
 
 Public Sub CompanyName_CleanWithOptions()
+    On Error GoTo Failed
     Dim targetRange As Range
     If Not Toolkit_GetRangeFromUserForm("기업/사업체명 정리", _
         "정리할 기업체명 또는 사업체명 범위를 선택하세요. 원본 오른쪽에 복사본 열을 만들고 선택한 규칙을 적용합니다.", _
@@ -14,7 +15,15 @@ Public Sub CompanyName_CleanWithOptions()
     Set options = CompanyName_GetOptionsFromUser()
     If options Is Nothing Then Exit Sub
 
+    If CBool(options("removeLocationUnits")) Then
+        Set options("locationNames") = CompanyName_LoadLocationNames()
+    End If
+
     CompanyName_CleanRangeToCopiedColumns targetRange, options
+    Exit Sub
+Failed:
+    MsgBox "기업/사업체명 정리를 시작하지 못했습니다." & vbCrLf & _
+           CStr(Err.Number) & ": " & Err.Description, vbExclamation, "기업/사업체명 정리"
 End Sub
 
 Private Function CompanyName_GetOptionsFromUser() As Object
@@ -42,6 +51,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("addCorpSuffix") = CBool(form.AddCorpSuffix)
     options("cutBeforePossessive") = CBool(form.CutBeforePossessive)
     options("removeBranchMarkers") = CBool(form.RemoveBranchMarkers)
+    options("removeLocationUnits") = CBool(form.RemoveLocationUnits)
     options("removeLegalEntityMarkers") = CBool(form.RemoveLegalEntityMarkers)
     options("removeParentheticalText") = CBool(form.RemoveParentheticalText)
     options("removeSpecialChars") = CBool(form.RemoveSpecialChars)
@@ -72,6 +82,7 @@ Public Function CompanyName_DefaultOptions() As Object
     options("addCorpSuffix") = False
     options("cutBeforePossessive") = False
     options("removeBranchMarkers") = False
+    options("removeLocationUnits") = False
     options("removeLegalEntityMarkers") = False
     options("removeParentheticalText") = False
     options("removeSpecialChars") = False
@@ -85,7 +96,7 @@ End Function
 Private Function CompanyName_DefaultOperationOrder() As String
     CompanyName_DefaultOperationOrder = _
         "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces," & _
-        "normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeBranchMarkers," & _
+        "normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeLocationUnits,removeBranchMarkers," & _
         "removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
 End Function
 
@@ -93,12 +104,12 @@ Private Function CompanyName_UserRequestedOperationOrder() As String
     CompanyName_UserRequestedOperationOrder = _
         "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText," & _
         "cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd," & _
-        "removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+        "removeLocationUnits,removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
 End Function
 
 Private Function CompanyName_PreserveParentheticalFirstOrder() As String
     CompanyName_PreserveParentheticalFirstOrder = _
-        "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates," & _
+        "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeLocationUnits,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates," & _
         "pronounceEnglishWords,removeSpecialChars,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd," & _
         "addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
 End Function
@@ -374,6 +385,13 @@ Private Function CompanyName_ApplyOperation(ByVal textValue As String, ByVal ope
             If CBool(options("removeCorpMarkers")) Then textValue = CompanyName_RemoveCorpMarkers(textValue)
         Case "removeBranchMarkers"
             If CBool(options("removeBranchMarkers")) Then textValue = CompanyName_RemoveBranchMarkers(textValue)
+        Case "removeLocationUnits"
+            If options.Exists("removeLocationUnits") Then
+                If CBool(options("removeLocationUnits")) Then
+                    If Not options.Exists("locationNames") Then Set options("locationNames") = CompanyName_LoadLocationNames()
+                    textValue = CompanyName_RemoveLocationUnits(textValue, options("locationNames"))
+                End If
+            End If
         Case "removeLegalEntityMarkers"
             If CBool(options("removeLegalEntityMarkers")) Then textValue = CompanyName_RemoveLegalEntityMarkers(textValue)
         Case "removeSpecialChars"
@@ -405,14 +423,133 @@ End Function
 
 Private Function CompanyName_HasCorpMarker(ByVal textValue As String) As Boolean
     Dim re As Object
-    Set re = CompanyName_GetRegex("hasCorpMarker", "[\(（]\s*주\s*[\)）]|㈜|주식회사", False, True)
+    Set re = CompanyName_GetRegex("hasCorpMarker", CompanyName_CorpMarkerPattern(), False, True)
     CompanyName_HasCorpMarker = re.Test(textValue)
 End Function
 
 Private Function CompanyName_RemoveCorpMarkers(ByVal textValue As String) As String
     Dim re As Object
-    Set re = CompanyName_GetRegex("removeCorpMarkers", "[\(（]\s*주\s*[\)）]|㈜|주식회사", True, True)
+    Set re = CompanyName_GetRegex("removeCorpMarkers", CompanyName_CorpMarkerPattern(), True, True)
     CompanyName_RemoveCorpMarkers = Trim$(re.Replace(textValue, ""))
+End Function
+
+Private Function CompanyName_CorpMarkerPattern(Optional ByVal includeText As Boolean = True) As String
+    CompanyName_CorpMarkerPattern = "[\(（][\s　\u00A0]*주[\s　\u00A0]*[\)）]|㈜|(^|[\s　\u00A0])주[\s　\u00A0]*[\)）]"
+    If includeText Then CompanyName_CorpMarkerPattern = CompanyName_CorpMarkerPattern & "|주식회사"
+End Function
+
+Private Function CompanyName_LoadLocationNames() As Object
+    Dim ws As Worksheet
+    On Error Resume Next
+    Set ws = ActiveWorkbook.Worksheets("행정동_마스터")
+    If ws Is Nothing Then Set ws = ThisWorkbook.Worksheets("_NaverLocalDongMaster")
+    On Error GoTo 0
+    If ws Is Nothing Then Err.Raise vbObjectError + 2101, , "행정동 마스터를 찾을 수 없습니다. 행정동 양식을 먼저 생성하세요."
+    If CStr(ws.Cells(1, 1).Value2) <> "광역시도" Or CStr(ws.Cells(1, 2).Value2) <> "시군구" Or CStr(ws.Cells(1, 3).Value2) <> "읍면동" Then
+        Err.Raise vbObjectError + 2102, , "행정동 마스터의 A:C 헤더가 광역시도, 시군구, 읍면동인지 확인하세요."
+    End If
+    Dim lastRow As Long, c As Long
+    For c = 1 To 3
+        If ws.Cells(ws.Rows.Count, c).End(xlUp).Row > lastRow Then lastRow = ws.Cells(ws.Rows.Count, c).End(xlUp).Row
+    Next c
+    Dim names As Object
+    Set names = CreateObject("Scripting.Dictionary")
+    names.CompareMode = vbTextCompare
+    names.Add "_maxLength", 0
+    Dim values As Variant, r As Long, parts As Variant, part As Variant
+    If lastRow > 1 Then
+        values = ws.Range("A2:C" & CStr(lastRow)).Value2
+        For r = 1 To UBound(values, 1)
+            For c = 1 To 3
+                If Not IsError(values(r, c)) Then
+                    parts = Split(Trim$(CStr(values(r, c))), " ")
+                    For Each part In parts
+                        CompanyName_AddLocationToken names, Trim$(CStr(part))
+                    Next part
+                End If
+            Next c
+        Next r
+    End If
+    If names.Count <= 1 Then Err.Raise vbObjectError + 2103, , "행정동 마스터에 사용할 지명이 없습니다."
+    For Each part In Array("서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", _
+                           "경기", "강원", "충북", "충남", "전북", "전남", "경북", "경남", "제주")
+        CompanyName_AddLocationToken names, CStr(part)
+    Next part
+    Set CompanyName_LoadLocationNames = names
+End Function
+
+Private Sub CompanyName_AddLocationToken(ByVal names As Object, ByVal token As String)
+    If Len(token) < 2 Then Exit Sub
+    names(token) = True
+    If Len(token) > CLng(names("_maxLength")) Then names("_maxLength") = Len(token)
+    Dim suffix As Variant, shortened As String, re As Object
+    For Each suffix In Array("특별자치도", "특별자치시", "특별시", "광역시", "도", "시", "군", "구", "읍", "면", "동")
+        If Right$(token, Len(CStr(suffix))) = CStr(suffix) Then
+            shortened = Left$(token, Len(token) - Len(CStr(suffix)))
+            If Len(shortened) >= 2 Then
+                names(shortened) = True
+                Set re = CompanyName_GetRegex("locationDistrictNumber", "[0-9]+$", False, False)
+                shortened = re.Replace(shortened, "")
+                If Len(shortened) >= 2 Then names(shortened) = True
+            End If
+            Exit For
+        End If
+    Next suffix
+End Sub
+
+Private Function CompanyName_RemoveLocationUnits(ByVal textValue As String, ByVal names As Object) As String
+    Dim re As Object, matches As Object, item As Object
+    Set re = CompanyName_GetRegex("locationUnits", "(영업소|사업소|본사|공장|지점|본점|분점|지사)(?=$|[\s　,·/()（）\[\]\-])", True, False)
+    Set matches = re.Execute(textValue)
+    Dim result As String, i As Long, unitStart As Long, candidateLen As Long, maxLen As Long
+    Dim candidate As String, roadSuffix As Variant, found As Boolean
+    Dim removeStart As Long, removeEnd As Long, leftEdge As Long, rightEdge As Long
+    result = textValue
+    For i = matches.Count - 1 To 0 Step -1
+        Set item = matches(i)
+        unitStart = item.FirstIndex + 1
+        maxLen = CLng(names("_maxLength")) + 2
+        If maxLen >= unitStart Then maxLen = unitStart - 1
+        For candidateLen = maxLen To 2 Step -1
+            candidate = Mid$(result, unitStart - candidateLen, candidateLen)
+            found = names.Exists(candidate)
+            If Not found Then
+                For Each roadSuffix In Array("대로", "로", "길")
+                    If Len(candidate) > Len(CStr(roadSuffix)) Then
+                        If Right$(candidate, Len(CStr(roadSuffix))) = CStr(roadSuffix) Then
+                            found = names.Exists(Left$(candidate, Len(candidate) - Len(CStr(roadSuffix))))
+                            If found Then Exit For
+                        End If
+                    End If
+                Next roadSuffix
+            End If
+            If found Then
+                removeStart = unitStart - candidateLen
+                removeEnd = unitStart + item.Length - 1
+                leftEdge = removeStart - 1
+                rightEdge = removeEnd + 1
+                Do While leftEdge > 0
+                    If Mid$(result, leftEdge, 1) <> " " Then Exit Do
+                    leftEdge = leftEdge - 1
+                Loop
+                Do While rightEdge <= Len(result)
+                    If Mid$(result, rightEdge, 1) <> " " Then Exit Do
+                    rightEdge = rightEdge + 1
+                Loop
+                If leftEdge > 0 And rightEdge <= Len(result) Then
+                    If InStr(1, "(（", Mid$(result, leftEdge, 1), vbBinaryCompare) > 0 And _
+                       InStr(1, ")）", Mid$(result, rightEdge, 1), vbBinaryCompare) > 0 Then
+                        removeStart = leftEdge
+                        removeEnd = rightEdge
+                    End If
+                End If
+                candidate = Trim$(Left$(result, removeStart - 1) & Mid$(result, removeEnd + 1))
+                If Len(candidate) > 0 Then result = candidate
+                Exit For
+            End If
+        Next candidateLen
+    Next i
+    CompanyName_RemoveLocationUnits = result
 End Function
 
 Private Function CompanyName_RemoveParentheticalText(ByVal textValue As String) As String
@@ -612,7 +749,7 @@ End Function
 
 Private Function CompanyName_NormalizeCorpSymbol(ByVal textValue As String) As String
     Dim re As Object
-    Set re = CompanyName_GetRegex("normalizeCorpSymbol", "[\(（]\s*주\s*[\)）]", True, True)
+    Set re = CompanyName_GetRegex("normalizeCorpSymbol", CompanyName_CorpMarkerPattern(False), True, True)
     textValue = re.Replace(textValue, "(주)")
     textValue = Replace(textValue, "㈜", "(주)")
     CompanyName_NormalizeCorpSymbol = textValue

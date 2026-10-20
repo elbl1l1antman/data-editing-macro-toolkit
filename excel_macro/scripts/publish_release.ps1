@@ -2662,7 +2662,7 @@ function Add-CompanyNameOptionsUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "기업/사업체명 정리 옵션"
     $form.Properties.Item("Width").Value = 580
-    $form.Properties.Item("Height").Value = 560
+    $form.Properties.Item("Height").Value = 586
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "적용할 정리 규칙을 선택하세요. 직접 선택 시 실행 순번이 표시됩니다."
@@ -2688,7 +2688,8 @@ function Add-CompanyNameOptionsUserForm {
         @("chkRemoveBranchMarkers", "본점/지점/점포명 제거", 250, 224, $false),
         @("chkRemoveLegalEntityMarkers", "Co.,Ltd./유한회사 등 법인표기 삭제", 250, 250, $false),
         @("chkRemoveParentheticalText", "괄호 안 문구까지 삭제", 250, 276, $false),
-        @("chkRemoveBilingualDuplicates", "한글/영문 중복 병기 제거", 250, 302, $true)
+        @("chkRemoveBilingualDuplicates", "한글/영문 중복 병기 제거", 250, 302, $true),
+        @("chkRemoveLocationUnits", "지명+사업장 단위 제거 (행정동 기준)", 250, 328, $false)
     )
 
     foreach ($item in $labels) {
@@ -2704,35 +2705,35 @@ function Add-CompanyNameOptionsUserForm {
     $lblOrder = $designer.Controls.Add("Forms.Label.1", "lblOrder", $true)
     $lblOrder.Caption = "정리 순서"
     $lblOrder.Left = 12
-    $lblOrder.Top = 338
+    $lblOrder.Top = 364
     $lblOrder.Width = 90
     $lblOrder.Height = 18
 
     $cboOrderPreset = $designer.Controls.Add("Forms.ComboBox.1", "cboOrderPreset", $true)
     $cboOrderPreset.Left = 100
-    $cboOrderPreset.Top = 334
+    $cboOrderPreset.Top = 360
     $cboOrderPreset.Width = 430
     $cboOrderPreset.Height = 22
     $cboOrderPreset.Style = 2
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "결과는 원본 오른쪽 복사본 열에 생성됩니다. 순서를 바꾸려면 규칙을 해제한 뒤 원하는 순서로 다시 클릭하세요."
+    $lblTip.Caption = "결과는 원본 오른쪽 복사본에 생성됩니다. 지명+사업장 제거는 본점/지점 제거보다 먼저 선택하세요. 순서는 해제 후 다시 클릭해 바꿉니다."
     $lblTip.Left = 12
-    $lblTip.Top = 366
+    $lblTip.Top = 392
     $lblTip.Width = 540
     $lblTip.Height = 42
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
     $cmdOk.Left = 374
-    $cmdOk.Top = 468
+    $cmdOk.Top = 494
     $cmdOk.Width = 86
     $cmdOk.Height = 28
 
     $cmdCancel = $designer.Controls.Add("Forms.CommandButton.1", "cmdCancel", $true)
     $cmdCancel.Caption = "취소"
     $cmdCancel.Left = 474
-    $cmdCancel.Top = 468
+    $cmdCancel.Top = 494
     $cmdCancel.Width = 86
     $cmdCancel.Height = 28
 
@@ -2796,6 +2797,10 @@ Public Property Get RemoveBranchMarkers() As Boolean
     RemoveBranchMarkers = CBool(chkRemoveBranchMarkers.Value)
 End Property
 
+Public Property Get RemoveLocationUnits() As Boolean
+    RemoveLocationUnits = CBool(chkRemoveLocationUnits.Value)
+End Property
+
 Public Property Get RemoveLegalEntityMarkers() As Boolean
     RemoveLegalEntityMarkers = CBool(chkRemoveLegalEntityMarkers.Value)
 End Property
@@ -2827,11 +2832,11 @@ Public Property Get OperationOrder() As String
     End If
     Select Case cboOrderPreset.ListIndex
         Case 1
-            OperationOrder = "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText,cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+            OperationOrder = "removeSpaces,removeBilingualDuplicates,removeCorpMarkers,removeSpecialChars,removeParentheticalText,cutBeforePossessive,trimOuter,pronounceEnglishWords,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeLocationUnits,removeBranchMarkers,removeLegalEntityMarkers,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
         Case 2
-            OperationOrder = "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates,pronounceEnglishWords,removeSpecialChars,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+            OperationOrder = "trimOuter,removeParentheticalText,removeLegalEntityMarkers,removeLocationUnits,removeBranchMarkers,removeCorpMarkers,removeBilingualDuplicates,pronounceEnglishWords,removeSpecialChars,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
         Case Else
-            OperationOrder = "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeBranchMarkers,removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
+            OperationOrder = "cutBeforePossessive,trimOuter,removeParentheticalText,removeBilingualDuplicates,pronounceEnglishWords,removeSpaces,normalizeCorpSymbol,normalizeCorpText,moveCorpToFront,moveCorpToEnd,removeCorpMarkers,removeLocationUnits,removeBranchMarkers,removeLegalEntityMarkers,removeSpecialChars,addCorpPrefix,addCorpSuffix,spellAlphabetKorean"
     End Select
 End Property
 
@@ -2949,6 +2954,9 @@ Private Sub chkRemoveSpecialChars_Click()
 End Sub
 Private Sub chkRemoveBranchMarkers_Click()
     ToggleOperation "removeBranchMarkers", chkRemoveBranchMarkers.Value
+End Sub
+Private Sub chkRemoveLocationUnits_Click()
+    ToggleOperation "removeLocationUnits", chkRemoveLocationUnits.Value
 End Sub
 Private Sub chkRemoveLegalEntityMarkers_Click()
     ToggleOperation "removeLegalEntityMarkers", chkRemoveLegalEntityMarkers.Value
@@ -4095,10 +4103,11 @@ foreach ($sourceModulePath in $ModulePaths) {
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
+$excel.EnableEvents = $false
 $workbook = $null
 $publishStage = "start"
 try {
-    $workbook = $excel.Workbooks.Open($DevWorkbook)
+    $workbook = $excel.Workbooks.Open($DevWorkbook, 0, $false)
     try {
         $publishStage = "remove old VBA components"
         $toolkitModuleNames = @($ModulePaths | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) })

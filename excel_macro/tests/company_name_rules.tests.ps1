@@ -47,6 +47,10 @@ $procedureNames = @(
     "CompanyName_GetRegex",
     "CompanyName_HasCorpMarker",
     "CompanyName_RemoveCorpMarkers",
+    "CompanyName_CorpMarkerPattern",
+    "CompanyName_LoadLocationNames",
+    "CompanyName_AddLocationToken",
+    "CompanyName_RemoveLocationUnits",
     "CompanyName_RemoveParentheticalText",
     "CompanyName_RemoveBranchMarkers",
     "CompanyName_RemoveLegalEntityMarkers",
@@ -190,6 +194,53 @@ Public Function CompanyNameRulesPassed() As String
     resultText = CheckCase(resultText, "remove Korean and digit-bearing English duplicate company name", CompanyName_CleanOne(KoForward() & KoThreeD() & KoKorea() & "FORWARD3DKOREA", options), KoForward() & KoThreeD() & KoKorea())
     resultText = CheckCase(resultText, "remove Korean and compact brand English duplicate company name", CompanyName_CleanOne(KoTvaSoft() & "TVASOFT", options), KoTvaSoft())
     resultText = CheckCase(resultText, "keep non-equivalent Korean and English mixed company name", CompanyName_CleanOne(KoK() & KoIndustry() & "Korea", options), KoK() & KoIndustry() & "Korea")
+
+    Set options = CompanyName_DefaultOptions()
+    options("spellAlphabetKorean") = False
+    options("removeBilingualDuplicates") = False
+    options("removeSpaces") = False
+    resultText = CheckCase(resultText, "spaced corporate marker", CompanyName_CleanOne("( 주 )한빛", options), "한빛")
+    resultText = CheckCase(resultText, "left-spaced corporate marker", CompanyName_CleanOne("( 주)한빛", options), "한빛")
+    resultText = CheckCase(resultText, "right-spaced corporate marker", CompanyName_CleanOne("(주 )한빛", options), "한빛")
+    resultText = CheckCase(resultText, "corporate marker without opening parenthesis", CompanyName_CleanOne("주)한빛", options), "한빛")
+    resultText = CheckCase(resultText, "fullwidth spaced corporate marker", CompanyName_CleanOne("（　주　）한빛", options), "한빛")
+    resultText = CheckCase(resultText, "do not remove ju inside a name", CompanyName_CleanOne("진주)상사", options), "진주)상사")
+    resultText = CheckCase(resultText, "nonbreaking corporate spaces", CompanyName_CleanOne("(" & ChrW(160) & "주" & ChrW(160) & ")한빛", options), "한빛")
+    options("removeCorpMarkers") = False
+    options("normalizeCorpSymbol") = True
+    resultText = CheckCase(resultText, "normalize half corporate marker", CompanyName_CleanOne("주)한빛", options), "(주)한빛")
+    resultText = CheckCase(resultText, "symbol normalization preserves full company text", CompanyName_CleanOne("주식회사한빛", options), "주식회사한빛")
+    options("normalizeCorpSymbol") = False
+    options("removeCorpMarkers") = True
+
+    Dim master As Worksheet
+    Set master = ActiveWorkbook.Worksheets.Add
+    master.Name = "행정동_마스터"
+    master.Range("A1:C1").Value = Array("광역시도", "시군구", "읍면동")
+    master.Range("A2:C2").Value = Array("경기도", "성남시 분당구", "판교동")
+    master.Range("A3:C3").Value = Array("대구광역시", "중구", "성내1동")
+    master.Range("A4:C4").Value = Array("충청북도", "청주시 상당구", "용암동")
+    master.Range("A5:C5").Value = Array("경기도", "수원시 영통구", "영통동")
+    master.Range("A6:C6").Value = Array("충청남도", "천안시", "불당동")
+    Dim unitText As Variant
+    For Each unitText In Array("판교지점", "판교본사", "판교공장", "대구지점", "청주사업소", "수원영업소", "세종대로지점", "세종대로영업소", "판교본점", "판교분점", "판교지사", "성내1동공장")
+        resultText = CheckCase(resultText, "location option disabled: " & CStr(unitText), CompanyName_CleanOne("한빛" & CStr(unitText), options), "한빛" & CStr(unitText))
+    Next unitText
+    options("removeLocationUnits") = True
+    For Each unitText In Array("판교지점", "판교본사", "판교공장", "대구지점", "청주사업소", "수원영업소", "세종대로지점", "세종대로영업소", "판교본점", "판교분점", "판교지사", "성내1동공장")
+        resultText = CheckCase(resultText, "remove location unit: " & CStr(unitText), CompanyName_CleanOne("한빛" & CStr(unitText), options), "한빛")
+    Next unitText
+    resultText = CheckCase(resultText, "parenthesized location unit", CompanyName_CleanOne("한빛( 판교공장 )", options), "한빛")
+    resultText = CheckCase(resultText, "unknown location retained", CompanyName_CleanOne("한빛미등록가나공장", options), "한빛미등록가나공장")
+    resultText = CheckCase(resultText, "unit inside word retained", CompanyName_CleanOne("한빛판교지점프라자", options), "한빛판교지점프라자")
+    resultText = CheckCase(resultText, "whole name not erased", CompanyName_CleanOne("판교공장", options), "판교공장")
+    options("removeBranchMarkers") = True
+    resultText = CheckCase(resultText, "default option order precedes generic branch removal", CompanyName_CleanOne("한빛판교지점", options), "한빛")
+    master.Range("C2").Value2 = "신규지역동"
+    Set options = CompanyName_DefaultOptions()
+    options("removeLocationUnits") = True
+    resultText = CheckCase(resultText, "next run refreshes updated user master", CompanyName_CleanOne("한빛신규지역공장", options), "한빛")
+    resultText = CheckCase(resultText, "updated master does not retain stale aliases", CompanyName_CleanOne("한빛판교공장", options), "한빛판교공장")
 
     If Len(resultText) = 0 Then resultText = "PASS"
     CompanyNameRulesPassed = resultText

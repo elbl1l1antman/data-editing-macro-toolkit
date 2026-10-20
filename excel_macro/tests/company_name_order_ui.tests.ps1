@@ -36,6 +36,7 @@ Public Function TestCompanyOptionsRuntime() As String
     Dim form As Object
     Set form = VBA.UserForms.Add("frmCompanyNameOptions")
     If Not form.Cancelled Then Err.Raise 513, , "Default must be cancelled"
+    If form.RemoveLocationUnits Then Err.Raise 513, , "Location cleanup must be opt-in"
     If form.Controls("chkRemoveSpaces").Caption <> "모든 공백 제거" Then Err.Raise 513, , "Plain caption changed"
     form.Controls("chkTrimOuter").Value = True
     If Left$(form.Controls("chkTrimOuter").Caption, 3) <> "5. " Then Err.Raise 513, , "Click order missing"
@@ -43,6 +44,14 @@ Public Function TestCompanyOptionsRuntime() As String
     If form.Controls("chkTrimOuter").Caption <> "앞뒤 공백 제거" Then Err.Raise 513, , "Caption not restored"
     form.Controls("cboOrderPreset").ListIndex = 0
     If form.Controls("chkRemoveSpaces").Caption <> "모든 공백 제거" Then Err.Raise 513, , "Preset caption not restored"
+    form.Controls("chkRemoveLocationUnits").Value = True
+    If Not form.RemoveLocationUnits Then Err.Raise 513, , "Location option not returned"
+    If InStr(form.OperationOrder, "removeLocationUnits") = 0 Then Err.Raise 513, , "Location step missing"
+    Dim ctl As Object
+    For Each ctl In form.Controls
+        If ctl.Left + ctl.Width > form.InsideWidth Then Err.Raise 513, , "Clipped horizontally: " & ctl.Name
+        If ctl.Top + ctl.Height > form.InsideHeight Then Err.Raise 513, , "Clipped vertically: " & ctl.Name
+    Next ctl
     Unload form
     TestCompanyOptionsRuntime = "PASS"
     Exit Function

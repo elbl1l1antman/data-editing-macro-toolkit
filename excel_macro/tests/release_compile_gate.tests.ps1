@@ -16,6 +16,8 @@ Assert-Contains "publisher compile stage" $publish '$publishStage = "compile smo
 Assert-Contains "publisher runs smoke test" $publish 'Toolkit_CompileSmokeTest'
 Assert-Contains "final artifacts run smoke test" $publish '$verifySmokeResult = [string]$verifyExcel.Run($verifySmokeMacro)'
 Assert-Contains "publisher encoding guard" $publish "function Assert-NoBrokenKoreanText"
+Assert-Contains "publisher disables template events" $publish '$excel.EnableEvents = $false'
+Assert-Contains "publisher opens editable template without links" $publish '$excel.Workbooks.Open($DevWorkbook, 0, $false)'
 
 $smokeStart = $module.IndexOf("Public Function Toolkit_CompileSmokeTest() As String")
 $smokeEnd = $module.IndexOf("End Function", $smokeStart)

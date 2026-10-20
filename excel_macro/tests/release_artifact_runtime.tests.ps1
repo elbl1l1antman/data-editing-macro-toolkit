@@ -19,6 +19,30 @@ $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
 $excel.DisplayAlerts = $false
 try {
+    $driver = $excel.Workbooks.Add()
+    $module = $driver.VBProject.VBComponents.Add(1)
+    $module.CodeModule.AddFromString(@'
+Option Explicit
+Public Function CheckPackagedCompanyRules(ByVal workbookName As String) As String
+    On Error GoTo Failed
+    Dim prefix As String, options As Object, unitText As Variant, actual As String
+    prefix = "'" & Replace(workbookName, "'", "''") & "'!"
+    Set options = Application.Run(prefix & "CompanyName_DefaultOptions")
+    options("removeLocationUnits") = True
+    For Each unitText In Array("판교지점", "판교본사", "판교공장", "대구지점", "청주사업소", "수원영업소", "세종대로지점", "세종대로영업소")
+        actual = Application.Run(prefix & "CompanyName_CleanOne", "한빛" & CStr(unitText), options)
+        If actual <> "한빛" Then Err.Raise 513, , CStr(unitText) & ": " & actual
+    Next unitText
+    For Each unitText In Array("주)", "( 주 )", "( 주)", "(주 )", "（　주　）")
+        actual = Application.Run(prefix & "CompanyName_CleanOne", CStr(unitText) & "한빛", options)
+        If actual <> "한빛" Then Err.Raise 513, , "Corporate prefix: " & actual
+    Next unitText
+    CheckPackagedCompanyRules = "PASS"
+    Exit Function
+Failed:
+    CheckPackagedCompanyRules = CStr(Err.Number) & ": " & Err.Description
+End Function
+'@)
     foreach ($artifact in $artifacts) {
         if (-not (Test-Path -LiteralPath $artifact)) { throw "Missing release artifact: $artifact" }
         $workbook = $excel.Workbooks.Open($artifact, 0, $true)
@@ -31,6 +55,8 @@ try {
             if ($workbook.VBProject.Protection -ne 1) {
                 throw "VBA project is not protected: $artifact"
             }
+            $companyResult = $excel.Run("'$($driver.Name)'!CheckPackagedCompanyRules", $workbook.Name)
+            if ($companyResult -ne 'PASS') { throw "Packaged company rules failed for $artifact`: $companyResult" }
         }
         finally {
             $workbook.Close($false)
@@ -39,6 +65,7 @@ try {
     }
 }
 finally {
+    if ($driver) { $driver.Close($false) }
     $excel.Quit()
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($excel)
 }
