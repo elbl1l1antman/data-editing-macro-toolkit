@@ -37,6 +37,13 @@ Public Function TestCompanyOptionsRuntime() As String
     Set form = VBA.UserForms.Add("frmCompanyNameOptions")
     If Not form.Cancelled Then Err.Raise 513, , "Default must be cancelled"
     If form.RemoveLocationUnits Then Err.Raise 513, , "Location cleanup must be opt-in"
+    Dim tip As Object
+    Set tip = form.Controls("lblTip")
+    If InStr(tip.Caption, "추천 순서: (주) 삭제 → 지명까지 함께 제거 → 사업장 표기 제거") = 0 Then Err.Raise 513, , "Recommended cleanup order missing"
+    If InStr(tip.Caption, "엘지이노텍(주)구미1공장") = 0 Then Err.Raise 513, , "User example missing"
+    If InStr(tip.Caption, "숫자가 붙은 지명은 결과 확인이 필요") = 0 Then Err.Raise 513, , "Numbered location limitation missing"
+    If Not tip.WordWrap Or tip.Height < 90 Then Err.Raise 513, , "Recommendation text area too small"
+    If tip.Top + tip.Height > form.Controls("cmdOK").Top Then Err.Raise 513, , "Recommendation overlaps execute button"
     If form.Controls("chkRemoveSpaces").Caption <> "모든 공백 제거" Then Err.Raise 513, , "Plain caption changed"
     form.Controls("chkTrimOuter").Value = True
     If Left$(form.Controls("chkTrimOuter").Caption, 3) <> "5. " Then Err.Raise 513, , "Click order missing"

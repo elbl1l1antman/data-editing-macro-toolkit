@@ -2717,11 +2717,16 @@ function Add-CompanyNameOptionsUserForm {
     $cboOrderPreset.Style = 2
 
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "결과는 원본 오른쪽 복사본에 생성됩니다. 지명도 지우려면 지명 제거를 사업장 표기 제거보다 먼저 선택하세요. 순서는 해제 후 다시 클릭해 바꿉니다."
+    $lblTip.Caption = "추천 순서: (주) 삭제 → 지명까지 함께 제거 → 사업장 표기 제거 → 괄호·특수문자 제거.`r`n" +
+        "지명 제거 전에 사업장 표기를 지우면 지명만 남을 수 있습니다.`r`n" +
+        "예: 엘지이노텍(주)구미1공장 → 목표: 엘지이노텍. 숫자가 붙은 지명은 결과 확인이 필요합니다.`r`n" +
+        "직접 클릭한 순서의 번호가 실행 순서입니다. 순서는 해제 후 다시 클릭해 바꿉니다.`r`n" +
+        "결과는 원본 오른쪽 복사본에 생성됩니다."
     $lblTip.Left = 12
     $lblTip.Top = 392
     $lblTip.Width = 540
-    $lblTip.Height = 42
+    $lblTip.Height = 92
+    $lblTip.WordWrap = $true
 
     $cmdOk = $designer.Controls.Add("Forms.CommandButton.1", "cmdOK", $true)
     $cmdOk.Caption = "실행"
