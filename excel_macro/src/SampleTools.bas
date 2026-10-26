@@ -7,10 +7,16 @@ Option Explicit
 ' ============================================================
 
 Public Sub SampleDesign_CreateTemplate()
+    On Error GoTo Failed
     Dim wb As Workbook
     Set wb = ActiveWorkbook
     If wb Is Nothing Then
         MsgBox "표본설계 시트를 만들 통합문서를 찾지 못했습니다.", vbExclamation, "표본설계"
+        Exit Sub
+    End If
+
+    If wb.IsAddin Then
+        MsgBox "작업할 통합문서를 먼저 여세요.", vbExclamation, "표본설계"
         Exit Sub
     End If
 
@@ -27,38 +33,96 @@ Public Sub SampleDesign_CreateTemplate()
     Dim tableWs As Worksheet
     Dim resultWs As Worksheet
     Dim reviewWs As Worksheet
-    Set guideWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_가이드")
-    Set inputWs = SampleDesign_PrepareSheet(wb, "표본설계_입력", "표본설계 입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
-    If inputWs Is Nothing Then Exit Sub
-    If templateMode = "table" Then
-        Set tableWs = SampleDesign_PrepareSheet(wb, "표본설계_집계표입력", "표본설계 집계표입력 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
-        If tableWs Is Nothing Then Exit Sub
+    Dim exampleWs As Worksheet
+    Set guideWs = SampleDesign_FindSheet(wb, "표본설계_가이드")
+    If guideWs Is Nothing Then
+        Set guideWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_가이드")
+        SampleDesign_WriteGuideSheet guideWs, setup, templateMode
     End If
-    Set resultWs = SampleDesign_PrepareSheet(wb, "표본설계_할당결과", "표본설계 할당결과 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
-    If resultWs Is Nothing Then Exit Sub
-    Set reviewWs = SampleDesign_PrepareSheet(wb, "표본설계_검토", "표본설계 검토 시트가 이미 있습니다. 내용을 지우고 다시 만들까요?")
-    If reviewWs Is Nothing Then Exit Sub
-
-    SampleDesign_WriteGuideSheet guideWs, setup, templateMode
-    SampleDesign_WriteInputTemplate inputWs, setup
-    If templateMode = "table" Then SampleDesign_WriteTableInputTemplate tableWs
-    SampleDesign_WriteEmptyResult resultWs
-    SampleDesign_WriteEmptyReview reviewWs
-
+    Set inputWs = SampleDesign_FindInputSheet(wb)
+    If inputWs Is Nothing Then
+        Set inputWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_입력")
+        SampleDesign_WriteInputTemplate inputWs, setup, False
+    End If
     If templateMode = "table" Then
-        tableWs.Activate
-        tableWs.Range("A8").Select
-        MsgBox "집계표 입력용 시트와 계산용 리스트 입력 시트를 만들었습니다." & vbCrLf & _
-               "1) 표본설계_가이드 시트를 먼저 확인하세요." & vbCrLf & _
-               "2) 집계표를 표본설계_집계표입력 시트에 붙여넣은 뒤 [할당 계산]을 실행하세요.", _
-               vbInformation, "표본설계"
+        Set tableWs = SampleDesign_FindSheet(wb, "표본설계_집계표입력")
+        If tableWs Is Nothing Then
+            Set tableWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_집계표입력")
+            SampleDesign_WriteTableInputTemplate tableWs, False
+        End If
+    End If
+    Set resultWs = SampleDesign_FindSheet(wb, "표본설계_할당결과")
+    If resultWs Is Nothing Then
+        Set resultWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_할당결과")
+        SampleDesign_WriteEmptyResult resultWs
+    End If
+    Set reviewWs = SampleDesign_FindSheet(wb, "표본설계_검토")
+    If reviewWs Is Nothing Then
+        Set reviewWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_검토")
+        SampleDesign_WriteEmptyReview reviewWs
+    End If
+    Set exampleWs = SampleDesign_FindSheet(wb, "표본설계_예시")
+    If exampleWs Is Nothing Then
+        Set exampleWs = SampleDesign_PrepareOutputSheet(wb, "표본설계_예시")
+        SampleDesign_WriteExampleSheet exampleWs
+    End If
+
+    exampleWs.Activate
+    exampleWs.Range("A1").Select
+    If templateMode = "table" Then
+        exampleWs.Hyperlinks.Add Anchor:=exampleWs.Range("G9"), Address:="", _
+            SubAddress:="'표본설계_집계표입력'!A10", TextToDisplay:="2. 실제 집계표 붙여넣기"
     Else
-        inputWs.Activate
-        inputWs.Range("A1").Select
-        MsgBox "표본설계 입력/결과/검토 시트를 만들었습니다." & vbCrLf & _
-               "표본설계_가이드 시트의 체크리스트를 확인한 뒤 모집단 표를 채우고 [할당 계산]을 실행하세요.", _
-               vbInformation, "표본설계"
+        exampleWs.Hyperlinks.Add Anchor:=exampleWs.Range("G9"), Address:="", _
+            SubAddress:="'표본설계_입력'!A21", TextToDisplay:="2. 실제 자료 입력하기"
     End If
+    MsgBox "표본설계_예시에서 자료 형태와 작업 순서를 먼저 확인하세요." & vbCrLf & _
+           "연습: [기본 예시로 연습하기]를 누른 뒤 입력 시트의 [할당 계산]을 실행합니다." & vbCrLf & _
+           "실제 작업: [실제 자료 입력하기] 또는 [실제 집계표 붙여넣기] 링크로 이동합니다." & vbCrLf & _
+           "기존 입력값, 설정, 결과는 유지했습니다. 새 설정은 새로 만든 입력 시트에만 적용됩니다.", _
+           vbInformation, "표본설계 시작 안내"
+    Exit Sub
+Failed:
+    MsgBox "표본설계 시트를 준비하지 못했습니다: " & Err.Description & vbCrLf & _
+           "기존 입력 시트는 지우지 않습니다. 통합문서 보호 여부를 확인하세요.", vbExclamation, "표본설계"
+End Sub
+
+Public Sub SampleDesign_UseExample()
+    On Error GoTo Failed
+    Dim wb As Workbook, ws As Worksheet
+    Set wb = ActiveWorkbook
+    If wb Is Nothing Then Exit Sub
+    If wb.IsAddin Then Exit Sub
+    If SampleDesign_FindSheet(wb, "표본설계_예시") Is Nothing Then
+        MsgBox "먼저 [설계 시트 생성]으로 예시와 실제 입력 시트를 준비하세요.", vbInformation, "표본설계"
+        Exit Sub
+    End If
+    Set ws = SampleDesign_FindInputSheet(wb)
+    If Not ws Is Nothing Then
+        If MsgBox("입력 시트의 현재 내용과 설정을 기본 연습 자료로 바꿀까요?" & vbCrLf & _
+                  "실제 자료가 있다면 [아니요]를 선택하세요. 할당결과와 검토 시트는 바꾸지 않습니다.", _
+                  vbQuestion + vbYesNo + vbDefaultButton2, "예시로 연습하기") <> vbYes Then Exit Sub
+        If ws.ProtectContents Then Err.Raise 1004, , "입력 시트가 보호되어 있습니다."
+    Else
+        Set ws = SampleDesign_PrepareOutputSheet(wb, "표본설계_입력")
+    End If
+    SampleDesign_WritePracticeInput ws
+    ws.Activate
+    ws.Range("A21").Select
+    MsgBox "연습 자료를 채웠습니다. 입력 시트 위쪽 [할당 계산]을 누르세요." & vbCrLf & _
+           "단순 비례를 선택하면 100개 / 50개 / 30개, 합계 180개가 배정됩니다." & vbCrLf & _
+           "이후 할당결과와 검토 시트에서 합계와 경고를 확인하세요.", vbInformation, "표본설계 연습"
+    Exit Sub
+Failed:
+    MsgBox "연습 자료를 준비하지 못했습니다: " & Err.Description, vbExclamation, "표본설계"
+End Sub
+
+Private Sub SampleDesign_WritePracticeInput(ByVal ws As Worksheet)
+    Dim setup As Object
+    Set setup = SampleDesign_DefaultSetup()
+    setup("targetN") = 180
+    SampleDesign_WriteInputTemplate ws, setup, True
+    ws.Range("A2").Value = "연습자료입니다. 실제 분석 전 21행 이하 예시 행을 모두 지우고 실제 모집단수와 목표 표본수를 입력하세요."
 End Sub
 
 Public Sub SampleDesign_RunAllocation()
@@ -2096,11 +2160,12 @@ Private Function SampleDesign_SelectInputTemplateMode() As String
     End Select
 End Function
 
-Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet, ByVal setup As Object)
+Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet, ByVal setup As Object, Optional ByVal includeExamples As Boolean = True)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 입력"
     ws.Range("A1").Font.Bold = True
     ws.Range("A1").Font.Size = 14
+    ws.Range("A2:O2").Merge
 
     Dim headers As Variant
     Dim enabled As Variant
@@ -2163,9 +2228,11 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet, ByVal setup A
     ws.Cells(headerRow, optionStartCol + 5).Value = "비고"
 
     Dim exampleRow As Long
-    For exampleRow = 21 To 23
-        SampleDesign_WritePopulationExample ws, exampleRow, headers, enabled, optionStartCol
-    Next exampleRow
+    If includeExamples Then
+        For exampleRow = 21 To 23
+            SampleDesign_WritePopulationExample ws, exampleRow, headers, enabled, optionStartCol
+        Next exampleRow
+    End If
 
     With ws.Range(ws.Cells(12, 1), ws.Cells(15, optionStartCol + 1))
         .Borders.LineStyle = xlContinuous
@@ -2185,6 +2252,72 @@ Private Sub SampleDesign_WriteInputTemplate(ByVal ws As Worksheet, ByVal setup A
     SampleDesign_ApplyQuotaColumnFormatting ws, headers, enabled, 2, 12, 23
     SampleDesign_ApplyInputValidation ws
     ws.Columns.AutoFit
+    ws.Columns("A:O").ColumnWidth = 16
+    ws.Columns("A").ColumnWidth = 22
+    ws.Range("A2").Value = "예시는 표본설계_예시에서 확인하세요. 이 시트 21행부터 실제 쿼터 조합과 모집단수를 입력합니다."
+    ws.Range("A2:O2").WrapText = True
+    ws.Rows(2).RowHeight = 30
+    Dim helpRow As Long
+    ws.Range("D3:I8").UnMerge
+    For helpRow = 3 To 8
+        ws.Range(ws.Cells(helpRow, 4), ws.Cells(helpRow, 9)).Merge
+    Next helpRow
+    ws.Range("D3:I8").WrapText = True
+    ws.Rows("3:8").RowHeight = 28
+    SampleDesign_AddActionButton ws, "sdCalculate", "할당 계산", "SampleDesign_RunAllocation"
+    SampleDesign_AddNavigation ws
+End Sub
+
+Private Sub SampleDesign_AddActionButton(ByVal ws As Worksheet, ByVal buttonName As String, _
+                                       ByVal captionText As String, ByVal macroName As String)
+    Dim button As Shape, area As Range
+    On Error Resume Next
+    ws.Shapes(buttonName).Delete
+    On Error GoTo 0
+    Set area = ws.Range("D9:F10")
+    Set button = ws.Shapes.AddFormControl(xlButtonControl, area.Left, area.Top, area.Width, area.Height)
+    button.Name = buttonName
+    button.TextFrame.Characters.Text = captionText
+    button.OnAction = "'" & Replace(ThisWorkbook.Name, "'", "''") & "'!" & macroName
+End Sub
+
+Private Sub SampleDesign_AddNavigation(ByVal ws As Worksheet)
+    ws.Range("G9:I10").Merge
+    ws.Range("A9:C10").Merge
+    ws.Range("A9:I10").WrapText = True
+    ws.Rows("9:10").RowHeight = 24
+    ws.Hyperlinks.Add Anchor:=ws.Range("G9"), Address:="", _
+        SubAddress:="'표본설계_예시'!A1", TextToDisplay:="입력 예시와 작업 순서 보기"
+    ws.Hyperlinks.Add Anchor:=ws.Range("A9"), Address:="", _
+        SubAddress:="'표본설계_가이드'!A1", TextToDisplay:="상세 사용 가이드 보기"
+End Sub
+
+Private Sub SampleDesign_WriteExampleSheet(ByVal ws As Worksheet)
+    SampleDesign_WritePracticeInput ws
+    ws.Range("A1").Value = "표본설계 시작하기 - 예시로 자료 형태 익히기"
+    ws.Range("A2").Value = "연습용 가상 자료입니다. 실제 모집단이 아니며 이 시트는 할당 계산에 직접 사용되지 않습니다."
+    ws.Range("A2:O2").Interior.Color = RGB(255, 242, 204)
+    ws.Range("D3").Value = "1. 아래 20~23행에서 자료 모양을 확인하세요. 한 행은 산업+대분류+지역이 같은 한 쿼터 조합입니다."
+    ws.Range("D4").Value = "모집단수는 그 조합에 해당하는 전체 업체/사람 수입니다. 개인별 명부를 그대로 붙여넣지 마세요."
+    ws.Range("D5").Value = "2. 연습하려면 아래 [기본 예시로 연습하기]를 누릅니다. 입력 시트에 연습자료가 채워집니다."
+    ws.Range("D6").Value = "3. 입력 시트의 [할당 계산]에서 단순 비례를 선택하면 100 / 50 / 30, 합계 180개가 나옵니다."
+    ws.Range("D7").Value = "4. 실제 작업은 아래 이동 링크로 시작하세요. 19행 사용여부와 B4 목표 표본수도 확인합니다."
+    ws.Range("D8").Value = "5. 결과 시트에서 최종할당 합계를, 검토 시트에서 목표 차이와 경고를 확인하세요."
+    ws.Shapes("sdCalculate").Delete
+    SampleDesign_AddActionButton ws, "sdPractice", "1. 기본 예시로 연습하기", "SampleDesign_UseExample"
+    ws.Hyperlinks.Add Anchor:=ws.Range("G9"), Address:="", _
+        SubAddress:="'표본설계_입력'!A21", TextToDisplay:="2. 실제 자료 입력하기"
+    ws.Range("A25:O25").Merge
+    ws.Range("A25").Value = "실제 자료로 바꾸는 방법"
+    ws.Range("A25").Font.Bold = True
+    ws.Range("A26:O27").Merge
+    ws.Range("A26").Value = "리스트형: 입력 시트의 20행 헤더는 남기고 21행부터 쿼터ID, 사용할 분류값, 모집단수를 붙여넣습니다. 연습했다면 예시 3행을 모두 삭제한 후 실제 자료로 채우세요. 모집단수는 필수이고 1 이상이어야 합니다."
+    ws.Range("A28:O29").Merge
+    ws.Range("A28").Value = "목표: 전체 목표는 B4에 입력합니다. 산업별·지역별로 목표가 다르면 13~17행 목표표본 그룹표에 조건과 목표를 적습니다. 전체 목표만 사용한다면 그룹별 목표표본수는 비워두세요. 사용 쿼터 변수명은 20행과 그룹표 12행을 동일하게 유지합니다."
+    ws.Range("A30:O31").Merge
+    ws.Range("A30").Value = "집계표형: [설계 시트 생성]에서 집계표형을 선택한 뒤 집계표입력 시트 10행부터 원래 집계표를 붙여넣고 [할당 계산]을 실행합니다. 자동 변환은 리스트 입력 시트에 모집단 데이터가 없을 때만 수행합니다."
+    ws.Range("A26:O31").WrapText = True
+    ws.Rows("26:31").RowHeight = 24
 End Sub
 
 Private Sub SampleDesign_WriteTargetGroupExample(ByVal ws As Worksheet, ByVal rowIndex As Long, ByVal headers As Variant, _
@@ -2268,7 +2401,7 @@ Private Sub SampleDesign_ApplyInputValidation(ByVal ws As Worksheet)
     On Error GoTo 0
 End Sub
 
-Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet)
+Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet, Optional ByVal includeExample As Boolean = True)
     ws.Cells.Clear
     ws.Range("A1").Value = "표본설계 집계표입력"
     ws.Range("A1").Font.Bold = True
@@ -2278,11 +2411,14 @@ Private Sub SampleDesign_WriteTableInputTemplate(ByVal ws As Worksheet)
     ws.Range("A5").Value = "2. [구성표 리스트화] 버튼으로 탐지 결과를 미리 확인할 수 있습니다."
     ws.Range("A6").Value = "3. [할당 계산] 실행 시 표본설계_입력 시트의 모집단 표로 자동 변환을 시도합니다."
     ws.Range("A7").Value = "4. 변환 후 표본설계_입력 시트에서 쿼터명, 목표표본 그룹표, 모집단수를 검토하세요."
-    ws.Range("A8").Value = "예시"
-    SampleDesign_WriteArray ws, 10, 1, Array("구분", "10인 미만", "10~50인 미만", "50인 이상", "합계")
-    SampleDesign_WriteArray ws, 11, 1, Array("패키지SW", 42081, 4213, 82, 46376)
-    SampleDesign_WriteArray ws, 12, 1, Array("IT서비스", 20775, 1826, 58, 22659)
-    SampleDesign_WriteArray ws, 13, 1, Array("인터넷SW", 7509, 474, 26, 8009)
+    ws.Range("A8").Value = "10행부터 실제 집계표를 붙여넣으세요. 가상 예시 숫자는 채워져 있지 않습니다."
+    If includeExample Then
+        ws.Range("A8").Value = "예시"
+        SampleDesign_WriteArray ws, 10, 1, Array("구분", "10인 미만", "10~50인 미만", "50인 이상", "합계")
+        SampleDesign_WriteArray ws, 11, 1, Array("패키지SW", 42081, 4213, 82, 46376)
+        SampleDesign_WriteArray ws, 12, 1, Array("IT서비스", 20775, 1826, 58, 22659)
+        SampleDesign_WriteArray ws, 13, 1, Array("인터넷SW", 7509, 474, 26, 8009)
+    End If
     With ws.Range("A10:E13")
         .Borders.LineStyle = xlContinuous
         .Columns.AutoFit

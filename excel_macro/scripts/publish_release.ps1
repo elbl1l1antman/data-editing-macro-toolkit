@@ -422,7 +422,7 @@ function Add-SampleDesignSetupUserForm {
 
     $script:publishStage = "sample setup form: title"
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
-    $lblTitle.Caption = "표본설계 시트를 만들기 전에 기본 목표와 사용할 쿼터 변수를 먼저 지정합니다."
+    $lblTitle.Caption = "목표와 사용할 분류를 정하세요. 시트 생성 후 예시 자료를 보며 연습하거나 실제 자료 입력으로 이어갈 수 있습니다."
     $lblTitle.Left = 12
     $lblTitle.Top = 10
     $lblTitle.Width = 600
@@ -3975,7 +3975,7 @@ function Add-RibbonCustomUi {
         <group id="grpSampleDesignTools" label="표본설계">
           <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="자동 감지 또는 범위 직접 지정을 선택하고, 미리보기 창에서 행축/가로축/값 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
-          <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="표본설계 입력 시트 생성" supertip="리스트형 또는 집계표형 입력을 선택하고 동적 쿼터, 목표표본 그룹표, 배분 방식을 입력할 표본설계 시트를 생성합니다." />
+          <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="예시로 시작하는 표본설계" supertip="예시 시트에서 자료 형태를 확인하고 연습 또는 실제 자료 입력을 선택합니다. 기존 입력과 결과는 유지하며 새 입력 시트에는 예시 숫자를 넣지 않습니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
           <button id="btnSampleDesignBandColumn" label="구간 만들기" imageMso="GroupInsert" onAction="Ribbon_SampleDesignCreateBandColumn" screentip="숫자값을 표본설계용 구간 변수로 변환" supertip="매출액, 종사자수, 인구수 같은 숫자 열을 선택하고 UserForm에서 종사자/매출액 예시 또는 직접 입력 기준을 지정하면 오른쪽에 IFS 구간 수식 열을 생성합니다." />
           <button id="btnSampleExtractRun" label="표본 추출" size="large" imageMso="DataFormExcel" onAction="Ribbon_SampleExtractRun" screentip="층화 계통 표본추출" supertip="모집단 범위와 층화 기준을 단계별로 선택해 원표본과 대체표본을 중복 없이 추출합니다." />
