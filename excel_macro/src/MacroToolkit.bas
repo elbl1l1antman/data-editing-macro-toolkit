@@ -65,7 +65,8 @@ Private mToolkitLastProgressRefresh As Double
 ' ============================================================
 Public Sub Toolkit_About()
     MsgBox "데이터 편집 매크로 툴킷" & vbCrLf & _
-           "버전: " & TOOLKIT_VERSION & vbCrLf & vbCrLf & _
+           "버전: " & TOOLKIT_VERSION & vbCrLf & _
+           "문의: elbr1ll1antant@gmail.com" & vbCrLf & vbCrLf & _
            "주요 기능:" & vbCrLf & _
            "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
