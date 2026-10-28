@@ -2702,6 +2702,22 @@ function Add-CompanyNameOptionsUserForm {
         $chk.Value = [bool]$item[4]
     }
 
+    $preserve = $designer.Controls.Add("Forms.CheckBox.1", "chkPreserveEstablishment", $true)
+    $preserve.Caption = "사업체명 보존 정리 (다른 옵션 무시)"
+    $preserve.Left = 12
+    $preserve.Top = 224
+    $preserve.Width = 230
+    $preserve.Height = 28
+    $preserve.WordWrap = $true
+    $preserve.Value = $false
+    $preserveHint = $designer.Controls.Add("Forms.Label.1", "lblPreserveHint", $true)
+    $preserveHint.Caption = "지점명, 영문 약어, &를 보존합니다. 결과를 원본과 비교해 확인하세요."
+    $preserveHint.Left = 12
+    $preserveHint.Top = 257
+    $preserveHint.Width = 225
+    $preserveHint.Height = 42
+    $preserveHint.WordWrap = $true
+
     $lblOrder = $designer.Controls.Add("Forms.Label.1", "lblOrder", $true)
     $lblOrder.Caption = "정리 순서"
     $lblOrder.Left = 12
@@ -2828,6 +2844,10 @@ End Property
 
 Public Property Get RemoveBilingualDuplicates() As Boolean
     RemoveBilingualDuplicates = CBool(chkRemoveBilingualDuplicates.Value)
+End Property
+
+Public Property Get PreserveEstablishment() As Boolean
+    PreserveEstablishment = CBool(chkPreserveEstablishment.Value)
 End Property
 
 Public Property Get OperationOrder() As String

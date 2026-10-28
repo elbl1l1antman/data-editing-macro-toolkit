@@ -46,6 +46,14 @@ Public Function CheckPackagedCompanyRules(ByVal workbookName As String) As Strin
         actual = Application.Run(prefix & "CompanyName_CleanOne", CStr(examples(i)), options)
         If actual <> CStr(expected(i)) Then Err.Raise 513, , CStr(examples(i)) & ": " & actual
     Next i
+    Set options = Application.Run(prefix & "CompanyName_DefaultOptions")
+    options("preserveEstablishment") = True
+    examples = Array("㈜엘지유플러스 대천국사", "알라딘중고서점(청라점)", "글로벌SMT", "A＆B", "PRINC", "(주식회사) 삼성전자", "ABC (Inc.)")
+    expected = Array("엘지유플러스대천국사", "알라딘중고서점청라점", "글로벌SMT", "A&B", "PRINC", "삼성전자", "ABC")
+    For i = LBound(examples) To UBound(examples)
+        actual = Application.Run(prefix & "CompanyName_CleanOne", CStr(examples(i)), options)
+        If actual <> CStr(expected(i)) Then Err.Raise 513, , "Establishment: " & CStr(examples(i)) & ": " & actual
+    Next i
     CheckPackagedCompanyRules = "PASS"
     Exit Function
 Failed:

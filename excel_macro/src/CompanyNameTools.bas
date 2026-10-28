@@ -1,6 +1,12 @@
 Attribute VB_Name = "CompanyNameTools"
 Option Explicit
 
+#If VBA7 Then
+Private Declare PtrSafe Function CompanyName_NormalizeString Lib "Normaliz.dll" Alias "NormalizeString" (ByVal form As Long, ByVal source As LongPtr, ByVal sourceLength As Long, ByVal destination As LongPtr, ByVal destinationLength As Long) As Long
+#Else
+Private Declare Function CompanyName_NormalizeString Lib "Normaliz.dll" Alias "NormalizeString" (ByVal form As Long, ByVal source As Long, ByVal sourceLength As Long, ByVal destination As Long, ByVal destinationLength As Long) As Long
+#End If
+
 Private Const COMPANY_NAME_CHUNK_ROWS As Long = 500
 
 
@@ -58,6 +64,7 @@ Private Function CompanyName_GetOptionsFromUser() As Object
     options("pronounceEnglishWords") = CBool(form.PronounceEnglishWords)
     options("spellAlphabetKorean") = CBool(form.SpellAlphabetKorean)
     options("removeBilingualDuplicates") = CBool(form.RemoveBilingualDuplicates)
+    options("preserveEstablishment") = CBool(form.PreserveEstablishment)
     options("operationOrder") = CStr(form.OperationOrder)
 
     Unload form
@@ -89,6 +96,7 @@ Public Function CompanyName_DefaultOptions() As Object
     options("pronounceEnglishWords") = False
     options("spellAlphabetKorean") = True
     options("removeBilingualDuplicates") = True
+    options("preserveEstablishment") = False
     options("operationOrder") = CompanyName_DefaultOperationOrder()
     Set CompanyName_DefaultOptions = options
 End Function
@@ -335,6 +343,12 @@ ErrHandler:
 End Sub
 
 Public Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As Object) As String
+    If options.Exists("preserveEstablishment") Then
+        If CBool(options("preserveEstablishment")) Then
+            CompanyName_CleanOne = CompanyName_NormalizeEstablishment(valueIn)
+            Exit Function
+        End If
+    End If
     Dim textValue As String
     textValue = CStr(valueIn)
 
@@ -353,6 +367,52 @@ Public Function CompanyName_CleanOne(ByVal valueIn As String, ByVal options As O
     Next i
 
     CompanyName_CleanOne = textValue
+End Function
+
+Private Function CompanyName_NormalizeNFKC(ByVal textValue As String) As String
+    If Len(textValue) = 0 Then Exit Function
+    Dim required As Long, written As Long, result As String
+    required = CompanyName_NormalizeString(5, StrPtr(textValue), Len(textValue), 0, 0)
+    If required <= 0 Then Err.Raise 5, "CompanyName_NormalizeNFKC", "유니코드 정규화에 실패했습니다."
+    result = Space$(required)
+    written = CompanyName_NormalizeString(5, StrPtr(textValue), Len(textValue), StrPtr(result), required)
+    If written <= 0 Then Err.Raise 5, "CompanyName_NormalizeNFKC", "유니코드 정규화에 실패했습니다."
+    CompanyName_NormalizeNFKC = Left$(result, written)
+End Function
+
+Private Function CompanyName_NormalizeEstablishment(ByVal textValue As String) As String
+    Dim result As String, candidate As String, re As Object
+    result = CompanyName_NormalizeNFKC(textValue)
+    Set re = CompanyName_GetRegex("establishmentLeadingCode", "^\s*\(\s*[0-9]+\s*\)\s*", False, False)
+    candidate = re.Replace(result, "")
+    If re.Test(result) And Len(Trim$(candidate)) = 0 Then
+        CompanyName_NormalizeEstablishment = textValue
+        Exit Function
+    End If
+    result = candidate
+    Set re = CompanyName_GetRegex("establishmentCorpMarker", _
+        "\(\s*(주식회사|유한책임회사|유한회사|합자회사|합명회사|재단법인|사단법인|학교법인|의료법인|사회복지법인|농업회사법인|주)\s*\)|(^|\s)주\s*\)", True, False)
+    result = re.Replace(result, "")
+    Set re = CompanyName_GetRegex("establishmentOpenCorpMarker", "^\s*\(\s*주\s+(?=\S)", False, False)
+    result = re.Replace(result, "")
+    result = CompanyName_RemoveLegalMarkerAtEdges(result, "주식회사")
+    result = CompanyName_RemoveKoreanLegalEntityMarkers(result)
+    Set re = CompanyName_GetRegex("establishmentForeignParenthesis", _
+        "\(\s*(co\.?\s*,?\s*ltd\.?|company\s+limited|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|llc|l\.l\.c\.?)\s*\)", True, True)
+    result = re.Replace(result, "")
+    Set re = CompanyName_GetRegex("establishmentForeignSuffix", _
+        "[\s,;]+(co\.?\s*,?\s*ltd\.?|company\s+limited|ltd\.?|limited|inc\.?|incorporated|corp\.?|corporation|llc|l\.l\.c\.?)\s*[.,;]*$", False, True)
+    result = re.Replace(result, "")
+    Set re = CompanyName_GetRegex("establishmentSeparators", "[\s\u00A0\(\)\[\]{}.,;:'""!?_\-]+", True, False)
+    result = re.Replace(result, "")
+    Dim i As Long, ch As String, code As Long
+    For i = 1 To Len(result)
+        ch = Mid$(result, i, 1)
+        code = AscW(ch)
+        If code >= 97 And code <= 122 Then Mid$(result, i, 1) = ChrW$(code - 32)
+    Next i
+    If Len(Trim$(textValue)) > 0 And Len(result) = 0 Then result = textValue
+    CompanyName_NormalizeEstablishment = result
 End Function
 
 Private Function CompanyName_ApplyOperation(ByVal textValue As String, ByVal operationName As String, ByVal options As Object) As String

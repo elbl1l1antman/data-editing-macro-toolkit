@@ -38,6 +38,8 @@ function Get-VbaBlock {
 
 $procedureNames = @(
     "CompanyName_DefaultOptions",
+    "CompanyName_NormalizeEstablishment",
+    "CompanyName_NormalizeNFKC",
     "CompanyName_CleanChunk",
     "CompanyName_ReadRangeMatrix",
     "CompanyName_IsFormulaValue",
@@ -124,7 +126,9 @@ $procedureNames = @(
     "CompanyName_AlphabetKorean"
 )
 
-$moduleCode = "Option Explicit`r`n" + (($procedureNames | ForEach-Object {
+$decl = [regex]::Match($source, '(?ms)^#If VBA7 Then\r?\nPrivate Declare PtrSafe Function CompanyName_NormalizeString.*?^#End If').Value
+if (-not $decl) { throw 'Unicode normalization declaration missing.' }
+$moduleCode = "Option Explicit`r`n" + $decl + "`r`n" + (($procedureNames | ForEach-Object {
     Get-VbaBlock -SourceText $source -ProcedureName $_
 }) -join "`r`n`r`n")
 
@@ -132,6 +136,39 @@ $wrapperCode = @'
 Public Function CompanyNameRulesPassed() As String
     Dim resultText As String
     Dim options As Object
+    Set options = CompanyName_DefaultOptions()
+
+    options("preserveEstablishment") = True
+    resultText = CheckCase(resultText, "code and corporate marker", CompanyName_CleanOne("(1031) (주)엘지유플러스 대천국사", options), "엘지유플러스대천국사")
+    resultText = CheckCase(resultText, "branch preserved in Korean parentheses", CompanyName_CleanOne("알라딘중고서점(청라점)", options), "알라딘중고서점청라점")
+    resultText = CheckCase(resultText, "SMT abbreviation preserved", CompanyName_CleanOne("글로벌SMT", options), "글로벌SMT")
+    resultText = CheckCase(resultText, "IDT abbreviation preserved", CompanyName_CleanOne("아시아나IDT", options), "아시아나IDT")
+    resultText = CheckCase(resultText, "unverified English retained", CompanyName_CleanOne("와이랩 (YLAB Corporation)", options), "와이랩YLABCORPORATION")
+    resultText = CheckCase(resultText, "ampersand preserved", CompanyName_CleanOne("A＆B", options), "A&B")
+    resultText = CheckCase(resultText, "fullwidth normalized", CompanyName_CleanOne("（주）ＬＧ 지점", options), "LG지점")
+    resultText = CheckCase(resultText, "compatibility corporate symbol normalized", CompanyName_CleanOne("㈜엘지유플러스 대천국사", options), "엘지유플러스대천국사")
+    resultText = CheckCase(resultText, "parenthesized corporate type", CompanyName_CleanOne("(주식회사) 삼성전자", options), "삼성전자")
+    resultText = CheckCase(resultText, "parenthesized foundation type", CompanyName_CleanOne("(재단법인) 문화재단", options), "문화재단")
+    resultText = CheckCase(resultText, "parenthesized foreign corporate type", CompanyName_CleanOne("ABC (Inc.)", options), "ABC")
+    resultText = CheckCase(resultText, "nfkc composed Hangul", CompanyName_CleanOne(ChrW(&H1100) & ChrW(&H1161), options), "가")
+    resultText = CheckCase(resultText, "separate company suffix", CompanyName_CleanOne("ABC Co., Ltd.", options), "ABC")
+    resultText = CheckCase(resultText, "ordinary word suffix preserved", CompanyName_CleanOne("PRINC", options), "PRINC")
+    resultText = CheckCase(resultText, "corporate word inside name preserved", CompanyName_CleanOne("우리주식회사연구소", options), "우리주식회사연구소")
+    resultText = CheckCase(resultText, "unverified English tag preserved", CompanyName_CleanOne("(DJ)스마트마케터", options), "DJ스마트마케터")
+    resultText = CheckCase(resultText, "partial marker at start", CompanyName_CleanOne("(주 삼성", options), "삼성")
+    resultText = CheckCase(resultText, "parenthetical name not corporate marker", CompanyName_CleanOne("(주택)상사", options), "주택상사")
+    resultText = CheckCase(resultText, "code without company preserved", CompanyName_CleanOne("(1031)", options), "(1031)")
+    Dim preserveSheet As Worksheet, changed As Long, skipped As Long, prevented As Long
+    Set preserveSheet = ActiveWorkbook.Worksheets.Add
+    preserveSheet.Range("A1").Value2 = "(주)엘지유플러스 대천국사"
+    preserveSheet.Range("A2").Value2 = "알라딘중고서점(청라점)"
+    preserveSheet.Range("A3").Formula = "=1+1"
+    preserveSheet.Range("B1:B3").Formula = preserveSheet.Range("A1:A3").Formula
+    CompanyName_CleanChunk preserveSheet.Range("A1:A3"), preserveSheet.Range("B1:B3"), options, changed, skipped, prevented
+    resultText = CheckCase(resultText, "profile output", CStr(preserveSheet.Range("B1").Value2), "엘지유플러스대천국사")
+    resultText = CheckCase(resultText, "profile source preserved", CStr(preserveSheet.Range("A1").Value2), "(주)엘지유플러스 대천국사")
+    resultText = CheckCase(resultText, "profile formula preserved", CStr(preserveSheet.Range("B3").Formula), "=1+1")
+    resultText = CheckCase(resultText, "profile skipped formula count", CStr(skipped), "1")
     Set options = CompanyName_DefaultOptions()
 
     resultText = CheckCase(resultText, "number inside Hangul company name keeps Hangul", CompanyName_CleanOne("A4" & KoSystem(), options), KoA() & "4" & KoSystem())
