@@ -2,7 +2,7 @@
 
 ## Workspace
 
-- Use `D:\OneDrive\Program\excel_macro` as the project path. Do not publish to the former C-drive OneDrive path.
+- Use `D:\OneDrive\Program\data-editing-macro-toolkit` as the project path. Do not publish to the former C-drive OneDrive path.
 - Preserve unrelated user changes. Stage only files that belong to the current task.
 
 ## Korean Encoding
