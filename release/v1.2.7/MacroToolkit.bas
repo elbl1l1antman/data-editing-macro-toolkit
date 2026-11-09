@@ -172,16 +172,26 @@ Public Sub Toolkit_ResetAllSheetsToTop()
 
     Dim ws As Worksheet
     Dim resetCount As Long
+    Dim previousScreenUpdating As Boolean
 
+    previousScreenUpdating = Application.ScreenUpdating
     Application.ScreenUpdating = False
     For Each ws In wb.Worksheets
-        ws.Activate
-        ws.Range("A1").Select
-        If Not ActiveWindow Is Nothing Then
-            ActiveWindow.ScrollRow = 1
-            ActiveWindow.ScrollColumn = 1
+        If ws.Visible = xlSheetVisible Then
+            ws.Activate
+            On Error Resume Next
+            Err.Clear
+            ws.Range("A1").Select
+            If Err.Number = 0 Then
+                If Not ActiveWindow Is Nothing Then
+                    ActiveWindow.ScrollRow = 1
+                    ActiveWindow.ScrollColumn = 1
+                End If
+                resetCount = resetCount + 1
+            End If
+            Err.Clear
+            On Error GoTo ErrHandler
         End If
-        resetCount = resetCount + 1
     Next ws
 
     If Not originalSheet Is Nothing Then
@@ -193,12 +203,12 @@ Public Sub Toolkit_ResetAllSheetsToTop()
         End If
     End If
 
-    Application.ScreenUpdating = True
+    Application.ScreenUpdating = previousScreenUpdating
     MsgBox resetCount & "개 시트의 화면 위치를 최상단으로 정렬했습니다.", vbInformation, "모든 시트 최상단"
     Exit Sub
 
 ErrHandler:
-    Application.ScreenUpdating = True
+    Application.ScreenUpdating = previousScreenUpdating
     MsgBox "모든 시트 최상단 정렬 중 오류가 발생했습니다." & vbCrLf & Err.Description, vbExclamation, "모든 시트 최상단"
 End Sub
 

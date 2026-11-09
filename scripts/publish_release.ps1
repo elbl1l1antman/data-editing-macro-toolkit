@@ -3021,7 +3021,7 @@ function Add-BizStatusFieldsOptionsUserForm {
     $designer = $form.Designer
     $form.Properties.Item("Caption").Value = "사업자등록 상태조회 반환값 선택"
     $form.Properties.Item("Width").Value = 560
-    $form.Properties.Item("Height").Value = 380
+    $form.Properties.Item("Height").Value = 420
 
     $lblTitle = $designer.Controls.Add("Forms.Label.1", "lblTitle", $true)
     $lblTitle.Caption = "조회 결과로 추가할 열을 선택하세요."
@@ -4002,8 +4002,10 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>
+        <group id="grpSheetView" label="시트 위치" imageMso="GoTo">
+          <button id="btnSelectA1AllSheets" label="지금 A1 정렬" size="large" imageMso="GoTo" onAction="Ribbon_SelectA1OnAllSheets" screentip="지금 모든 시트 A1 정렬" supertip="현재 통합문서의 시트 위치를 A1과 최상단으로 맞춥니다." />
+        </group>
         <group id="grpToolkitInfo" label="정보" imageMso="Info">
-          <button id="btnSelectA1AllSheets" label="모든 시트 A1 선택" imageMso="GoTo" onAction="Ribbon_SelectA1OnAllSheets" screentip="모든 시트 A1 선택" supertip="통합문서의 모든 워크시트를 순회하며 선택 셀을 A1로 변경하고 화면 위치도 최상단으로 맞춥니다." />
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
         </group>
       </tab>
