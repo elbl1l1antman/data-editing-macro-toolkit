@@ -3934,34 +3934,34 @@ function Add-RibbonCustomUi {
   <ribbon>
     <tabs>
       <tab id="tabDataEditingToolkit" label="데이터 툴킷" insertAfterMso="TabView">
-        <group id="grpToolkitLaunchers" label="통합 실행">
-          <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업/사업체명 정리를 하나의 선택 창에서 실행합니다." />
+        <group id="grpToolkitLaunchers" label="통합 실행" imageMso="DataFormExcel">
+          <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormat" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업/사업체명 정리를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리/통합, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSampleDesign" label="표본설계" size="large" imageMso="PivotTableInsert" onAction="Ribbon_LaunchSampleDesign" screentip="표본설계 통합 실행" supertip="표본설계 시트 생성, 구성표 리스트화, 리스트→집계표, 복합 목표그룹 할당 계산, 진행률 관리표 생성을 하나의 선택 창에서 실행합니다." />
         </group>
-        <group id="grpNumberTools" label="값 정리">
-          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormatGeneral" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="선택 범위 숫자 변환" supertip="선택한 범위에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
+        <group id="grpNumberTools" label="값 정리" imageMso="NumberFormat">
+          <button id="btnConvertRange" label="숫자 변환" size="large" imageMso="NumberFormat" onAction="Ribbon_ConvertTextNumbersInColumns" screentip="선택 범위 숫자 변환" supertip="선택한 범위에서 텍스트 형식 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnConvertSheet" label="시트 숫자 변환" imageMso="TableSelect" onAction="Ribbon_ConvertTextNumbersInUsedRange" screentip="시트 전체 숫자 변환" supertip="현재 시트에서 실제 데이터가 있는 마지막 행과 열까지만 잡아 텍스트 숫자를 실제 숫자값으로 변환합니다." />
           <button id="btnPhoneRange" label="전화번호 정리" size="large" imageMso="ContactPictureMenu" onAction="Ribbon_NormalizePhonesInColumns" screentip="전화번호 하이픈 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 한국 전화번호를 하이픈 포함 표준 형식으로 정리합니다." />
           <button id="btnPhoneDashless" label="전화번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemovePhoneDashes" screentip="전화번호 숫자만 남기기" supertip="선택한 전화번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자만 남깁니다." />
           <button id="btnCompanyNameClean" label="기업/사업체명 정리" size="large" imageMso="TextBoxInsert" onAction="Ribbon_CompanyNameClean" screentip="기업/사업체명 정리" supertip="선택 범위 오른쪽에 복사본 열을 만들고 공백, 회사형태 표기, 괄호·특수문자, 영어 단어 한글 발음, 알파벳 한글 읽기 등 선택한 규칙과 정리 순서로 기업체명/사업체명을 정리합니다." />
-          <button id="btnCharacterCheckFormula" label="문자 검진 함수" imageMso="InsertFunction" onAction="Ribbon_DataCheckCreateCharacterFormula" screentip="문자 구성 검진 함수 생성" supertip="데이터 범위를 선택하면 오른쪽에 알파벳 포함, 특수기호 포함, 정상 여부를 판정하는 Excel 수식을 생성합니다." />
+          <button id="btnCharacterCheckFormula" label="문자 검진 함수" imageMso="FunctionWizard" onAction="Ribbon_DataCheckCreateCharacterFormula" screentip="문자 구성 검진 함수 생성" supertip="데이터 범위를 선택하면 오른쪽에 알파벳 포함, 특수기호 포함, 정상 여부를 판정하는 Excel 수식을 생성합니다." />
           <button id="btnClearResidualBlanks" label="수식 빈값 정리" imageMso="Clear" onAction="Ribbon_DataCleanupClearResidualBlanks" screentip="값 붙여넣기 후 남은 빈 문자열 정리" supertip="XLOOKUP, VLOOKUP 등의 결과를 값으로 붙여넣은 뒤 남은 빈 문자열을 실제 빈셀로 변경합니다. 수식, 숫자 0, 공백 문자는 유지합니다." />
           <button id="btnClearErrorsAndZeros" label="오류값/0 지우기" imageMso="Clear" onAction="Ribbon_DataCleanupClearErrorsAndZeros" screentip="Excel 오류값과 숫자 0 일괄 정리" supertip="선택 범위의 #N/A, #VALUE!, #REF!, #DIV/0! 등 Excel 오류값과 숫자 0이 있는 셀 내용을 지웁니다. 행과 열은 유지됩니다." />
           <button id="btnAddressConvert" label="주소 유형 판별" size="large" imageMso="AddressBook" onAction="Ribbon_AddressConvertOldToRoad" screentip="도로명/동 기준 주소 판별" supertip="선택한 주소 범위 오른쪽에 도로명주소인지 법정/행정동 기준 주소인지 판별 결과를 생성합니다." />
           <button id="btnAddressSplit" label="주소 체계 분리" imageMso="AddressBook" onAction="Ribbon_AddressSplitDongAndRoad" screentip="동 기준/도로명 주소 분리" supertip="주소 범위를 선택하면 원본 오른쪽에 동 기준 주소와 도로명주소 2개 열을 추가합니다. 변환표가 있으면 지번/도로명 양방향 매칭을 사용합니다." />
-          <button id="btnAddressCombine" label="주소 통합" imageMso="CellsMerge" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
+          <button id="btnAddressCombine" label="주소 통합" imageMso="MergeCells" onAction="Ribbon_AddressCombineDongAndRoad" screentip="분할 주소 통합" supertip="동 기준 주소 범위와 도로명주소 범위를 선택하고 우선순위를 지정해 오른쪽에 통합주소 열을 생성합니다." />
           <button id="btnAddressProvinceNotation" label="광역시도 표기" imageMso="AddressBook" onAction="Ribbon_AddressConvertProvinceNotation" screentip="17개 광역시도 축약형/정규형 변환" supertip="주소 첫 어절의 광역시도만 변환합니다. 축약형을 정규형으로 바꿀 때 최신 특별자치도 명칭 또는 기존 명칭을 선택할 수 있습니다." />
         </group>
-        <group id="grpBusinessNoTools" label="사업자등록">
+        <group id="grpBusinessNoTools" label="사업자등록" imageMso="FileProperties">
           <button id="btnBizApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_BizNoSetApiKey" screentip="사업자등록 API 인증키 설정" supertip="공공데이터포털 국세청 사업자등록정보 API 인증키를 저장하거나 변경합니다." />
           <button id="btnBizDashless" label="번호 숫자만" imageMso="ClearFormats" onAction="Ribbon_RemoveBizNoDashes" screentip="사업자등록번호 숫자만 남기기" supertip="선택한 사업자등록번호 범위 오른쪽에 복사본 열을 만들고 대시와 구분기호를 제거해 숫자 10자리 형태로 정리합니다." />
-          <button id="btnBizMerge" label="3열 병합" imageMso="CellsMerge" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 3열 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
+          <button id="btnBizMerge" label="3열 병합" imageMso="MergeCells" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 3열 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
-        <group id="grpNaverLocalTools" label="네이버 지역검색">
+        <group id="grpNaverLocalTools" label="네이버 지역검색" imageMso="FindDialog">
           <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
           <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동/법정동 기준 업체 리스트 생성" supertip="검색 기준을 행정동 또는 법정동으로 선택하고 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
           <button id="btnNaverVerifyAddress" label="주소 검증" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_NaverLocalVerifyExistingData" screentip="업체명/주소 검증" supertip="업체명 범위와 주소 범위를 선택하면 네이버 지역검색 결과, 유사도, 검증등급 열을 추가합니다." />
@@ -3970,18 +3970,18 @@ function Add-RibbonCustomUi {
           <button id="btnNaverDongMaster" label="행정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateDongMasterTemplate" screentip="행정동 마스터 양식 생성" supertip="현재 통합문서에 내장 행정동 마스터와 같은 양식의 행정동_마스터 시트를 생성합니다. 이 시트를 수정하면 신규 리스트 생성에 우선 사용됩니다." />
           <button id="btnNaverLegalDongMaster" label="법정동 양식" imageMso="TableInsert" onAction="Ribbon_NaverLocalCreateLegalDongMasterTemplate" screentip="법정동 마스터 양식 생성" supertip="현재 통합문서에 내장 법정동 마스터와 같은 양식의 법정동_마스터 시트를 생성합니다. 이 시트를 수정하면 법정동 기준 신규 리스트 생성에 우선 사용됩니다." />
         </group>
-        <group id="grpDatabaseTools" label="데이터 통합">
+        <group id="grpDatabaseTools" label="데이터 통합" imageMso="DataRefreshAll">
           <button id="btnDatabaseMergeSheets" label="시트 통합" size="large" imageMso="TableInsert" onAction="Ribbon_DatabaseMergeSheets" screentip="여러 시트 데이터 통합" supertip="통합할 시트를 선택하면 헤더와 데이터 범위를 자동 감지합니다. 가져올 열과 ID 방식을 확인한 뒤 매칭 결과를 검토하고 통합합니다." />
           <button id="btnDatabaseCreateMarkerRows" label="통합 표시행" imageMso="InsertRows" onAction="Ribbon_DatabaseCreateMergeMarkerRows" screentip="통합할 열 표시행 만들기" supertip="선택한 시트의 헤더 위에 표시행을 추가합니다. 통합할 열 위 셀에 x, 1 등 아무 값을 입력한 뒤 시트 통합에서 표시행 기준을 선택하세요." />
           <button id="btnDatabaseSplitMergedSheet" label="통합 시트 분리" imageMso="TableSelect" onAction="Ribbon_DatabaseSplitMergedSheet" screentip="통합 데이터 원본별 분리" supertip="통합 시트 1행의 관리코드를 기준으로 원본시트별 분리 시트를 다시 생성합니다." />
         </group>
-        <group id="grpSpssTableTools" label="SPSS 표 정리">
+        <group id="grpSpssTableTools" label="SPSS 표 정리" imageMso="CreateReport">
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
           <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표 목록을 드래그하거나 버튼으로 이동하고, 삭제할 표/배너를 선택해 새 집계표와 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
           <button id="btnSpssMetadata" label="표 메타 추출" imageMso="TablePropertiesDialog" onAction="Ribbon_SPSSExtractTableMetadata" screentip="SPSS 표 메타 추출" supertip="집계표의 표 제목, 행 위치, 배너 목록, 이동 링크를 새 시트로 추출합니다." />
         </group>
-        <group id="grpRosterQualityTools" label="명부 품질">
+        <group id="grpRosterQualityTools" label="명부 품질" imageMso="ReviewAcceptChange">
           <button id="btnRosterValidationSheet" label="검증 시트" size="large" imageMso="TableInsert" onAction="Ribbon_RosterValidationSheet" screentip="명부 검증용 표준 시트 생성" supertip="ID, 사업체명/기업체명/이름, 연락처1~3, 주소1~3, 이메일, 직무/직책/소속부서/기타정보 헤더가 있는 표준 입력 시트를 만들거나 기존 명부를 자동 인식해 구성합니다." />
           <button id="btnRosterQuality" label="품질 진단" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_RosterQualityReport" screentip="명부 품질 진단 리포트" supertip="선택한 명부에서 빈값, 전화번호, 주소 유형, 사업자번호 상태를 요약한 리포트 시트를 만듭니다." />
           <button id="btnRosterDuplicate" label="중복 탐지" size="large" imageMso="ReviewCompareTwoVersions" onAction="Ribbon_RosterDetectDuplicates" screentip="중복 업체 탐지" supertip="업체명, 주소, 전화번호, 사업자번호를 조합해 중복 의심 쌍과 점수를 새 시트에 생성합니다." />
@@ -3989,10 +3989,10 @@ function Add-RibbonCustomUi {
           <button id="btnAddressParts" label="행정구역 분해" imageMso="AddressBook" onAction="Ribbon_AddressSplitAdministrativeParts" screentip="주소 행정구역 분해" supertip="주소를 광역시도, 시군구, 읍면동, 상세주소 열로 분해합니다." />
           <button id="btnPhoneValidate" label="전화번호 검사" imageMso="ContactPictureMenu" onAction="Ribbon_PhoneValidateSelection" screentip="전화번호 유효성 검사" supertip="전화번호 범위 오른쪽에 번호 유형과 정상/확인 필요 결과를 생성합니다." />
         </group>
-        <group id="grpOutlierTools" label="이상치 탐지">
-          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingHighlightCellsRules" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="실행 전 2차 자료/전년도 자료 대체 여부를 확인하고, 필요하면 이상치 탐지 작업 시트를 만든 뒤 범위 검증, 기초통계량표, Q1/Q3 기준값 열, 원본 검토복사 열, 조건부 서식을 생성합니다." />
+        <group id="grpOutlierTools" label="이상치 탐지" imageMso="ConditionalFormattingNewRule">
+          <button id="btnOutlierRun" label="분석 열 선택" size="large" imageMso="ConditionalFormattingNewRule" onAction="Ribbon_OutlierDetectRun" screentip="이상치 확인 범위 선택" supertip="실행 전 2차 자료/전년도 자료 대체 여부를 확인하고, 필요하면 이상치 탐지 작업 시트를 만든 뒤 범위 검증, 기초통계량표, Q1/Q3 기준값 열, 원본 검토복사 열, 조건부 서식을 생성합니다." />
         </group>
-        <group id="grpSampleDesignTools" label="표본설계">
+        <group id="grpSampleDesignTools" label="표본설계" imageMso="PivotTableInsert">
           <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="자동 감지 또는 범위 직접 지정을 선택하고, 미리보기 창에서 행축/가로축/값 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="예시로 시작하는 표본설계" supertip="예시 시트에서 자료 형태를 확인하고 연습 또는 실제 자료 입력을 선택합니다. 기존 입력과 결과는 유지하며 새 입력 시트에는 예시 숫자를 넣지 않습니다." />
@@ -4002,8 +4002,8 @@ function Add-RibbonCustomUi {
           <button id="btnSampleDesignAllocate" label="할당 계산" size="large" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignRunAllocation" screentip="표본할당 계산" supertip="표본설계_입력 시트를 읽어 단순 비례, 제곱근 비례, 멱배분 등 선택한 방식으로 복합 목표그룹별 최종 표본할당표와 검토 시트를 생성합니다." />
           <button id="btnSampleDesignProgress" label="진행률 관리표" imageMso="ChartInsert" onAction="Ribbon_SampleDesignCreateProgressTracker" screentip="표본 진행률 관리표 생성" supertip="할당결과를 기반으로 회수, 부족, 초과, 달성률을 관리하는 표본설계_진행관리 시트를 생성합니다." />
         </group>
-        <group id="grpToolkitInfo" label="정보">
-          <button id="btnSelectA1AllSheets" label="모든 시트 A1 선택" imageMso="GoToTop" onAction="Ribbon_SelectA1OnAllSheets" screentip="모든 시트 A1 선택" supertip="통합문서의 모든 워크시트를 순회하며 선택 셀을 A1로 변경하고 화면 위치도 최상단으로 맞춥니다." />
+        <group id="grpToolkitInfo" label="정보" imageMso="Info">
+          <button id="btnSelectA1AllSheets" label="모든 시트 A1 선택" imageMso="GoTo" onAction="Ribbon_SelectA1OnAllSheets" screentip="모든 시트 A1 선택" supertip="통합문서의 모든 워크시트를 순회하며 선택 셀을 A1로 변경하고 화면 위치도 최상단으로 맞춥니다." />
           <button id="btnToolkitAbout" label="버전 정보" imageMso="Info" onAction="Ribbon_ToolkitAbout" screentip="툴킷 정보" supertip="현재 데이터 편집 매크로 툴킷 버전과 기능 요약을 표시합니다." />
         </group>
       </tab>
