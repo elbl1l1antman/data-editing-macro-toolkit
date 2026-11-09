@@ -155,6 +155,37 @@ function Clear-WorkbookFileStoredApiSecrets {
     }
 }
 
+function Add-ToolkitReleaseNotes {
+    param($Workbook, [string]$Path, [string]$ReleaseVersion)
+
+    $lines = Get-Content -LiteralPath $Path -Encoding UTF8
+    $notes = New-Object System.Collections.Generic.List[string]
+    $inSection = $false
+    $totalLength = 0
+    foreach ($line in $lines) {
+        if ($line -match '^##\s+주요 변경\s*$') { $inSection = $true; continue }
+        if ($inSection -and $line -match '^##\s+') { break }
+        if ($inSection -and $line -match '^\s*[-*]\s+(.+?)\s*$') {
+            $note = '- ' + $Matches[1].Replace('`', '')
+            if ($note.Length -gt 200) { $note = $note.Substring(0, 197) + '...' }
+            if ($notes.Count -ge 5 -or ($totalLength + $note.Length) -gt 600) { break }
+            $notes.Add($note)
+            $totalLength += $note.Length
+        }
+    }
+    if ($notes.Count -eq 0) { throw "No major changes found in release notes: $Path" }
+    $sheet = $null
+    foreach ($candidate in @($Workbook.Worksheets)) {
+        if ($candidate.Name -eq '_ToolkitReleaseNotes') { $sheet = $candidate; break }
+    }
+    if ($null -eq $sheet) { $sheet = $Workbook.Worksheets.Add(); $sheet.Name = '_ToolkitReleaseNotes' }
+    $sheet.Cells.Clear() | Out-Null
+    $sheet.Columns.Item(1).NumberFormat = '@'
+    $sheet.Cells.Item(1, 1).Value2 = $ReleaseVersion
+    for ($i = 0; $i -lt $notes.Count; $i++) { $sheet.Cells.Item($i + 2, 1).Value2 = $notes[$i] }
+    $sheet.Visible = 2
+}
+
 function Add-ToolkitButtonMenuUserForm {
     param($Workbook)
 
@@ -4189,6 +4220,8 @@ try {
         Add-AdminDongMasterWorksheet -Workbook $workbook -CsvPath $AdminDongMasterCsv
         $publishStage = "add legal dong master"
         Add-LegalDongMasterWorksheet -Workbook $workbook -CsvPath $LegalDongMasterCsv
+        $publishStage = "embed release notes"
+        Add-ToolkitReleaseNotes -Workbook $workbook -Path $PatchNotesSource -ReleaseVersion $Version
         $publishStage = "compile smoke test"
         $smokeMacro = "'{0}'!Toolkit_CompileSmokeTest" -f $workbook.Name.Replace("'", "''")
         $smokeResult = [string]$excel.Run($smokeMacro)

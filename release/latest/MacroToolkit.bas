@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.3"
+Public Const TOOLKIT_VERSION As String = "1.3.1"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Public Const VERSION_SHEET As String = "_MacroToolkit"
@@ -67,6 +67,7 @@ Public Sub Toolkit_About()
     MsgBox "데이터 편집 매크로 툴킷" & vbCrLf & _
            "버전: " & TOOLKIT_VERSION & vbCrLf & _
            "문의: elbr1ll1antant@gmail.com" & vbCrLf & vbCrLf & _
+           "최근 업데이트:" & vbCrLf & Toolkit_GetLatestUpdates() & vbCrLf & vbCrLf & _
            "주요 기능:" & vbCrLf & _
            "- 텍스트 형식 숫자를 실제 숫자로 변환" & vbCrLf & _
            "- 혼용된 한국 전화번호 형식을 표준 형식으로 정규화" & vbCrLf & _
@@ -74,9 +75,28 @@ Public Sub Toolkit_About()
            "- 사업자등록번호 병합 및 국세청 상태조회 API 연동" & vbCrLf & _
            "- 네이버 API 기반 업체 리스트 생성/주소 검증/공식몰 링크 검색" & vbCrLf & _
            "- 선택 범위 기반 Q1/Q3 이상치 확인 보조열 생성" & vbCrLf & _
-           "- 표본설계 시트 생성 및 표본할당 계산", _
+           "- 표본설계 시트 생성 및 표본할당 계산" & vbCrLf & _
+           "- DART 기업개황, 매출액 및 직원현황 조회", _
            vbInformation, "매크로 툴킷"
 End Sub
+
+Public Function Toolkit_GetLatestUpdates() As String
+    On Error GoTo Unavailable
+    Dim ws As Worksheet, i As Long, note As String, result As String
+    Set ws = ThisWorkbook.Worksheets("_ToolkitReleaseNotes")
+    If CStr(ws.Range("A1").Value2) <> TOOLKIT_VERSION Then GoTo Unavailable
+    For i = 2 To 7
+        note = Trim$(CStr(ws.Cells(i, 1).Value2))
+        If Len(note) = 0 Then Exit For
+        If Len(result) > 0 Then result = result & vbCrLf
+        result = result & note
+    Next i
+    If Len(result) = 0 Then GoTo Unavailable
+    Toolkit_GetLatestUpdates = result
+    Exit Function
+Unavailable:
+    Toolkit_GetLatestUpdates = "배포 패치노트를 확인해 주세요."
+End Function
 
 Public Function Toolkit_CompileSmokeTest() As String
     Toolkit_CompileSmokeTest = TOOLKIT_VERSION & "|forms=14"

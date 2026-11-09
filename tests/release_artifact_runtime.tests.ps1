@@ -72,6 +72,14 @@ End Function
             if ($workbook.VBProject.Protection -ne 1) {
                 throw "VBA project is not protected: $artifact"
             }
+            $notes = $workbook.Worksheets.Item('_ToolkitReleaseNotes')
+            if ($notes.Visible -ne 2 -or $notes.Range('A1').Value2 -ne $version -or -not $notes.Range('A2').Value2) {
+                throw "Embedded release notes are missing or outdated: $artifact"
+            }
+            $summary = [string]$excel.Run("'$($workbook.Name)'!Toolkit_GetLatestUpdates")
+            if (-not $summary.Contains([string]$notes.Range('A2').Value2)) {
+                throw "Version summary does not match embedded notes: $artifact"
+            }
             $companyResult = $excel.Run("'$($driver.Name)'!CheckPackagedCompanyRules", $workbook.Name)
             if ($companyResult -ne 'PASS') { throw "Packaged company rules failed for $artifact`: $companyResult" }
         }
