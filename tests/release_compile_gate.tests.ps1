@@ -18,6 +18,12 @@ Assert-Contains "final artifacts run smoke test" $publish '$verifySmokeResult = 
 Assert-Contains "publisher encoding guard" $publish "function Assert-NoBrokenKoreanText"
 Assert-Contains "publisher disables template events" $publish '$excel.EnableEvents = $false'
 Assert-Contains "publisher opens editable template without links" $publish '$excel.Workbooks.Open($DevWorkbook, 0, $false)'
+Assert-Contains "staging outside release" $publish 'Join-Path ([IO.Path]::GetTempPath())'
+$protectPos = $publish.IndexOf('& python $VbaProtector $artifact')
+$copyPos = $publish.IndexOf('Copy-Item -Path $tempReleaseAddin -Destination $LatestAddin')
+if ($protectPos -lt 0 -or $copyPos -lt 0 -or $protectPos -gt $copyPos) {
+    throw "Staged add-in must be protected before publication."
+}
 
 $smokeStart = $module.IndexOf("Public Function Toolkit_CompileSmokeTest() As String")
 $smokeEnd = $module.IndexOf("End Function", $smokeStart)

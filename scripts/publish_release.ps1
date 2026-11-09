@@ -3961,6 +3961,10 @@ function Add-RibbonCustomUi {
           <button id="btnBizMerge" label="3열 병합" imageMso="MergeCells" onAction="Ribbon_BizNoMergeThreeColumns" screentip="사업자등록번호 3열 병합" supertip="3개 열로 나뉜 사업자등록번호를 000-00-00000 형식의 새 열로 병합합니다." />
           <button id="btnBizStatus" label="상태조회" size="large" imageMso="DataRefreshAll" onAction="Ribbon_BizNoQueryStatus" screentip="사업자등록 상태조회" supertip="선택한 사업자등록번호 범위를 국세청 API로 조회하고 오른쪽에 결과 열을 추가합니다." />
         </group>
+        <group id="grpDartTools" label="DART 기업정보" imageMso="FileProperties">
+          <button id="btnDartKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_DartSetApiKey" screentip="OpenDART 인증키 설정" supertip="OpenDART 인증키를 현재 Windows 사용자 설정에 저장합니다." />
+          <button id="btnDartSearch" label="기업정보 조회" size="large" imageMso="FindDialog" onAction="Ribbon_DartSearchCompanies" screentip="DART 기업개황·매출·종사자 조회" supertip="기업명 또는 고유번호 범위와 사업연도를 선택해 기업개황, 별도 재무제표 매출, 직원현황을 새 시트에 조회합니다." />
+        </group>
         <group id="grpNaverLocalTools" label="네이버 지역검색" imageMso="FindDialog">
           <button id="btnNaverApiKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_NaverLocalSetApiCredentials" screentip="네이버 지역검색 API 인증키 설정" supertip="네이버 Developers의 Client ID와 Client Secret을 저장하거나 변경합니다." />
           <button id="btnNaverBuildList" label="신규 리스트" size="large" imageMso="AddressBook" onAction="Ribbon_NaverLocalBuildListByDong" screentip="행정동/법정동 기준 업체 리스트 생성" supertip="검색 기준을 행정동 또는 법정동으로 선택하고 업종을 입력해 네이버 지역검색 결과를 신규 시트에 생성합니다." />
@@ -4107,6 +4111,10 @@ $LatestAddin = Join-Path $LatestDir $LatestAddinName
 $ImportModulePaths = New-Object System.Collections.Generic.List[string]
 $tempReleaseWorkbook = $null
 $tempReleaseAddin = $null
+$vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "Process")
+if (-not $vbaPassword) { $vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "User") }
+if (-not $vbaPassword) { throw "Set the DATA_EDITING_TOOLKIT_VBA_PASSWORD user environment variable before publishing." }
+$env:DATA_EDITING_TOOLKIT_VBA_PASSWORD = $vbaPassword
 
 Get-ChildItem -LiteralPath $VersionDir,$LatestDir -Filter "*.bas" -File -ErrorAction SilentlyContinue | Remove-Item -Force
 foreach ($sourceModulePath in $ModulePaths) {
@@ -4195,10 +4203,8 @@ try {
     $publishStage = "sanitize all release API credentials"
     Clear-WorkbookStoredApiSecrets -Workbook $workbook
 
-    $tempReleaseWorkbook = Join-Path $VersionDir ("_tmp_" + $ReleaseWorkbookName)
-    $tempReleaseAddin = Join-Path $VersionDir ("_tmp_" + $ReleaseAddinName)
-    if (Test-Path -LiteralPath $tempReleaseWorkbook) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
-    if (Test-Path -LiteralPath $tempReleaseAddin) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
+    $tempReleaseWorkbook = Join-Path ([IO.Path]::GetTempPath()) ("toolkit_" + [guid]::NewGuid().ToString("N") + ".xlsm")
+    $tempReleaseAddin = Join-Path ([IO.Path]::GetTempPath()) ("toolkit_" + [guid]::NewGuid().ToString("N") + ".xlam")
 
     $publishStage = "save assembled workbook"
     $workbook.IsAddin = $false
@@ -4212,6 +4218,10 @@ try {
     Add-RibbonCustomUi -PackagePath $tempReleaseWorkbook
     Add-RibbonCustomUi -PackagePath $tempReleaseAddin
 
+    foreach ($artifact in @($tempReleaseWorkbook, $tempReleaseAddin)) {
+        & python $VbaProtector $artifact
+        if ($LASTEXITCODE -ne 0) { throw "Could not protect staged VBA project: $artifact" }
+    }
     Copy-Item -Path $tempReleaseWorkbook -Destination $ReleaseWorkbook -Force
     Copy-Item -Path $tempReleaseWorkbook -Destination $LatestWorkbook -Force
     Copy-Item -Path $tempReleaseAddin -Destination $ReleaseAddin -Force
@@ -4228,20 +4238,6 @@ finally {
     }
     if ($tempReleaseWorkbook -and (Test-Path -LiteralPath $tempReleaseWorkbook)) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
     if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
-}
-
-$vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "Process")
-if (-not $vbaPassword) {
-    $vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "User")
-}
-if (-not $vbaPassword) {
-    throw "Set the DATA_EDITING_TOOLKIT_VBA_PASSWORD user environment variable before publishing."
-}
-
-$env:DATA_EDITING_TOOLKIT_VBA_PASSWORD = $vbaPassword
-foreach ($artifact in @($ReleaseWorkbook, $LatestWorkbook, $ReleaseAddin, $LatestAddin)) {
-    & python $VbaProtector $artifact
-    if ($LASTEXITCODE -ne 0) { throw "Could not protect VBA project: $artifact" }
 }
 
 $verifyExcel = New-Object -ComObject Excel.Application
