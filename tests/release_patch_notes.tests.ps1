@@ -20,9 +20,6 @@ $changeLogPath = Join-Path $ProjectRoot "CHANGELOG.md"
 if (-not (Test-Path -LiteralPath $notesPath)) {
     throw "현재 버전 패치노트가 없습니다: $notesPath"
 }
-if (-not (Test-Path -LiteralPath $changeLogPath)) {
-    throw "통합 변경 이력이 없습니다: $changeLogPath"
-}
 
 $notes = Get-Content -LiteralPath $notesPath -Raw -Encoding UTF8
 foreach ($heading in @("## 주요 변경", "## 사용 방법", "## 수정된 문제", "## 주의사항")) {
@@ -31,9 +28,11 @@ foreach ($heading in @("## 주요 변경", "## 사용 방법", "## 수정된 문
     }
 }
 
-$changeLog = Get-Content -LiteralPath $changeLogPath -Raw -Encoding UTF8
-if (-not $changeLog.Contains("## $version")) {
-    throw "통합 변경 이력에 현재 버전이 없습니다: $version"
+if (Test-Path -LiteralPath $changeLogPath) {
+    $changeLog = Get-Content -LiteralPath $changeLogPath -Raw -Encoding UTF8
+    if (-not $changeLog.Contains("## $version")) {
+        throw "통합 변경 이력에 현재 버전이 없습니다: $version"
+    }
 }
 
 foreach ($needle in @(

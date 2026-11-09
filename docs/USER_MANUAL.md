@@ -574,7 +574,7 @@ Excel 보안 설정에서 매크로 실행이 허용되어야 합니다. 회사 
 기능을 추가하거나 기존 기능의 사용 흐름이 바뀌면 다음 항목을 함께 갱신합니다.
 
 - `docs/USER_MANUAL.md`: 사용자 실행 방법과 주의사항
-- `CHANGELOG.md`: 전체 버전별 사용자 관점 변경 이력
+- `docs/releases/`: 버전별 사용자 관점 변경 이력
 - `README.md`: 현재 기능 목록과 설치/배포 요약
 - `src/MacroToolkit.bas`: `TOOLKIT_VERSION`
 - `release/latest`: 최신 배포 산출물
