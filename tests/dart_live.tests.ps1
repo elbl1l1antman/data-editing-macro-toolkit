@@ -2,8 +2,10 @@ param([string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path)
 $ErrorActionPreference = 'Stop'
 $key = [Environment]::GetEnvironmentVariable('OPENDART_TEST_KEY', 'Process')
 if (-not $key) { Write-Host 'DART live test skipped: OPENDART_TEST_KEY not set.'; exit 0 }
-$excel = New-Object -ComObject Excel.Application
 $workbook = $null; $tempPath = $null
+$cachePath = Join-Path $env:TEMP ('DartLive_' + [guid]::NewGuid().ToString('N') + '.xml')
+$env:DART_TEST_MASTER_PATH = $cachePath
+$excel = New-Object -ComObject Excel.Application
 try {
     $excel.Visible = $false; $excel.DisplayAlerts = $false
     $workbook = $excel.Workbooks.Add()
@@ -32,15 +34,20 @@ Public Function CheckDartLive(ByVal key As String) As String
     Set names = CreateObject("Scripting.Dictionary")
     Set codes = CreateObject("Scripting.Dictionary")
     Set stocks = CreateObject("Scripting.Dictionary")
-    Dart_LoadCompanyMaster key, names, codes, stocks
+    Dart_LoadCompanyMaster key, names, codes, stocks, False, Environ$("DART_TEST_MASTER_PATH")
     If Not codes.Exists("00126380") Then Err.Raise 513, , "Known company not found in master"
+    Set names = CreateObject("Scripting.Dictionary")
+    Set codes = CreateObject("Scripting.Dictionary")
+    Set stocks = CreateObject("Scripting.Dictionary")
+    Dart_LoadCompanyMaster key, names, codes, stocks, True, Environ$("DART_TEST_MASTER_PATH")
+    If Not codes.Exists("00126380") Then Err.Raise 513, , "Refreshed master missing known company"
     fields = Dart_QueryCompany(key, "00126380", 2023)
     If Len(CStr(fields(1))) = 0 Then Err.Raise 513, , "Company information missing"
     If Len(CStr(fields(13))) = 0 Or Len(CStr(fields(17))) = 0 Then Err.Raise 513, , "Revenue or employee count missing"
     CheckDartLive = "PASS"
     Exit Function
 Failed:
-    CheckDartLive = CStr(Err.Number) & ": " & Replace(Err.Description, key, "[redacted]")
+    CheckDartLive = CStr(Err.Number) & " [" & Err.Source & "]: " & Replace(Err.Description, key, "[redacted]")
 End Function
 Public Function CheckDartEndToEnd() As String
     On Error GoTo Failed
@@ -65,6 +72,7 @@ End Function
 '@)
     $tempPath = Join-Path $env:TEMP ('DartTools-' + [guid]::NewGuid().ToString('N') + '.bas')
     $source = Get-Content -Raw -Encoding UTF8 (Join-Path $ProjectRoot 'src\DartTools.bas')
+    $source = $source.Replace('cachePath = Dart_MasterCachePath()', 'cachePath = Environ$("DART_TEST_MASTER_PATH")')
     $source = [regex]::Replace($source, '(?m)^    key = GetSetting\([^\r\n]+', '    key = Environ$("OPENDART_TEST_KEY")')
     $source = [regex]::Replace($source, '(?m)^    headerChoice = MsgBox\([^\r\n]+', '    headerChoice = vbNo')
     $source = [regex]::Replace($source, '(?m)^    yearValue = Application\.InputBox\([^\r\n]+', '    yearValue = 2023')
@@ -83,4 +91,6 @@ finally {
     $excel.Quit()
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($excel)
     if ($tempPath -and (Test-Path -LiteralPath $tempPath)) { Remove-Item -LiteralPath $tempPath -Force }
+    if ($cachePath -and (Test-Path -LiteralPath $cachePath)) { Remove-Item -LiteralPath $cachePath -Force }
+    Remove-Item Env:DART_TEST_MASTER_PATH -ErrorAction SilentlyContinue
 }

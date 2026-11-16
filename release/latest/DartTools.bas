@@ -4,6 +4,12 @@ Option Explicit
 Private Const DART_BASE As String = "https://opendart.fss.or.kr/api/"
 Private Const DART_SETTINGS As String = "OpenDART"
 
+#If VBA7 Then
+Private Declare PtrSafe Function Dart_MoveFileEx Lib "kernel32" Alias "MoveFileExW" (ByVal sourcePath As LongPtr, ByVal targetPath As LongPtr, ByVal flags As Long) As Long
+#Else
+Private Declare Function Dart_MoveFileEx Lib "kernel32" Alias "MoveFileExW" (ByVal sourcePath As Long, ByVal targetPath As Long, ByVal flags As Long) As Long
+#End If
+
 Public Sub Dart_SetApiKey()
     Dim valueIn As Variant
     valueIn = Application.InputBox("OpenDART 인증키 40자리를 입력하세요. 빈칸은 기존 키를 유지합니다.", "DART 인증키 설정", Type:=2)
@@ -31,12 +37,21 @@ Public Sub Dart_SearchCompanies()
     Dim master As Object, codeMap As Object, stockMap As Object, cached As Object
     Dim cells As Variant, output() As Variant, rowIndex As Long, firstData As Long
     Dim lookupText As String, corpCode As String, issue As String, fields As Variant
-    Dim rowCount As Long, i As Long, started As Boolean
+    Dim rowCount As Long, i As Long, started As Boolean, forceRefresh As Boolean
+    Dim cachePath As String, refreshChoice As VbMsgBoxResult
 
     key = GetSetting(BIZ_APP_NAME, DART_SETTINGS, "ApiKey", "")
     If Not Dart_ValidKey(key) Then
         MsgBox "먼저 DART 인증키 설정에서 인증키를 입력하세요.", vbExclamation, "DART 기업정보"
         Exit Sub
+    End If
+    cachePath = Dart_MasterCachePath()
+    If Dart_MasterNeedsWarning(cachePath) Then
+        refreshChoice = MsgBox("DART 고유번호 목록을 갱신한 지 6개월이 지나 기업 연결이 부정확할 수 있습니다." & vbCrLf & _
+                               "예: 갱신 후 조회 / 아니요: 기존 목록으로 조회 / 취소: 중단", _
+                               vbYesNoCancel + vbExclamation + vbDefaultButton2, "DART 고유번호 갱신 안내")
+        If refreshChoice = vbCancel Then Exit Sub
+        forceRefresh = (refreshChoice = vbYes)
     End If
     If Not Toolkit_GetRangeFromUserForm("DART 기업정보", "기업명, DART 고유번호 또는 종목코드가 있는 한 열을 선택하세요.", target) Then Exit Sub
     If target.Areas.Count <> 1 Or target.Columns.Count <> 1 Then
@@ -73,7 +88,7 @@ Public Sub Dart_SearchCompanies()
     Set cached = CreateObject("Scripting.Dictionary")
     Toolkit_ProgressShow "DART 기업정보", "DART 고유번호 목록을 준비 중입니다.", rowCount
     started = True
-    Dart_LoadCompanyMaster key, master, codeMap, stockMap
+    Dart_LoadCompanyMaster key, master, codeMap, stockMap, forceRefresh, cachePath
 
     For rowIndex = 1 To rowCount
         If target.Rows.Count = 1 Then
@@ -127,6 +142,73 @@ Failed:
     MsgBox "조회가 중단되었습니다. 원본 데이터는 변경되지 않았습니다." & vbCrLf & failureDescription, vbExclamation, "DART 기업정보"
 End Sub
 
+Public Sub Dart_RefreshCompanyMaster()
+    On Error GoTo Failed
+    Dim key As String, names As Object, codes As Object, stocks As Object, started As Boolean
+    Dim failureNumber As Long, failureDescription As String
+    key = GetSetting(BIZ_APP_NAME, DART_SETTINGS, "ApiKey", "")
+    If Not Dart_ValidKey(key) Then
+        MsgBox "먼저 DART 인증키 설정에서 인증키를 입력하세요.", vbExclamation, "DART 고유번호 갱신"
+        Exit Sub
+    End If
+    Set names = CreateObject("Scripting.Dictionary")
+    Set codes = CreateObject("Scripting.Dictionary")
+    Set stocks = CreateObject("Scripting.Dictionary")
+    Toolkit_ProgressShow "DART 고유번호 갱신", "새 목록을 내려받아 확인하고 있습니다.", 1
+    started = True
+    Dart_LoadCompanyMaster key, names, codes, stocks, True
+    Toolkit_ProgressClose
+    MsgBox "DART 고유번호 목록을 갱신했습니다.", vbInformation, "DART 고유번호 갱신"
+    Exit Sub
+Failed:
+    failureNumber = Err.Number: failureDescription = Replace(Err.Description, key, "[인증키 숨김]")
+    If started Then Toolkit_ProgressClose
+    If failureNumber = TOOLKIT_CANCEL_ERROR_NUMBER Then
+        MsgBox "갱신을 취소했습니다. 기존 목록은 유지됩니다.", vbInformation, "DART 고유번호 갱신"
+    Else
+        MsgBox "목록 갱신에 실패했습니다. 기존 목록은 유지됩니다." & vbCrLf & failureDescription, vbExclamation, "DART 고유번호 갱신"
+    End If
+End Sub
+
+Public Function Dart_MasterCachePath() As String
+    Dim root As String
+    root = Environ$("LOCALAPPDATA")
+    If Len(root) = 0 Then Err.Raise vbObjectError + 9610, , "로컬 사용자 저장소를 찾을 수 없습니다."
+    Dart_MasterCachePath = root & "\DataEditingMacroToolkit\OpenDART\CORPCODE.xml"
+End Function
+
+Public Function Dart_MasterNeedsWarning(ByVal path As String) As Boolean
+    Dim fso As Object, updated As Date
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    If Not fso.FileExists(path) Then Exit Function
+    updated = fso.GetFile(path).DateLastModified
+    Dart_MasterNeedsWarning = (updated <= DateAdd("m", -6, Now) Or updated > DateAdd("d", 1, Now))
+End Function
+
+Public Sub Dart_SaveMasterCache(ByVal doc As Object, ByVal cachePath As String)
+    Dim fso As Object, parent As String, root As String, staged As String, errorNumber As Long, errorText As String
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    parent = fso.GetParentFolderName(cachePath)
+    root = fso.GetParentFolderName(parent)
+    On Error GoTo Failed
+    If Not fso.FolderExists(root) Then fso.CreateFolder root
+    If Not fso.FolderExists(parent) Then fso.CreateFolder parent
+    staged = fso.BuildPath(parent, "DartMaster_" & Replace(fso.GetTempName, ".", "") & ".xml")
+    doc.Save staged
+    If Dart_MoveFileEx(StrPtr(staged), StrPtr(cachePath), 9) = 0 Then
+        Err.Raise vbObjectError + 9611, , "로컬 고유번호 목록을 교체할 수 없습니다. 기존 목록은 유지됩니다."
+    End If
+    Exit Sub
+Failed:
+    errorNumber = Err.Number: errorText = Err.Description
+    On Error Resume Next
+    If Len(staged) > 0 Then
+        If fso.FileExists(staged) Then fso.DeleteFile staged, True
+    End If
+    On Error GoTo 0
+    Err.Raise errorNumber, "Dart_SaveMasterCache", errorText
+End Sub
+
 Public Function Dart_UniqueSheetName(ByVal wb As Workbook, ByVal base As String) As String
     Dim name As String, i As Long, ws As Object
     name = base
@@ -176,64 +258,70 @@ Public Function Dart_FindCompany(ByVal valueIn As String, ByVal names As Object,
     Dart_FindCompany = CStr(names(s))
 End Function
 
-Public Sub Dart_LoadCompanyMaster(ByVal key As String, ByVal names As Object, ByVal codes As Object, ByVal stocks As Object)
+Public Sub Dart_LoadCompanyMaster(ByVal key As String, ByVal names As Object, ByVal codes As Object, ByVal stocks As Object, Optional ByVal forceRefresh As Boolean = False, Optional ByVal cachePath As String = "")
     Dim fso As Object, folder As String, zipPath As String, xmlPath As String
     Dim http As Object, stream As Object, shell As Object, src As Object, dst As Object, runner As Object
     Dim doc As Object, nodes As Object, node As Object, corp As String, nm As String, stock As String, body As Variant
-    Dim started As Date, lastSize As Double, stable As Long, processed As Long
+    Dim started As Date, lastSize As Double, stable As Long, processed As Long, downloaded As Boolean
     Set fso = CreateObject("Scripting.FileSystemObject")
-    folder = fso.BuildPath(fso.GetSpecialFolder(2), "DartToolkit_" & Replace(fso.GetTempName, ".", ""))
-    fso.CreateFolder folder
     On Error GoTo Failed
-    zipPath = fso.BuildPath(folder, "master.zip")
-    xmlPath = fso.BuildPath(folder, "CORPCODE.xml")
-    Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
-    http.setTimeouts 5000, 10000, 30000, 60000
-    http.Open "GET", DART_BASE & "corpCode.xml?crtfc_key=" & key, False
-    http.send
-    If http.Status <> 200 Then Err.Raise vbObjectError + 9600, , "DART 고유번호 목록을 내려받지 못했습니다. HTTP " & http.Status
-    body = http.responseBody
-    If UBound(body) < 1 Then Err.Raise vbObjectError + 9600, , "DART 고유번호 응답이 비어 있습니다."
-    If body(0) <> 80 Or body(1) <> 75 Then
-        Set doc = CreateObject("MSXML2.DOMDocument.6.0")
-        doc.async = False: doc.setProperty "ProhibitDTD", True
-        If doc.LoadXML(http.responseText) Then
-            Err.Raise vbObjectError + 9600, , "DART 고유번호 API 오류 " & Dart_NodeText(doc, "/result/status")
+    If Len(cachePath) = 0 Then cachePath = Dart_MasterCachePath()
+    downloaded = (forceRefresh Or Not fso.FileExists(cachePath))
+    If downloaded Then
+        folder = fso.BuildPath(fso.GetSpecialFolder(2), "DartToolkit_" & Replace(fso.GetTempName, ".", ""))
+        fso.CreateFolder folder
+        zipPath = fso.BuildPath(folder, "master.zip")
+        xmlPath = fso.BuildPath(folder, "CORPCODE.xml")
+        Set http = CreateObject("MSXML2.ServerXMLHTTP.6.0")
+        http.setTimeouts 5000, 10000, 30000, 60000
+        http.Open "GET", DART_BASE & "corpCode.xml?crtfc_key=" & key, False
+        http.send
+        If http.Status <> 200 Then Err.Raise vbObjectError + 9600, , "DART 고유번호 목록을 내려받지 못했습니다. HTTP " & http.Status
+        body = http.responseBody
+        If UBound(body) < 1 Then Err.Raise vbObjectError + 9600, , "DART 고유번호 응답이 비어 있습니다."
+        If body(0) <> 80 Or body(1) <> 75 Then
+            Set doc = CreateObject("MSXML2.DOMDocument.6.0")
+            doc.async = False: doc.setProperty "ProhibitDTD", True
+            If doc.LoadXML(http.responseText) Then
+                Err.Raise vbObjectError + 9600, , "DART 고유번호 API 오류 " & Dart_NodeText(doc, "/result/status")
+            End If
+            Err.Raise vbObjectError + 9600, , "DART 고유번호 응답 형식이 올바르지 않습니다."
         End If
-        Err.Raise vbObjectError + 9600, , "DART 고유번호 응답 형식이 올바르지 않습니다."
-    End If
-    Set stream = CreateObject("ADODB.Stream")
-    stream.Type = 1: stream.Open: stream.Write body: stream.SaveToFile zipPath, 2: stream.Close
-    Set shell = CreateObject("Shell.Application")
-    Set dst = shell.NameSpace(folder)
-    Set src = shell.NameSpace(zipPath)
-    If src Is Nothing Or dst Is Nothing Then
-        Dim tarPath As String, command As String
-        tarPath = Environ$("SystemRoot") & "\System32\tar.exe"
-        If Not fso.FileExists(tarPath) Then tarPath = Environ$("SystemRoot") & "\Sysnative\tar.exe"
-        If Not fso.FileExists(tarPath) Then Err.Raise vbObjectError + 9601, , "Windows ZIP 압축 해제 기능을 사용할 수 없습니다."
-        command = """" & tarPath & """ -xf """ & zipPath & """ -C """ & folder & """ CORPCODE.xml"
-        Set runner = CreateObject("WScript.Shell")
-        runner.Run command, 0, False
+        Set stream = CreateObject("ADODB.Stream")
+        stream.Type = 1: stream.Open: stream.Write body: stream.SaveToFile zipPath, 2: stream.Close
+        Set shell = CreateObject("Shell.Application")
+        Set dst = shell.NameSpace(folder)
+        Set src = shell.NameSpace(zipPath)
+        If src Is Nothing Or dst Is Nothing Then
+            Dim tarPath As String, command As String
+            tarPath = Environ$("SystemRoot") & "\System32\tar.exe"
+            If Not fso.FileExists(tarPath) Then tarPath = Environ$("SystemRoot") & "\Sysnative\tar.exe"
+            If Not fso.FileExists(tarPath) Then Err.Raise vbObjectError + 9601, , "Windows ZIP 압축 해제 기능을 사용할 수 없습니다."
+            command = """" & tarPath & """ -xf """ & zipPath & """ -C """ & folder & """ CORPCODE.xml"
+            Set runner = CreateObject("WScript.Shell")
+            runner.Run command, 0, False
+        Else
+            If src.ParseName("CORPCODE.xml") Is Nothing Then Err.Raise vbObjectError + 9601, , "고유번호 ZIP에 필요한 XML이 없습니다."
+            dst.CopyHere src.ParseName("CORPCODE.xml"), 20
+        End If
+        started = Now
+        Do
+            DoEvents
+            Toolkit_RaiseIfCancelled
+            If fso.FileExists(xmlPath) Then
+                If fso.GetFile(xmlPath).Size = lastSize And lastSize > 0 Then stable = stable + 1 Else stable = 0
+                lastSize = fso.GetFile(xmlPath).Size
+                If stable >= 10 Then Exit Do
+            End If
+            If DateDiff("s", started, Now) > 90 Then Err.Raise vbObjectError + 9602, , "고유번호 목록 압축 해제가 지연되었습니다. 다시 시도하세요."
+            Application.Wait Now + TimeSerial(0, 0, 1)
+        Loop
     Else
-        If src.ParseName("CORPCODE.xml") Is Nothing Then Err.Raise vbObjectError + 9601, , "고유번호 ZIP에 필요한 XML이 없습니다."
-        dst.CopyHere src.ParseName("CORPCODE.xml"), 20
+        xmlPath = cachePath
     End If
-    started = Now
-    Do
-        DoEvents
-        Toolkit_RaiseIfCancelled
-        If fso.FileExists(xmlPath) Then
-            If fso.GetFile(xmlPath).Size = lastSize And lastSize > 0 Then stable = stable + 1 Else stable = 0
-            lastSize = fso.GetFile(xmlPath).Size
-            If stable >= 10 Then Exit Do
-        End If
-        If DateDiff("s", started, Now) > 90 Then Err.Raise vbObjectError + 9602, , "고유번호 목록 압축 해제가 지연되었습니다. 다시 시도하세요."
-        Application.Wait Now + TimeSerial(0, 0, 1)
-    Loop
     Set doc = CreateObject("MSXML2.DOMDocument.6.0")
     doc.async = False: doc.setProperty "ProhibitDTD", True
-    If Not doc.Load(xmlPath) Then Err.Raise vbObjectError + 9603, , "고유번호 XML을 읽지 못했습니다."
+    If Not doc.Load(xmlPath) Then Err.Raise vbObjectError + 9603, , "고유번호 목록을 읽지 못했습니다. DART 고유번호 갱신을 실행하세요."
     Set nodes = doc.SelectNodes("/result/list")
     If nodes.Length = 0 Then Err.Raise vbObjectError + 9604, , "DART 고유번호 목록이 비어 있습니다."
     For Each node In nodes
@@ -263,14 +351,20 @@ Public Sub Dart_LoadCompanyMaster(ByVal key As String, ByVal names As Object, By
             End If
         End If
     Next node
+    If codes.Count = 0 Then Err.Raise vbObjectError + 9604, , "유효한 DART 고유번호가 없습니다."
+    If downloaded Then Dart_SaveMasterCache doc, cachePath
     On Error Resume Next
-    fso.DeleteFolder folder, True
+    If Len(folder) > 0 Then
+        If fso.FolderExists(folder) Then fso.DeleteFolder folder, True
+    End If
     Exit Sub
 Failed:
     Dim n As Long, description As String
-    n = Err.Number: description = Replace(Err.Description, key, "[인증키 숨김]")
+    n = Err.Number: description = Replace(Err.Source & ": " & Err.Description, key, "[인증키 숨김]")
     On Error Resume Next
-    If fso.FolderExists(folder) Then fso.DeleteFolder folder, True
+    If Len(folder) > 0 Then
+        If fso.FolderExists(folder) Then fso.DeleteFolder folder, True
+    End If
     On Error GoTo 0
     Err.Raise n, "Dart_LoadCompanyMaster", description
 End Sub

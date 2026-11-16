@@ -3994,6 +3994,7 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpDartTools" label="DART 기업정보" imageMso="FileProperties">
           <button id="btnDartKey" label="인증키 설정" imageMso="ServerConnection" onAction="Ribbon_DartSetApiKey" screentip="OpenDART 인증키 설정" supertip="OpenDART 인증키를 현재 Windows 사용자 설정에 저장합니다." />
+          <button id="btnDartRefreshMaster" label="고유번호 갱신" imageMso="DataRefreshAll" onAction="Ribbon_DartRefreshCompanyMaster" screentip="DART 고유번호 목록 갱신" supertip="새 고유번호 목록을 내려받아 확인한 후 현재 Windows 사용자의 로컬 목록을 갱신합니다." />
           <button id="btnDartSearch" label="기업정보 조회" size="large" imageMso="FindDialog" onAction="Ribbon_DartSearchCompanies" screentip="DART 기업개황·매출·종사자 조회" supertip="기업명 또는 고유번호 범위와 사업연도를 선택해 기업개황, 별도 재무제표 매출, 직원현황을 새 시트에 조회합니다." />
         </group>
         <group id="grpNaverLocalTools" label="네이버 지역검색" imageMso="FindDialog">
