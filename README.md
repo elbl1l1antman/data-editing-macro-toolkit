@@ -34,7 +34,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.3.2`
+`1.3.3`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -102,6 +102,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 - SPSS 내보내기 통계표에서 선택한 가로/세로 배너 블록 삭제
 - SPSS 목차 링크 기반 표/배너 탐지 후 원본 시트 복사본에서 삭제하고 목차 재생성
 - SPSS의 다양한 제목 형식과 여러 표 시트의 목차 링크를 인식하고, 끊어진 링크를 확인한 뒤 결과 위치에 새 목차를 연결
+- SPSS의 `■ 주력 사업`처럼 왼쪽에 표시된 병합 배너 묶음을 인식하고 삭제 또는 순서 변경
 - SPSS 표/배너 재구성 목록에서 Shift+클릭 연속 선택 및 Ctrl+클릭 개별 선택 지원
 - SPSS 표/배너 삭제 결과에서 표와 표 사이 공백 행을 1개로 자동 정리
 - 목차가 없는 SPSS 집계표 시트에서 표 제목을 탐지해 목차 링크 시트 생성
@@ -144,10 +145,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 
 `TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다.
 
-- `release/v1.3.2/DataEditingMacroToolkit_v1.3.2.xlam`
-- `release/v1.3.2/DataEditingMacroToolkit_v1.3.2.xlsm`
-- `release/v1.3.2/*.bas`
-- `release/v1.3.2/manifest.json`
+- `release/v1.3.3/DataEditingMacroToolkit_v1.3.3.xlam`
+- `release/v1.3.3/DataEditingMacroToolkit_v1.3.3.xlsm`
+- `release/v1.3.3/*.bas`
+- `release/v1.3.3/manifest.json`
 
 - `release/latest/DataEditingMacroToolkit_latest.xlam`
 - `release/latest/DataEditingMacroToolkit_latest.xlsm`

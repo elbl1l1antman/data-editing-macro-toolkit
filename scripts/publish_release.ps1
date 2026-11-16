@@ -2361,7 +2361,7 @@ function Add-SpssRebuildUserForm {
     $cmdToggleTableDelete.Height = 24
 
     $lblBanners = $designer.Controls.Add("Forms.Label.1", "lblBanners", $true)
-    $lblBanners.Caption = "삭제할 배너"
+    $lblBanners.Caption = "배너 순서/삭제"
     $lblBanners.Left = 422
     $lblBanners.Top = 44
     $lblBanners.Width = 310
@@ -2372,8 +2372,8 @@ function Add-SpssRebuildUserForm {
     $lstBanners.Top = 64
     $lstBanners.Width = 310
     $lstBanners.Height = 286
-    $lstBanners.ColumnCount = 2
-    $lstBanners.ColumnWidths = "280 pt;0 pt"
+    $lstBanners.ColumnCount = 3
+    $lstBanners.ColumnWidths = "240 pt;0 pt;50 pt"
     $lstBanners.MultiSelect = 2
 
     $cmdUp = $designer.Controls.Add("Forms.CommandButton.1", "cmdBannerUp", $true)
@@ -2390,8 +2390,15 @@ function Add-SpssRebuildUserForm {
     $cmdDown.Width = 58
     $cmdDown.Height = 24
 
+    $cmdToggleBannerDelete = $designer.Controls.Add("Forms.CommandButton.1", "cmdToggleBannerDelete", $true)
+    $cmdToggleBannerDelete.Caption = "삭제/복원"
+    $cmdToggleBannerDelete.Left = 552
+    $cmdToggleBannerDelete.Top = 356
+    $cmdToggleBannerDelete.Width = 82
+    $cmdToggleBannerDelete.Height = 24
+
     $lblTip = $designer.Controls.Add("Forms.Label.1", "lblTip", $true)
-    $lblTip.Caption = "삭제 상태가 표시된 표와 선택된 배너만 제거됩니다. 결과 시트는 원본을 유지한 채 새로 만들고, 표 사이에는 공백 행 1개를 둡니다."
+    $lblTip.Caption = "표와 배너는 선택 후 위/아래로 이동하고 [삭제/복원]으로 삭제 여부를 표시하세요. 삭제 표시된 항목만 제거하며 원본은 유지합니다."
     $lblTip.Left = 12
     $lblTip.Top = 392
     $lblTip.Width = 720
@@ -2445,6 +2452,7 @@ Public Sub InitializeOptions(ByVal tables As Object, ByVal banners As Object)
     For i = 1 To banners.Count
         lstBanners.AddItem CStr(i) & ". " & CStr(banners(i))
         lstBanners.List(lstBanners.ListCount - 1, 1) = CStr(i)
+        lstBanners.List(lstBanners.ListCount - 1, 2) = ""
     Next i
 End Sub
 
@@ -2580,32 +2588,48 @@ Private Sub cmdBannerDown_Click()
     MoveSelectedBanner 1
 End Sub
 
+Private Sub cmdToggleBannerDelete_Click()
+    Dim i As Long
+    For i = 0 To lstBanners.ListCount - 1
+        If lstBanners.Selected(i) Then
+            If Len(CStr(lstBanners.List(i, 2))) > 0 Then
+                lstBanners.List(i, 2) = ""
+            Else
+                lstBanners.List(i, 2) = "삭제"
+            End If
+        End If
+    Next i
+End Sub
+
 Private Sub MoveSelectedBanner(ByVal direction As Long)
     Dim i As Long
     If direction < 0 Then
         For i = 1 To lstBanners.ListCount - 1
-            If lstBanners.Selected(i) Then SwapBannerRows i, i - 1
+            If lstBanners.Selected(i) And Not lstBanners.Selected(i - 1) Then SwapBannerRows i, i - 1
         Next i
     Else
         For i = lstBanners.ListCount - 2 To 0 Step -1
-            If lstBanners.Selected(i) Then SwapBannerRows i, i + 1
+            If lstBanners.Selected(i) And Not lstBanners.Selected(i + 1) Then SwapBannerRows i, i + 1
         Next i
     End If
 End Sub
 
 Private Sub SwapBannerRows(ByVal a As Long, ByVal b As Long)
-    Dim text0 As String, id0 As String
+    Dim text0 As String, id0 As String, status0 As String
     Dim selectedA As Boolean, selectedB As Boolean
 
     text0 = lstBanners.List(a, 0)
     id0 = lstBanners.List(a, 1)
+    status0 = lstBanners.List(a, 2)
     selectedA = lstBanners.Selected(a)
     selectedB = lstBanners.Selected(b)
 
     lstBanners.List(a, 0) = lstBanners.List(b, 0)
     lstBanners.List(a, 1) = lstBanners.List(b, 1)
+    lstBanners.List(a, 2) = lstBanners.List(b, 2)
     lstBanners.List(b, 0) = text0
     lstBanners.List(b, 1) = id0
+    lstBanners.List(b, 2) = status0
 
     lstBanners.Selected(a) = selectedB
     lstBanners.Selected(b) = selectedA
@@ -2613,7 +2637,7 @@ End Sub
 
 Private Sub cmdOK_Click()
     DeleteTablesText = DeletedTableIds()
-    DeleteBannersText = SelectedIds(lstBanners)
+    DeleteBannersText = DeletedBannerIds()
     TableOrderText = AllIds(lstTables)
     BannerOrderText = AllIds(lstBanners)
     Cancelled = False
@@ -2625,16 +2649,16 @@ Private Sub cmdCancel_Click()
     Me.Hide
 End Sub
 
-Private Function SelectedIds(ByVal listBox As MSForms.ListBox) As String
+Private Function DeletedBannerIds() As String
     Dim result As String
     Dim i As Long
-    For i = 0 To listBox.ListCount - 1
-        If listBox.Selected(i) Then
+    For i = 0 To lstBanners.ListCount - 1
+        If CStr(lstBanners.List(i, 2)) = "삭제" Then
             If Len(result) > 0 Then result = result & ","
-            result = result & CStr(listBox.List(i, 1))
+            result = result & CStr(lstBanners.List(i, 1))
         End If
     Next i
-    SelectedIds = result
+    DeletedBannerIds = result
 End Function
 
 Private Function AllIds(ByVal listBox As MSForms.ListBox) As String

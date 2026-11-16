@@ -189,7 +189,7 @@ Private Function SPSS_NormalizeBannerName(ByVal bannerText As String) As String
     Dim result As String
     result = Trim$(bannerText)
     If Len(result) > 0 Then
-        If Left$(result, 1) = "◐" Or Left$(result, 1) = "▣" Then result = Mid$(result, 2)
+        If Left$(result, 1) = "◐" Or Left$(result, 1) = "▣" Or Left$(result, 1) = "■" Then result = Mid$(result, 2)
     End If
     SPSS_NormalizeBannerName = Trim$(result)
 End Function
@@ -917,7 +917,18 @@ Private Sub SPSS_AddTableBanners(ByVal result As Collection, ByVal seen As Objec
 End Sub
 
 Private Function SPSS_VerticalBannerName(ByVal ws As Worksheet, ByVal rowNo As Long, ByVal startRow As Long, ByVal endRow As Long) As String
-    If rowNo <= startRow Or IsError(ws.Cells(rowNo, 1).Value2) Then Exit Function
+    If rowNo <= startRow Then Exit Function
+    Dim markerCol As Long, markerText As String
+    For markerCol = 1 To 2
+        If Not IsError(ws.Cells(rowNo, markerCol).Value2) Then
+            markerText = Trim$(CStr(ws.Cells(rowNo, markerCol).Value2))
+            If Left$(markerText, 1) = "■" Then
+                If Replace(SPSS_NormalizeBannerName(markerText), " ", "") <> "전체" Then SPSS_VerticalBannerName = markerText
+                Exit Function
+            End If
+        End If
+    Next markerCol
+    If IsError(ws.Cells(rowNo, 1).Value2) Then Exit Function
     Dim label As String
     label = Trim$(CStr(ws.Cells(rowNo, 1).Value2))
     If Len(label) = 0 Then Exit Function
@@ -1370,15 +1381,44 @@ Private Function SPSS_BuildRowSegments(ByVal ws As Worksheet, ByVal startRow As 
     End If
 
     If CLng(bannerRows(1)) > startRow Then result.Add Array(startRow, CLng(bannerRows(1)) - 1, "", "fixed")
-    Dim i As Long
+    Dim i As Long, footerStart As Long
     For i = 1 To bannerRows.Count
         Dim segStart As Long: segStart = CLng(bannerRows(i))
         Dim segEnd As Long
-        If i < bannerRows.Count Then segEnd = CLng(bannerRows(i + 1)) - 1 Else segEnd = endRow
+        If i < bannerRows.Count Then
+            segEnd = CLng(bannerRows(i + 1)) - 1
+        Else
+            segEnd = endRow
+            Do While segEnd > segStart
+                If Not SPSS_IsTableSeparatorRow(ws, segEnd) Then Exit Do
+                segEnd = segEnd - 1
+            Loop
+            If segEnd < endRow Then footerStart = segEnd + 1
+        End If
         result.Add Array(segStart, segEnd, SPSS_NormalizeBannerName(SPSS_VerticalBannerName(ws, segStart, startRow, endRow)), "banner")
     Next i
+    If footerStart > 0 Then result.Add Array(footerStart, endRow, "", "fixed")
 
     Set SPSS_BuildRowSegments = result
+End Function
+
+Private Function SPSS_IsTableSeparatorRow(ByVal ws As Worksheet, ByVal rowNo As Long) As Boolean
+    Dim lastCol As Long, c As Long, valueIn As String
+    lastCol = ws.Cells(rowNo, ws.Columns.Count).End(xlToLeft).Column
+    For c = 1 To lastCol
+        If IsError(ws.Cells(rowNo, c).Value2) Then Exit Function
+        valueIn = Trim$(CStr(ws.Cells(rowNo, c).Value2))
+        If Len(valueIn) > 0 Then
+            If c = 1 And IsNumeric(valueIn) Then
+                If IsError(ws.Cells(1, 1).Value2) Then Exit Function
+                If LCase$(Trim$(CStr(ws.Cells(1, 1).Value2))) <> "no" Then Exit Function
+                If CDbl(valueIn) <> rowNo - 1 Then Exit Function
+            ElseIf c > 2 Or valueIn <> "표" Then
+                Exit Function
+            End If
+        End If
+    Next c
+    SPSS_IsTableSeparatorRow = True
 End Function
 
 Private Function SPSS_BuildColumnSegments(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long, ByVal lastCol As Long) As Collection
@@ -1422,22 +1462,13 @@ Private Function SPSS_BuildColumnSegments(ByVal ws As Worksheet, ByVal startRow 
 End Function
 
 Private Function SPSS_OrderSegments(ByVal sourceSegments As Collection, ByVal deleteBanners As Object, ByVal orderNames As Collection) As Collection
-    Dim result As Collection
+    Dim result As Collection, orderedBanners As Collection
     Set result = New Collection
+    Set orderedBanners = New Collection
     Dim added As Object
     Set added = CreateObject("Scripting.Dictionary")
 
-    Dim i As Long
-    For i = 1 To sourceSegments.Count
-        Dim seg As Variant
-        seg = sourceSegments(i)
-        If CStr(seg(3)) <> "banner" Then
-            result.Add seg
-            added(CStr(i)) = True
-        End If
-    Next i
-
-    Dim orderIdx As Long
+    Dim i As Long, seg As Variant, orderIdx As Long
     For orderIdx = 1 To orderNames.Count
         Dim targetName As String
         targetName = CStr(orderNames(orderIdx))
@@ -1445,7 +1476,7 @@ Private Function SPSS_OrderSegments(ByVal sourceSegments As Collection, ByVal de
             seg = sourceSegments(i)
             If CStr(seg(3)) = "banner" And CStr(seg(2)) = targetName Then
                 If Not deleteBanners.Exists(CStr(seg(2))) And Not added.Exists(CStr(i)) Then
-                    result.Add seg
+                    orderedBanners.Add seg
                     added(CStr(i)) = True
                 End If
             End If
@@ -1454,10 +1485,19 @@ Private Function SPSS_OrderSegments(ByVal sourceSegments As Collection, ByVal de
 
     For i = 1 To sourceSegments.Count
         seg = sourceSegments(i)
-        If Not added.Exists(CStr(i)) Then
-            If CStr(seg(3)) <> "banner" Or Not deleteBanners.Exists(CStr(seg(2))) Then
-                result.Add seg
-            End If
+        If CStr(seg(3)) = "banner" And Not added.Exists(CStr(i)) Then
+            If Not deleteBanners.Exists(CStr(seg(2))) Then orderedBanners.Add seg
+        End If
+    Next i
+
+    Dim nextBanner As Long: nextBanner = 1
+    For i = 1 To sourceSegments.Count
+        seg = sourceSegments(i)
+        If CStr(seg(3)) <> "banner" Then
+            result.Add seg
+        ElseIf nextBanner <= orderedBanners.Count Then
+            result.Add orderedBanners(nextBanner)
+            nextBanner = nextBanner + 1
         End If
     Next i
 
@@ -1521,9 +1561,11 @@ Private Function SPSS_CollectBannersForTable(ByVal ws As Worksheet, ByVal startR
         For c = 1 To lastCol
             textValue = ""
             If Not IsError(ws.Cells(r, c).Value2) Then textValue = Trim$(CStr(ws.Cells(r, c).Value2))
-            If Left$(textValue, 1) = "◐" Or Left$(textValue, 1) = "▣" Then
+            If Left$(textValue, 1) = "◐" Or Left$(textValue, 1) = "▣" Or (c <= 2 And Left$(textValue, 1) = "■") Then
                 name = SPSS_NormalizeBannerName(textValue)
-                If Len(name) > 0 And Not seen.Exists(name) Then seen(name) = True: result.Add name
+                If Left$(textValue, 1) <> "■" Or Replace(name, " ", "") <> "전체" Then
+                    If Len(name) > 0 And Not seen.Exists(name) Then seen(name) = True: result.Add name
+                End If
             End If
         Next c
     Next r

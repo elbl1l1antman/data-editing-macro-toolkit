@@ -14,7 +14,7 @@ function Add-Procedure([string]$name) {
  $body=[regex]::Replace($body,'"(?:[^"\r\n]|"")*"','""')
  foreach($match in [regex]::Matches($body,'\bSPSS_[A-Za-z0-9_]+\b')){Add-Procedure $match.Value}
 }
-foreach($name in @('SPSS_CollectTablesFromDataSheet','SPSS_CollectTablesFromIndex','SPSS_RebuildIndexFromDataSheet','SPSS_RebuildTablesFromIndex','SPSS_DeleteVerticalBannersFromIndex','SPSS_ApplyVerticalBannerDeletes','SPSS_ApplyVerticalLikeMarkerDeletes')){Add-Procedure $name}
+foreach($name in @('SPSS_CollectTablesFromDataSheet','SPSS_CollectTablesFromIndex','SPSS_RebuildIndexFromDataSheet','SPSS_RebuildTablesFromIndex','SPSS_DeleteVerticalBannersFromIndex','SPSS_ApplyVerticalBannerDeletes','SPSS_ApplyVerticalLikeMarkerDeletes','SPSS_CollectBannersForTable')){Add-Procedure $name}
 $blocks['SPSS_ShowRebuildOptionsForm'] = @'
 Private Function SPSS_ShowRebuildOptionsForm(ByVal tables As Collection, ByVal banners As Collection, ByRef deleteTableInput As String, ByRef deleteBannerInput As String, ByRef tableOrderInput As String, ByRef orderInput As String) As Boolean
     If mCancelForm Then Err.Raise vbObjectError + 8301, , "Cancelled"
@@ -172,6 +172,37 @@ Public Function TestSpssTitles() As String
     info = tables(1)
     If CStr(info(3)) <> "표 1" Then Err.Raise 513, , "Index insertion order differs from worksheet order"
     If CStr(info(0)) <> "첫 번째" Then Err.Raise 513, , "Earlier duplicate title was not preferred"
+    Dim marked As Worksheet, markedOut As Worksheet, markedNames As New Collection, markedTables As New Collection
+    Dim markedOrder As New Collection, markedDeleted As Object, markedInfo As Variant, nextRow As Long, detected As Collection
+    Set marked = wb.Worksheets.Add: marked.Name = "표식배너"
+    marked.Range("A1").Value = "no"
+    Dim markedRow As Long
+    For markedRow = 2 To 10: marked.Cells(markedRow, 1).Value = markedRow - 1: Next markedRow
+    marked.Range("B2:D2").Merge: marked.Range("B2").Value = "[표 99] 사례"
+    marked.Range("B3").Value = "BASE": marked.Range("D3").Value = "사례수"
+    marked.Range("B4:C4").Merge: marked.Range("B4").Value = "■ 전체": marked.Range("D4").Value = 10
+    marked.Range("B5:B6").Merge: marked.Range("B5").Value = "■ Alpha"
+    marked.Range("C5").Value = "A1": marked.Range("C6").Value = "A2": marked.Range("D5:D6").Value = 5
+    marked.Range("B7:B8").Merge: marked.Range("B7").Value = "■ Beta"
+    marked.Range("C7").Value = "B1": marked.Range("C8").Value = "B2": marked.Range("D7:D8").Value = 5
+    marked.Range("B10").Value = "표"
+    markedInfo = Array("[표 99] 사례", 2, 10, marked.Name)
+    markedTables.Add markedInfo
+    Set markedDeleted = CreateObject("Scripting.Dictionary")
+    Set detected = SPSS_CollectUniqueBanners(markedTables, marked, markedDeleted)
+    If detected.Count <> 2 Or CStr(detected(1)) <> "Alpha" Or CStr(detected(2)) <> "Beta" Then Err.Raise 513, , "Square-marked row banners not detected"
+    Set detected = SPSS_CollectBannersForTable(marked, 2, 10)
+    If detected.Count <> 2 Or CStr(detected(1)) <> "Alpha" Or CStr(detected(2)) <> "Beta" Then Err.Raise 513, , "Marked banners missing from metadata"
+    markedOrder.Add "Beta": markedOrder.Add "Alpha"
+    Set markedOut = wb.Worksheets.Add: nextRow = 1
+    SPSS_CopyRebuiltTable marked, markedOut, markedInfo, nextRow, markedDeleted, markedOrder
+    If markedOut.Range("B4").Value2 <> "■ Beta" Or markedOut.Range("B6").Value2 <> "■ Alpha" Then Err.Raise 513, , "Marked banner reorder failed"
+    If markedOut.Range("B8").Value2 <> "" Or markedOut.Range("B9").Value2 <> "표" Then Err.Raise 513, , "Table footer did not remain after banners"
+    If markedOut.Range("B4").MergeArea.Rows.Count <> 2 Or marked.Range("B5").Value2 <> "■ Alpha" Then Err.Raise 513, , "Merged banner or original was changed"
+    markedDeleted.Add "Beta", True
+    Set markedOut = wb.Worksheets.Add: nextRow = 1
+    SPSS_CopyRebuiltTable marked, markedOut, markedInfo, nextRow, markedDeleted, markedOrder
+    If Application.WorksheetFunction.CountIf(markedOut.Columns(2), "■ Beta") <> 0 Or markedOut.Range("B4").Value2 <> "■ Alpha" Then Err.Raise 513, , "Marked banner deletion failed"
     TestSpssTitles = "PASS"
     Exit Function
 Failed:
