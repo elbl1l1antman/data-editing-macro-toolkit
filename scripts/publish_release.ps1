@@ -289,6 +289,38 @@ End Sub
     $form.CodeModule.AddFromString($formCode)
 }
 
+function Add-KosisPickerUserForm {
+    param($Workbook)
+    $form = $Workbook.VBProject.VBComponents.Add(3)
+    $form.Name = 'frmKosisPicker'
+    $form.Properties.Item('Caption').Value = 'KOSIS 항목 선택'
+    $form.Properties.Item('Width').Value = 600
+    $form.Properties.Item('Height').Value = 490
+    $designer = $form.Designer
+    $guide = $designer.Controls.Add('Forms.Label.1', 'lblGuide', $true)
+    $guide.Left = 12; $guide.Top = 10; $guide.Width = 560; $guide.Height = 32; $guide.WordWrap = $true
+    $search = $designer.Controls.Add('Forms.TextBox.1', 'txtSearch', $true)
+    $search.Left = 12; $search.Top = 46; $search.Width = 350; $search.Height = 24
+    $list = $designer.Controls.Add('Forms.ListBox.1', 'lstItems', $true)
+    $list.Left = 12; $list.Top = 78; $list.Width = 560; $list.Height = 300
+    $list.ColumnCount = 2; $list.ColumnWidths = '70 pt;470 pt'; $list.MultiSelect = 1
+    $count = $designer.Controls.Add('Forms.Label.1', 'lblCount', $true)
+    $count.Left = 12; $count.Top = 385; $count.Width = 135; $count.Height = 20
+    $specs = @(
+        @('cmdSearch','검색',370,46,70), @('cmdExpand','펼치기/접기',447,46,115), @('cmdAll','표시 전체 선택',12,410,95),
+        @('cmdNone','표시 해제',112,410,75), @('cmdChildren','하위 전체',192,410,80),
+        @('cmdLeaves','최하위만',277,410,80), @('cmdOK','확인',417,410,70),
+        @('cmdBack','이전 단계',359,410,55), @('cmdCancel','취소',492,410,70)
+    )
+    foreach ($spec in $specs) {
+        $button = $designer.Controls.Add('Forms.CommandButton.1', $spec[0], $true)
+        $button.Caption = $spec[1]; $button.Left = $spec[2]; $button.Top = $spec[3]
+        $button.Width = $spec[4]; $button.Height = 26
+    }
+    $code = Get-Content -LiteralPath (Join-Path $ProjectRoot 'resources\forms\frmKosisPicker.vba.txt') -Raw -Encoding UTF8
+    $form.CodeModule.AddFromString($code)
+}
+
 function Add-ToolkitCheckListMenuUserForm {
     param($Workbook)
 
@@ -4054,6 +4086,9 @@ function Add-RibbonCustomUi {
         </group>
         <group id="grpSampleDesignTools" label="표본설계" imageMso="PivotTableInsert">
           <button id="btnSampleDesignListify" label="구성표 리스트화" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignListifyPopulationTable" screentip="모집단 구성표 리스트화" supertip="자동 감지 또는 범위 직접 지정을 선택하고, 미리보기 창에서 행축/가로축/값 구조를 확인한 뒤 리스트형 데이터로 변환합니다." />
+          <button id="btnKosisPopulation" label="KOSIS 모집단" size="large" imageMso="PivotTableInsert" onAction="Ribbon_KosisStart" screentip="KOSIS 모집단 자료 가져오기" supertip="공표 통계의 시점과 분류를 선택하여 모집단표와 검토 시트를 생성합니다." />
+          <button id="btnKosisKey" label="KOSIS 인증키" imageMso="TablePropertiesDialog" onAction="Ribbon_KosisSetKey" screentip="KOSIS 인증키 설정" supertip="현재 Windows 사용자에 대한 KOSIS 인증키를 등록하거나 변경합니다." />
+          <button id="btnKosisRefresh" label="분류정보 갱신" imageMso="RefreshAll" onAction="Ribbon_KosisRefresh" screentip="KOSIS 분류정보 갱신" supertip="선택한 통계표의 분류와 시점 정보를 다시 내려받습니다." />
           <button id="btnSampleDesignPivotList" label="리스트→집계표" imageMso="PivotTableInsert" onAction="Ribbon_SampleDesignPivotPopulationList" screentip="리스트형 표본자료를 집계표로 변환" supertip="구성표 리스트화 결과 또는 할당결과 범위를 선택하면 행축, 열축, 값 열을 자동 제안하고 표제목별 집계표 블록을 생성합니다." />
           <button id="btnSampleDesignTemplate" label="설계 시트 생성" size="large" imageMso="TableInsert" onAction="Ribbon_SampleDesignCreateTemplate" screentip="예시로 시작하는 표본설계" supertip="예시 시트에서 자료 형태를 확인하고 연습 또는 실제 자료 입력을 선택합니다. 기존 입력과 결과는 유지하며 새 입력 시트에는 예시 숫자를 넣지 않습니다." />
           <button id="btnSampleDesignGuide" label="표본설계 가이드" imageMso="Info" onAction="Ribbon_SampleDesignShowGuide" screentip="표본설계 사용 가이드" supertip="표본설계 입력 흐름, 필수 입력값, 목표표본 그룹표 사용법, 자주 나는 오류와 조치를 안내하는 가이드 시트를 엽니다." />
@@ -4204,6 +4239,7 @@ try {
         $toolkitModuleNames = @($ModulePaths | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_) })
         foreach ($component in @($workbook.VBProject.VBComponents)) {
             if (($component.Type -eq 1 -and $toolkitModuleNames -contains $component.Name) -or
+                ($component.Type -eq 3 -and $component.Name -eq 'frmKosisPicker') -or
                 ($component.Type -eq 3 -and ($component.Name -eq "frmSpssRebuildOptions" -or $component.Name -eq "frmRangeSelectOptions" -or $component.Name -eq "frmCompanyNameOptions" -or $component.Name -eq "frmBizStatusFieldsOptions" -or $component.Name -eq "frmNaverLocalBuildOptions" -or $component.Name -eq "frmNaverLocalVerifyOptions" -or $component.Name -eq "frmProgressStatus" -or $component.Name -eq "frmToolkitButtonMenu" -or $component.Name -eq "frmToolkitCheckListMenu" -or $component.Name -eq "frmSampleDesignSetup" -or $component.Name -eq "frmSampleDesignBandBuilder" -or $component.Name -eq "frmPopulationListifyPreview" -or $component.Name -eq "frmDatabaseMergeSetup" -or $component.Name -eq "frmDatabaseMergeReview"))) {
                 $workbook.VBProject.VBComponents.Remove($component)
             }
@@ -4218,6 +4254,8 @@ try {
         Add-ToolkitButtonMenuUserForm -Workbook $workbook
         $publishStage = "add frmToolkitCheckListMenu"
         Add-ToolkitCheckListMenuUserForm -Workbook $workbook
+        $publishStage = "add frmKosisPicker"
+        Add-KosisPickerUserForm -Workbook $workbook
         $publishStage = "add frmSampleDesignSetup"
         Add-SampleDesignSetupUserForm -Workbook $workbook
         Add-SampleExtractionWizardUserForm -Workbook $workbook

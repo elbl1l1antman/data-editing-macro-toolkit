@@ -1,0 +1,184 @@
+Option Explicit
+Public SelectedKeys As String
+Public Accepted As Boolean
+Public BackRequested As Boolean
+Private mItems As Object, mSelected As Object, mExpanded As Object, mOrder As Collection
+Private mRefreshing As Boolean
+
+Public Sub Configure(ByVal titleText As String, ByVal guideText As String, ByVal metadata As Collection, ByVal axis As String, ByVal defaults As String)
+    Dim entry As Object, code As String, value As Variant
+    Caption = titleText: lblGuide.Caption = guideText
+    Set mItems = CreateObject("Scripting.Dictionary")
+    Set mSelected = CreateObject("Scripting.Dictionary")
+    Set mExpanded = CreateObject("Scripting.Dictionary")
+    Set mOrder = New Collection
+    For Each entry In metadata
+        If CStr(entry("axis")) = axis Then
+            code = CStr(entry("code"))
+            If mItems.Exists(code) Then Err.Raise 5, , "분류 코드가 중복되었습니다."
+            mItems.Add code, entry
+            mOrder.Add code
+        End If
+    Next entry
+    For Each value In Split(defaults, vbLf)
+        code = CStr(value)
+        If mItems.Exists(code) Then mSelected(code) = True
+    Next value
+    Accepted = False: BackRequested = False: SelectedKeys = ""
+    RefreshList
+End Sub
+
+Private Sub SyncList()
+    Dim i As Long, code As String
+    For i = 0 To lstItems.ListCount - 1
+        code = CStr(lstItems.List(i, 0))
+        If lstItems.Selected(i) Then
+            mSelected(code) = True
+        ElseIf mSelected.Exists(code) Then
+            mSelected.Remove code
+        End If
+    Next i
+End Sub
+
+Private Sub RefreshList()
+    Dim code As Variant, entry As Object, filter As String, text As String, depth As Long, parent As String
+    mRefreshing = True
+    filter = LCase$(Trim$(txtSearch.Text))
+    lstItems.Clear
+    For Each code In mOrder
+        Set entry = mItems(CStr(code))
+        text = CStr(entry("name"))
+        If (Len(filter) = 0 And IsVisibleCode(CStr(code))) Or (Len(filter) > 0 And InStr(1, LCase$(CStr(code) & " " & text), filter, vbBinaryCompare) > 0) Then
+            depth = 0: parent = CStr(entry("parent"))
+            Do While Len(parent) > 0 And depth < 15
+                If Not mItems.Exists(parent) Then Exit Do
+                depth = depth + 1
+                Set entry = mItems(parent)
+                parent = CStr(entry("parent"))
+            Loop
+            lstItems.AddItem CStr(code)
+            lstItems.List(lstItems.ListCount - 1, 1) = String$(depth * 2, " ") & text
+            lstItems.Selected(lstItems.ListCount - 1) = mSelected.Exists(CStr(code))
+        End If
+    Next code
+    lblCount.Caption = "선택: " & CStr(mSelected.Count) & "개"
+    mRefreshing = False
+End Sub
+
+Private Sub lstItems_Change()
+    If mRefreshing Then Exit Sub
+    If mSelected Is Nothing Then Exit Sub
+    SyncList
+    lblCount.Caption = "선택: " & CStr(mSelected.Count) & "개"
+End Sub
+
+Private Function IsVisibleCode(ByVal code As String) As Boolean
+    Dim entry As Object, parent As String, steps As Long
+    Set entry = mItems(code): parent = CStr(entry("parent"))
+    Do While Len(parent) > 0 And steps < 30
+        If Not mItems.Exists(parent) Then Exit Do
+        If Not mExpanded.Exists(parent) Then Exit Function
+        Set entry = mItems(parent): parent = CStr(entry("parent")): steps = steps + 1
+    Loop
+    IsVisibleCode = True
+End Function
+
+Private Sub cmdExpand_Click()
+    Dim i As Long, code As String
+    SyncList
+    For i = 0 To lstItems.ListCount - 1
+        If lstItems.Selected(i) Then
+            code = CStr(lstItems.List(i, 0))
+            If mExpanded.Exists(code) Then mExpanded.Remove code Else mExpanded(code) = True
+        End If
+    Next i
+    RefreshList
+End Sub
+
+Private Sub cmdSearch_Click()
+    SyncList: RefreshList
+End Sub
+
+Private Sub cmdAll_Click()
+    Dim i As Long
+    For i = 0 To lstItems.ListCount - 1: lstItems.Selected(i) = True: Next i
+    SyncList: RefreshList
+End Sub
+
+Private Sub cmdNone_Click()
+    Dim i As Long
+    For i = 0 To lstItems.ListCount - 1: lstItems.Selected(i) = False: Next i
+    SyncList: RefreshList
+End Sub
+
+Private Function IsBelow(ByVal code As String, ByVal ancestor As String) As Boolean
+    Dim entry As Object, parent As String, steps As Long
+    If code = ancestor Then IsBelow = True: Exit Function
+    If Not mItems.Exists(code) Then Exit Function
+    Set entry = mItems(code): parent = CStr(entry("parent"))
+    Do While Len(parent) > 0 And steps < 30
+        If parent = ancestor Then IsBelow = True: Exit Function
+        If Not mItems.Exists(parent) Then Exit Do
+        Set entry = mItems(parent): parent = CStr(entry("parent")): steps = steps + 1
+    Loop
+End Function
+
+Private Sub SelectChildren(ByVal leavesOnly As Boolean)
+    Dim roots As Object, children As Object, code As Variant, root As Variant, entry As Object, parent As String
+    SyncList
+    Set roots = CreateObject("Scripting.Dictionary")
+    Set children = CreateObject("Scripting.Dictionary")
+    For Each code In mSelected.Keys: roots(CStr(code)) = True: Next code
+    For Each code In mOrder
+        Set entry = mItems(CStr(code)): parent = CStr(entry("parent"))
+        If Len(parent) > 0 Then children(parent) = True
+    Next code
+    If leavesOnly Then mSelected.RemoveAll
+    For Each code In mOrder
+        For Each root In roots.Keys
+            If IsBelow(CStr(code), CStr(root)) Then
+                If Not leavesOnly Or Not children.Exists(CStr(code)) Then mSelected(CStr(code)) = True
+                Exit For
+            End If
+        Next root
+    Next code
+    RefreshList
+End Sub
+
+Private Sub cmdChildren_Click()
+    SelectChildren False
+End Sub
+
+Private Sub cmdLeaves_Click()
+    SelectChildren True
+End Sub
+
+Private Sub cmdOK_Click()
+    Dim code As Variant
+    SyncList: SelectedKeys = ""
+    For Each code In mOrder
+        If mSelected.Exists(CStr(code)) Then
+            If Len(SelectedKeys) > 0 Then SelectedKeys = SelectedKeys & vbLf
+            SelectedKeys = SelectedKeys & CStr(code)
+        End If
+    Next code
+    If Len(SelectedKeys) = 0 Then
+        MsgBox "하나 이상 선택하세요.", vbExclamation, "KOSIS 항목 선택"
+        Exit Sub
+    End If
+    Accepted = True: Hide
+End Sub
+
+Private Sub cmdCancel_Click()
+    Accepted = False: Hide
+End Sub
+
+Private Sub cmdBack_Click()
+    BackRequested = True: Accepted = False: Hide
+End Sub
+
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    If CloseMode = 0 Then
+        Cancel = True: Accepted = False: Hide
+    End If
+End Sub

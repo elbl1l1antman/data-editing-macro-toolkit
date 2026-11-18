@@ -776,7 +776,10 @@ Public Sub Toolkit_LaunchSampleDesign()
         "6. 리스트→집계표" & vbCrLf & _
         "7. 표본설계 가이드 열기" & vbCrLf & _
         "8. 숫자값 구간 만들기" & vbCrLf & _
-        "9. 표본 추출", _
+        "9. 표본 추출" & vbCrLf & _
+        "10. KOSIS 모집단 가져오기" & vbCrLf & _
+        "11. KOSIS 인증키 설정" & vbCrLf & _
+        "12. KOSIS 분류정보 갱신", _
         "0")
 
     Select Case choice
@@ -790,6 +793,9 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "7": SampleDesign_ShowGuide
         Case "8": SampleDesign_CreateBandColumn
         Case "9": SampleExtract_Run
+        Case "10": Kosis_Start
+        Case "11": Kosis_SetApiKey
+        Case "12": Kosis_RefreshCache
         Case Else
             If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "표시된 기능 중 하나를 선택하세요."
     End Select
