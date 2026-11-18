@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.3.3"
+Public Const TOOLKIT_VERSION As String = "1.3.4"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Public Const VERSION_SHEET As String = "_MacroToolkit"
@@ -767,6 +767,7 @@ Public Sub Toolkit_LaunchSampleDesign()
     choice = Toolkit_LauncherPrompt( _
         "표본설계", _
         "실행할 표본설계 기능을 선택하세요." & vbCrLf & vbCrLf & _
+        "0. 집계표로 표본설계 (새 마법사)" & vbCrLf & _
         "1. 설계 시트 생성" & vbCrLf & _
         "2. 할당 계산" & vbCrLf & _
         "3. 진행률 관리표 생성" & vbCrLf & _
@@ -776,9 +777,10 @@ Public Sub Toolkit_LaunchSampleDesign()
         "7. 표본설계 가이드 열기" & vbCrLf & _
         "8. 숫자값 구간 만들기" & vbCrLf & _
         "9. 표본 추출", _
-        "1")
+        "0")
 
     Select Case choice
+        Case "0": SampleCandidate_Start
         Case "1": SampleDesign_CreateTemplate
         Case "2": SampleDesign_RunAllocation
         Case "3": SampleDesign_CreateProgressTracker
@@ -789,7 +791,7 @@ Public Sub Toolkit_LaunchSampleDesign()
         Case "8": SampleDesign_CreateBandColumn
         Case "9": SampleExtract_Run
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "1~9 중 하나를 선택하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "표본설계", "표시된 기능 중 하나를 선택하세요."
     End Select
 End Sub
 
