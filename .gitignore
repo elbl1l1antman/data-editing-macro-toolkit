@@ -4,3 +4,15 @@
 [Aa][Gg][Ee][Nn][Tt][Ss].[Mm][Dd]
 [Cc][Hh][Aa][Nn][Gg][Ee][Ll][Oo][Gg].[Mm][Dd]
 
+# Local test data (test code and product resources remain tracked)
+tests/fixtures/
+tests/data/
+**/*_test.xls
+**/*_test.xlsx
+**/*_test.xlsm
+**/*_test.csv
+**/*테스트*.xls
+**/*테스트*.xlsx
+**/*테스트*.xlsm
+**/*테스트*.csv
+

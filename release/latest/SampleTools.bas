@@ -4005,23 +4005,39 @@ End Function
 
 Public Sub SampleExtract_Run()
     On Error GoTo ErrHandler
-    Dim wizard As Object, actionName As String, populationRange As Range
+    Dim wizard As Object, actionName As String, populationRange As Range, designWs As Worksheet
+    Dim activeWs As Worksheet, cancelled As Boolean, candidateValid As Boolean
+    If TypeName(ActiveSheet) = "Worksheet" Then
+        Set activeWs = ActiveSheet
+        Set designWs = SampleExtract_SelectDesignSheet(activeWs.Parent, activeWs, cancelled)
+        If cancelled Then Exit Sub
+    End If
     Set wizard = VBA.UserForms.Add("frmSampleExtractionWizard")
+    If Not designWs Is Nothing Then
+        wizard.Controls("mpSteps").Pages(1).Controls("optAutoTarget").Caption = "현재 설계 결과 자동 연결"
+        wizard.Controls("mpSteps").Pages(1).Controls("lblGuide2").Caption = _
+            "설계 시트 '" & designWs.Name & "'를 연결합니다. 명부의 층과 설계 구분은 검토 단계에서 선택합니다."
+    End If
     Do
         wizard.Show
         actionName = LCase$(Trim$(CStr(wizard.Action)))
         Select Case actionName
             Case "pick_range"
+                candidateValid = False
                 Set populationRange = SampleExtract_PickPopulationRange(wizard)
             Case "review"
                 If populationRange Is Nothing Then
                     MsgBox "먼저 모집단 범위를 선택하세요.", vbExclamation, "표본 추출"
                     wizard.ShowPage 0
                 Else
-                    SampleExtract_PrepareReview wizard, populationRange
+                    SampleExtract_PrepareReview wizard, populationRange, designWs, candidateValid
                 End If
             Case "run"
-                If SampleExtract_Execute(wizard, populationRange) Then Exit Do
+                If Not designWs Is Nothing And CStr(wizard.TargetMode) = "auto" And Not candidateValid Then
+                    MsgBox "새 설계표와 명부 연결을 먼저 검토하고 경고를 해결하세요.", vbExclamation, "표본 추출"
+                ElseIf SampleExtract_Execute(wizard, populationRange, Not designWs Is Nothing And CStr(wizard.TargetMode) = "auto") Then
+                    Exit Do
+                End If
             Case Else
                 Exit Do
         End Select
@@ -4036,6 +4052,34 @@ ErrHandler:
     End If
     Resume CleanExit
 End Sub
+
+Private Function SampleExtract_SelectDesignSheet(ByVal wb As Workbook, ByVal activeWs As Worksheet, _
+    ByRef cancelled As Boolean) As Worksheet
+    Dim candidates As New Collection, ws As Worksheet, options As String, defaultChoice As String, choice As String, i As Long
+    cancelled = False
+    options = "0" & vbTab & "기존 할당결과 또는 직접 입력 사용"
+    defaultChoice = "0"
+    For Each ws In wb.Worksheets
+        If ws.Visible = xlSheetVisible Then
+            If Not IsError(ws.Cells(1, 1).Value2) Then
+                If CStr(ws.Cells(1, 1).Value2) = "표본설계 결과" Then
+                    candidates.Add ws
+                    If candidates.Count > 19 Then Err.Raise 5, , "새 설계 결과가 19개를 넘습니다. 사용할 결과만 남긴 복사본에서 다시 실행하세요."
+                    options = options & vbLf & CStr(candidates.Count) & vbTab & "새 설계 결과: " & ws.Name
+                    If ws Is activeWs Then defaultChoice = CStr(candidates.Count)
+                End If
+            End If
+        End If
+    Next ws
+    If candidates.Count = 0 Then Exit Function
+    choice = Toolkit_ButtonMenu("표본 추출 - 목표 연결", "연결할 표본설계 결과를 선택하세요.", options, defaultChoice)
+    If Len(choice) = 0 Then cancelled = True: Exit Function
+    If choice = "0" Then Exit Function
+    If Not IsNumeric(choice) Then Err.Raise 5, , "표본설계 결과 선택을 확인하세요."
+    i = CLng(choice)
+    If i < 1 Or i > candidates.Count Then Err.Raise 5, , "표본설계 결과 선택을 확인하세요."
+    Set SampleExtract_SelectDesignSheet = candidates(i)
+End Function
 
 Private Function SampleExtract_PickPopulationRange(ByVal wizard As Object) As Range
     Dim selectedRange As Range, headers As Variant, minimumRows As Long
@@ -4158,6 +4202,168 @@ Private Function SampleExtract_LoadAllocationTargets(ByVal wb As Workbook, ByVal
     Set SampleExtract_LoadAllocationTargets = result
 End Function
 
+Private Function SampleExtract_SelectCandidateColumns(ByVal designWs As Worksheet, ByVal headers As Variant, _
+    ByVal stratumIndexes As Variant, ByRef warningText As String) As Variant
+    On Error GoTo Failed
+    warningText = ""
+    Dim headerCell As Range, popCell As Range
+    Set headerCell = designWs.Cells.Find(What:="최종 표본수", LookIn:=xlValues, LookAt:=xlWhole, _
+        SearchOrder:=xlByRows, SearchDirection:=xlNext, MatchCase:=False)
+    If headerCell Is Nothing Then Err.Raise 5, , "설계 결과의 최종 표본수 열을 찾지 못했습니다."
+    Set popCell = designWs.Rows(headerCell.Row).Find(What:="모집단수", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If popCell Is Nothing Then Err.Raise 5, , "설계 결과의 모집단수 열을 찾지 못했습니다."
+    If popCell.Column - 1 > 20 Then Err.Raise 5, , "구분이 20개를 넘어 연결할 수 없습니다."
+    Dim selected() As Long, used As Object, i As Long, c As Long, col As Long, dataIndex As Long
+    Dim options As String, defaultChoice As String, choice As String, label As String, example As String
+    Set used = CreateObject("Scripting.Dictionary")
+    ReDim selected(LBound(stratumIndexes) To UBound(stratumIndexes))
+    For i = LBound(stratumIndexes) To UBound(stratumIndexes)
+        dataIndex = CLng(stratumIndexes(i))
+        If dataIndex < 1 Or dataIndex > UBound(headers) + 1 Then Err.Raise 5, , "명부의 층화 열을 확인하세요."
+        options = "": defaultChoice = ""
+        For c = 1 To popCell.Column - 1
+            If Not used.Exists(CStr(c)) Then
+                label = Trim$(CStr(designWs.Cells(headerCell.Row, c).Value2))
+                example = Trim$(CStr(designWs.Cells(headerCell.Row + 1, c).Value2))
+                If Len(label) = 0 Then label = "구분 " & CStr(c)
+                If Len(options) > 0 Then options = options & vbLf
+                options = options & CStr(c) & vbTab & label & " (예: " & Left$(example, 50) & ")"
+                If SampleExtract_NormalizeHeader(label) = SampleExtract_NormalizeHeader(CStr(headers(dataIndex - 1))) Then defaultChoice = CStr(c)
+            End If
+        Next c
+        If Len(options) = 0 Then Err.Raise 5, , "명부의 층화 기준보다 설계표 구분 열이 적습니다."
+        choice = Toolkit_ButtonMenu("표본설계와 명부 연결", _
+            "명부의 '" & CStr(headers(dataIndex - 1)) & "'에 해당하는 설계표 구분을 선택하세요.", options, defaultChoice)
+        If Len(choice) = 0 Then warningText = "표본설계 구분 연결을 취소했습니다.": Exit Function
+        If Not IsNumeric(choice) Then Err.Raise 5, , "설계표 구분 선택을 확인하세요."
+        col = CLng(choice)
+        If col < 1 Or col >= popCell.Column Or used.Exists(CStr(col)) Then Err.Raise 5, , "중복되거나 잘못된 설계표 구분입니다."
+        selected(i) = col: used.Add CStr(col), True
+    Next i
+    SampleExtract_SelectCandidateColumns = selected
+    Exit Function
+Failed:
+    warningText = "표본설계 구분 연결 오류: " & Err.Description
+End Function
+
+Private Function SampleExtract_ValidateCandidateCodes(ByVal designWs As Worksheet, ByVal axisColumns As Variant, _
+    ByVal populationValues As Variant, ByVal stratumIndexes As Variant, ByVal firstDataRow As Long, _
+    ByRef warningText As String) As Boolean
+    On Error GoTo Failed
+    Dim headerCell As Range, popCell As Range, lastRow As Long, designValues As Variant
+    Set headerCell = designWs.Cells.Find(What:="최종 표본수", LookIn:=xlValues, LookAt:=xlWhole, _
+        SearchOrder:=xlByRows, SearchDirection:=xlNext, MatchCase:=False)
+    If headerCell Is Nothing Then Err.Raise 5, , "설계 결과의 표본수 열이 없습니다."
+    Set popCell = designWs.Rows(headerCell.Row).Find(What:="모집단수", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If popCell Is Nothing Then Err.Raise 5, , "설계 결과의 모집단수 열이 없습니다."
+    lastRow = designWs.Cells(designWs.Rows.Count, headerCell.Column).End(xlUp).Row
+    If lastRow <= headerCell.Row Then Err.Raise 5, , "설계 구분 자료가 없습니다."
+    designValues = designWs.Range(designWs.Cells(headerCell.Row + 1, 1), designWs.Cells(lastRow, popCell.Column - 1)).Value2
+    Dim rosterKeys As Object, normalizedKey As String, rawKey As String, r As Long
+    Set rosterKeys = CreateObject("Scripting.Dictionary")
+    For r = firstDataRow To UBound(populationValues, 1)
+        SampleExtract_CodeKeys populationValues, r, stratumIndexes, normalizedKey, rawKey
+        If rosterKeys.Exists(normalizedKey) Then
+            If CStr(rosterKeys(normalizedKey)) <> rawKey Then Err.Raise 5, , "명부에서 정규화하면 같아지는 서로 다른 층 구분이 있습니다."
+        Else
+            rosterKeys.Add normalizedKey, rawKey
+        End If
+    Next r
+    For r = 1 To UBound(designValues, 1)
+        SampleExtract_CodeKeys designValues, r, axisColumns, normalizedKey, rawKey
+        If rosterKeys.Exists(normalizedKey) Then
+            If CStr(rosterKeys(normalizedKey)) <> rawKey Then Err.Raise 5, , "명부와 설계표의 층 구분이 정규화 후에만 일치합니다. 앞자리 0 등의 차이를 확인하세요."
+        End If
+    Next r
+    SampleExtract_ValidateCandidateCodes = True
+    Exit Function
+Failed:
+    warningText = "표본설계 연결 오류: " & Err.Description
+End Function
+
+Private Sub SampleExtract_CodeKeys(ByVal values As Variant, ByVal rowIndex As Long, ByVal indexes As Variant, _
+    ByRef normalizedKey As String, ByRef rawKey As String)
+    Dim axis As Variant, value As Variant, valueText As String, rawText As String
+    normalizedKey = "": rawKey = ""
+    For Each axis In indexes
+        If CLng(axis) < 1 Or CLng(axis) > UBound(values, 2) Then Err.Raise 5, , "연결할 구분 열이 잘못되었습니다."
+        value = values(rowIndex, CLng(axis))
+        If IsError(value) Or IsNull(value) Then Err.Raise 5, , "층 구분에 오류 값이 있습니다."
+        rawText = Trim$(CStr(value))
+        valueText = SampleExtract_NormalizeMatchValue(value)
+        normalizedKey = normalizedKey & Len(valueText) & ":" & valueText & "|"
+        rawKey = rawKey & Len(rawText) & ":" & rawText & "|"
+    Next axis
+End Sub
+
+Public Function SampleExtract_LoadCandidateTargets(ByVal designWs As Worksheet, ByVal axisColumns As Variant, _
+    ByRef warningText As String) As Object
+    Dim result As Object: Set result = CreateObject("Scripting.Dictionary")
+    On Error GoTo Failed
+    warningText = ""
+    If designWs Is Nothing Then Err.Raise 5, , "표본설계 결과 시트가 없습니다."
+    If CStr(designWs.Cells(1, 1).Value2) <> "표본설계 결과" Then Err.Raise 5, , "새 표본설계 결과 시트를 선택하세요."
+    Dim headerCell As Range, popCell As Range, diffCell As Range
+    Set headerCell = designWs.Cells.Find(What:="최종 표본수", LookIn:=xlValues, LookAt:=xlWhole, _
+        SearchOrder:=xlByRows, SearchDirection:=xlNext, MatchCase:=False)
+    If headerCell Is Nothing Then Err.Raise 5, , "결과표에서 최종 표본수 열을 찾지 못했습니다."
+    Set popCell = designWs.Rows(headerCell.Row).Find(What:="모집단수", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    Set diffCell = designWs.Rows(headerCell.Row).Find(What:="목표와 차이", LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If popCell Is Nothing Or diffCell Is Nothing Then Err.Raise 5, , "결과표의 모집단 또는 목표 검토 열이 없습니다."
+    Dim used As Object, axis As Variant, col As Long, r As Long, lastRow As Long, diffLast As Long
+    Set used = CreateObject("Scripting.Dictionary")
+    For Each axis In axisColumns
+        col = CLng(axis)
+        If col < 1 Or col >= popCell.Column Then Err.Raise 5, , "연결할 구분 열을 확인하세요."
+        If used.Exists(CStr(col)) Then Err.Raise 5, , "같은 결과 구분을 두 번 연결할 수 없습니다."
+        used.Add CStr(col), True
+    Next axis
+    If used.Count = 0 Then Err.Raise 5, , "연결할 구분을 하나 이상 선택하세요."
+    designWs.Calculate
+    diffLast = designWs.Cells(designWs.Rows.Count, diffCell.Column).End(xlUp).Row
+    For r = headerCell.Row + 1 To diffLast
+        If IsError(designWs.Cells(r, diffCell.Column).Value2) Then Err.Raise 5, , "목표 차이에 계산 오류가 있습니다."
+        If IsNumeric(designWs.Cells(r, diffCell.Column).Value2) Then
+            If CDbl(designWs.Cells(r, diffCell.Column).Value2) <> 0 Then Err.Raise 5, , "결과표의 목표와 최종 표본 합계가 다릅니다. 먼저 차이를 해결하세요."
+        End If
+    Next r
+    lastRow = designWs.Cells(designWs.Rows.Count, headerCell.Column).End(xlUp).Row
+    If lastRow <= headerCell.Row Then Err.Raise 5, , "연결할 최종 표본이 없습니다."
+    Dim value As Variant, population As Variant, rawValue As Variant, keyText As String, valueText As String
+    Dim rawKey As String, rawText As String, rawKeys As Object
+    Set rawKeys = CreateObject("Scripting.Dictionary")
+    For r = headerCell.Row + 1 To lastRow
+        value = designWs.Cells(r, headerCell.Column).Value2
+        population = designWs.Cells(r, popCell.Column).Value2
+        If IsError(value) Or IsError(population) Then Err.Raise 5, , "결과표의 모집단 또는 표본수에 오류가 있습니다."
+        If Not IsNumeric(value) Or Not IsNumeric(population) Then Err.Raise 5, , "결과표의 모집단과 표본수는 숫자여야 합니다."
+        If CDbl(value) < 0 Or CDbl(value) <> Fix(CDbl(value)) Or CDbl(value) > CDbl(population) Or CDbl(value) > 2147483647# Then _
+            Err.Raise 5, , "표본수는 모집단 이하의 0 이상의 정수여야 합니다."
+        keyText = "": rawKey = ""
+        For Each axis In axisColumns
+            rawValue = designWs.Cells(r, CLng(axis)).Value2
+            If IsError(rawValue) Or IsNull(rawValue) Then Err.Raise 5, , "설계 구분에 오류가 있습니다."
+            rawText = Trim$(CStr(rawValue))
+            valueText = SampleExtract_NormalizeMatchValue(rawValue)
+            keyText = keyText & Len(valueText) & ":" & valueText & "|"
+            rawKey = rawKey & Len(rawText) & ":" & rawText & "|"
+        Next axis
+        If result.Exists(keyText) Then
+            If CStr(rawKeys(keyText)) <> rawKey Then Err.Raise 5, , "정규화하면 같은 값이 되는 서로 다른 설계 구분이 있습니다. 원본 구분값을 확인하세요."
+            result(keyText) = CLng(result(keyText)) + CLng(value)
+        Else
+            result.Add keyText, CLng(value)
+            rawKeys.Add keyText, rawKey
+        End If
+    Next r
+    Set SampleExtract_LoadCandidateTargets = result
+    Exit Function
+Failed:
+    warningText = "표본설계 연결 오류: " & Err.Description
+    Set result = CreateObject("Scripting.Dictionary")
+    Set SampleExtract_LoadCandidateTargets = result
+End Function
+
 Private Function SampleExtract_BuildReviewText(ByVal strata As Object, ByVal targets As Object, _
                                                ByVal replacementMultiplier As Long, ByRef targetText As String, _
                                                ByRef warningText As String) As String
@@ -4179,9 +4385,11 @@ Private Function SampleExtract_BuildReviewText(ByVal strata As Object, ByVal tar
     SampleExtract_BuildReviewText = resultText
 End Function
 
-Private Sub SampleExtract_PrepareReview(ByVal wizard As Object, ByVal populationRange As Range)
+Private Sub SampleExtract_PrepareReview(ByVal wizard As Object, ByVal populationRange As Range, _
+                                        ByVal designWs As Worksheet, ByRef candidateValid As Boolean)
     Dim values As Variant, headers As Variant, indexes As Variant, strata As Object, targets As Object
     Dim warningText As String, targetText As String, reviewText As String, firstDataRow As Long
+    candidateValid = False
     values = populationRange.Value2
     headers = SampleExtract_HeaderNames(populationRange, CBool(wizard.HasHeader))
     indexes = SampleExtract_ParseIndexes(CStr(wizard.StratumColumnIndexes))
@@ -4189,9 +4397,38 @@ Private Sub SampleExtract_PrepareReview(ByVal wizard As Object, ByVal population
     Set strata = SampleExtract_BuildStrata(values, firstDataRow, indexes)
     Set targets = CreateObject("Scripting.Dictionary")
     If CStr(wizard.TargetMode) = "auto" Then
-        Set targets = SampleExtract_LoadAllocationTargets(populationRange.Worksheet.Parent, headers, indexes, warningText)
+        If designWs Is Nothing Then
+            Set targets = SampleExtract_LoadAllocationTargets(populationRange.Worksheet.Parent, headers, indexes, warningText)
+        Else
+            Dim mapping As Variant
+            mapping = SampleExtract_SelectCandidateColumns(designWs, headers, indexes, warningText)
+            If IsArray(mapping) Then
+                If SampleExtract_ValidateCandidateCodes(designWs, mapping, values, indexes, firstDataRow, warningText) Then _
+                    Set targets = SampleExtract_LoadCandidateTargets(designWs, mapping, warningText)
+            End If
+            Dim targetKey As Variant, candidateIssue As String, candidateRows As Collection
+            For Each targetKey In targets.Keys
+                If Not strata.Exists(CStr(targetKey)) Then
+                    If CLng(targets(targetKey)) > 0 Then
+                        candidateIssue = "명부에 없는 층에 표본 목표가 있습니다: " & CStr(targetKey)
+                        Exit For
+                    End If
+                Else
+                    Set candidateRows = strata(CStr(targetKey))
+                    If CLng(targets(targetKey)) > candidateRows.Count Then
+                        candidateIssue = "명부 인원이 표본 목표보다 부족합니다: " & CStr(targetKey)
+                        Exit For
+                    End If
+                End If
+            Next targetKey
+            If Len(candidateIssue) > 0 Then
+                warningText = candidateIssue & vbCrLf & "자동 연결을 중단했습니다. 층화 구분과 명부 범위를 확인하세요."
+                Set targets = CreateObject("Scripting.Dictionary")
+            End If
+        End If
     End If
     reviewText = SampleExtract_BuildReviewText(strata, targets, CLng(wizard.ReplacementMultiplier), targetText, warningText)
+    If Not designWs Is Nothing And CStr(wizard.TargetMode) = "auto" Then candidateValid = (Len(warningText) = 0)
     wizard.ConfigureReview reviewText, targetText, warningText
 End Sub
 
@@ -4260,7 +4497,8 @@ Private Sub SampleExtract_QuickSortRows(ByRef orderedRows() As Long, ByVal low A
     If i < high Then SampleExtract_QuickSortRows orderedRows, i, high, values, sortColumn, descending
 End Sub
 
-Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationRange As Range) As Boolean
+Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationRange As Range, _
+                                       Optional ByVal requireCandidateLimits As Boolean = False) As Boolean
     On Error GoTo ErrHandler
     Dim wb As Workbook, outputName As String, reviewName As String, warningText As String
     If populationRange Is Nothing Then MsgBox "모집단 범위를 다시 선택하세요.", vbExclamation, "표본 추출": Exit Function
@@ -4279,6 +4517,15 @@ Private Function SampleExtract_Execute(ByVal wizard As Object, ByVal populationR
     Set strata = SampleExtract_BuildStrata(values, firstDataRow, indexes)
     Set targets = SampleExtract_ParseTargetEdits(CStr(wizard.TargetEditsText), strata, warningText)
     If Len(warningText) > 0 Then MsgBox warningText, vbExclamation, "표본 추출": Exit Function
+    If requireCandidateLimits Then
+        For Each key In strata.Keys
+            Set rows = strata(key)
+            If CLng(targets(CStr(key))) > rows.Count Then
+                MsgBox "목표 원표본이 명부 인원보다 많습니다. 층과 목표를 다시 확인하세요: " & CStr(key), vbExclamation, "표본 추출"
+                Exit Function
+            End If
+        Next key
+    End If
 
     Dim sortMode As String, sortColumn As Long
     sortMode = CStr(wizard.SortMode): sortColumn = CLng(wizard.SortColumnIndex)

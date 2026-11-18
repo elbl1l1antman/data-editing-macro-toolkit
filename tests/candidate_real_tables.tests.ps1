@@ -33,6 +33,21 @@ Public Function TestRealTable(ByVal ws As Worksheet, ByVal rowsAddress As String
 Failed:
     TestRealTable = CStr(Err.Number) & ": " & Err.Description
 End Function
+Public Function TestDetectRealTable(ByVal ws As Worksheet, ByVal wholeAddress As String, _
+    ByVal expectedCount As Long, ByVal shouldDetect As Boolean) As String
+    On Error GoTo Failed
+    Dim axes As Range, headings As Range, values As Range, records As Collection, detected As Boolean
+    detected = SampleCandidate_DetectTable(ws.Range(wholeAddress), axes, headings, values)
+    If detected <> shouldDetect Then Err.Raise 5, , "unexpected detection decision"
+    If detected Then
+        Set records = SampleCandidate_ReadTable(axes, headings, values)
+        If records.Count <> expectedCount Then Err.Raise 5, , "detected record count: " & records.Count
+    End If
+    TestDetectRealTable = "PASS"
+    Exit Function
+Failed:
+    TestDetectRealTable = CStr(Err.Number) & ": " & Err.Description
+End Function
 '@
 $excel = $null; $hostBook = $null; $opened = @()
 try {
@@ -43,10 +58,10 @@ try {
     $module = $hostBook.VBProject.VBComponents.Add(1)
     $module.CodeModule.AddFromString($source + "`r`n" + $test)
     $cases = @(
-        @{Sheet=4; Rows='B4:C9'; Heads='F3:J3'; Values='F4:J9'; Count=30},
-        @{Sheet=2; Rows='A6:B12'; Heads='C4:I5'; Values='C6:I12'; Count=49},
-        @{Sheet=2; Rows='A4:A8'; Heads='B2:M3'; Values='B4:M8'; Count=60},
-        @{Sheet=1; Rows='A5:A9'; Heads='B3:K4'; Values='B5:K9'; Count=50}
+        @{Sheet=4; Rows='B4:C9'; Heads='F3:J3'; Values='F4:J9'; Count=30; Whole='B3:Q9'; Detect=$false},
+        @{Sheet=2; Rows='A6:B12'; Heads='C4:I5'; Values='C6:I12'; Count=49; Whole='A4:J13'; Detect=$true},
+        @{Sheet=2; Rows='A4:A8'; Heads='B2:M3'; Values='B4:M8'; Count=60; Whole='A2:N9'; Detect=$true},
+        @{Sheet=1; Rows='A5:A9'; Heads='B3:K4'; Values='B5:K9'; Count=50; Whole='A3:L10'; Detect=$true}
     )
     for ($i=0; $i -lt $cases.Count; $i++) {
         $book = $excel.Workbooks.Open($Files[$i], 0, $true)
@@ -54,6 +69,8 @@ try {
         $case = $cases[$i]
         $result = [string]$excel.Run("'$($hostBook.Name)'!TestRealTable", $book.Worksheets.Item($case.Sheet), $case.Rows, $case.Heads, $case.Values, $case.Count)
         if ($result -ne 'PASS') { throw "Reference $($i+1): $result" }
+        $result = [string]$excel.Run("'$($hostBook.Name)'!TestDetectRealTable", $book.Worksheets.Item($case.Sheet), $case.Whole, $case.Count, $case.Detect)
+        if ($result -ne 'PASS') { throw "Reference $($i+1) detection: $result" }
         Write-Host "Reference $($i+1): $result ($($case.Count) cells)"
     }
 } finally {

@@ -5,7 +5,7 @@
 
 $ErrorActionPreference = "Stop"
 $modulePath = Join-Path $ProjectRoot "src\MacroToolkit.bas"
-$fixturePath = Join-Path $ProjectRoot "dev\dbmerge_wizard_test.xlsx"
+$fixturePath = Join-Path ([IO.Path]::GetTempPath()) ("dbmerge_test_" + [guid]::NewGuid().ToString("N") + ".xlsx")
 $source = Get-ToolkitVbaSource -ProjectRoot $ProjectRoot
 
 function Get-VbaBlock {
@@ -28,9 +28,7 @@ function Assert-NotContains([string]$Actual, [string]$Unexpected) {
     if ($Actual.Contains($Unexpected)) { throw "Unexpected text found: $Unexpected`nActual:`n$Actual" }
 }
 
-if (-not (Test-Path -LiteralPath $fixturePath)) {
-    throw "Fixture not found: $fixturePath"
-}
+& (Join-Path $ProjectRoot "tests\create_dbmerge_wizard_test_workbook.ps1") -ProjectRoot $ProjectRoot -OutputPath $fixturePath
 
 $procedureNames = @(
     "DBMerge_WizardSheetInfoText",
@@ -166,4 +164,5 @@ finally {
         $excel.Quit() | Out-Null
         [System.Runtime.InteropServices.Marshal]::ReleaseComObject($excel) | Out-Null
     }
+    if (Test-Path -LiteralPath $fixturePath) { Remove-Item -LiteralPath $fixturePath -Force }
 }

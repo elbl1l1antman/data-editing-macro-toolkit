@@ -1,6 +1,93 @@
 Attribute VB_Name = "SampleDesignCandidate"
 Option Explicit
 
+Public Function SampleCandidate_DetectTable(ByVal tableRange As Range, ByRef rowAxes As Range, _
+    ByRef columnAxes As Range, ByRef populations As Range) As Boolean
+    On Error GoTo NotDetected
+    Set rowAxes = Nothing: Set columnAxes = Nothing: Set populations = Nothing
+    If tableRange Is Nothing Then Exit Function
+    If tableRange.Areas.Count <> 1 Or tableRange.Rows.Count < 2 Or tableRange.Columns.Count < 3 Then Exit Function
+    If CDbl(tableRange.Rows.Count) * CDbl(tableRange.Columns.Count) > 10000# Then Exit Function
+    Dim r As Long, c As Long, runStart As Long, runLength As Long, bestStart As Long, bestLength As Long
+    Dim dataRow As Long, headerRow As Long, dataEnd As Long, lastTextColumn As Long, label As String, labels As Object, allPresent As Boolean
+    For r = 2 To tableRange.Rows.Count
+        runLength = 0: bestLength = 0: bestStart = 0
+        For c = 1 To tableRange.Columns.Count + 1
+            If c <= tableRange.Columns.Count Then
+                If SampleCandidate_IsNumber(tableRange.Cells(r, c).Value2) Then
+                    If runLength = 0 Then runStart = c
+                    runLength = runLength + 1
+                Else
+                    If runLength > bestLength Then bestLength = runLength: bestStart = runStart
+                    runLength = 0
+                End If
+            Else
+                If runLength > bestLength Then bestLength = runLength: bestStart = runStart
+            End If
+        Next c
+        If bestLength >= 2 And bestStart > 1 Then
+            lastTextColumn = 0
+            For c = 1 To bestStart - 1
+                label = SampleCandidate_CellLabel(tableRange.Cells(r, c))
+                If Len(label) > 0 And Not SampleCandidate_IsNumber(tableRange.Cells(r, c).Value2) Then lastTextColumn = c
+            Next c
+            If lastTextColumn > 0 Then
+                For c = lastTextColumn + 1 To bestStart - 1
+                    If SampleCandidate_IsNumber(tableRange.Cells(r, c).Value2) Then Exit Function
+                Next c
+                dataRow = r
+            End If
+            If dataRow > 0 Then Exit For
+        End If
+    Next r
+    If dataRow = 0 Then Exit Function
+    For r = 1 To dataRow - 1
+        Set labels = CreateObject("Scripting.Dictionary")
+        allPresent = True
+        For c = bestStart To bestStart + bestLength - 1
+            label = SampleCandidate_CellLabel(tableRange.Cells(r, c))
+            If SampleCandidate_IsAmbiguousHeader(label) Then Exit Function
+            If Len(label) = 0 Then allPresent = False Else labels(label) = True
+        Next c
+        If allPresent And labels.Count > 1 Then headerRow = r: Exit For
+    Next r
+    If headerRow = 0 Then Exit Function
+    For r = headerRow To dataRow - 1
+        For c = bestStart To bestStart + bestLength - 1
+            If SampleCandidate_IsAmbiguousHeader(SampleCandidate_CellLabel(tableRange.Cells(r, c))) Then Exit Function
+        Next c
+    Next r
+    dataEnd = dataRow
+    For r = dataRow + 1 To tableRange.Rows.Count
+        allPresent = False
+        For c = 1 To bestStart + bestLength - 1
+            If Len(SampleCandidate_CellLabel(tableRange.Cells(r, c))) > 0 Then allPresent = True: Exit For
+        Next c
+        If Not allPresent Then Exit For
+        dataEnd = r
+    Next r
+    Set rowAxes = tableRange.Cells(dataRow, 1).Resize(dataEnd - dataRow + 1, bestStart - 1)
+    Set columnAxes = tableRange.Cells(headerRow, bestStart).Resize(dataRow - headerRow, bestLength)
+    Set populations = tableRange.Cells(dataRow, bestStart).Resize(dataEnd - dataRow + 1, bestLength)
+    SampleCandidate_DetectTable = True
+    Exit Function
+NotDetected:
+    Set rowAxes = Nothing: Set columnAxes = Nothing: Set populations = Nothing
+End Function
+
+Private Function SampleCandidate_IsAmbiguousHeader(ByVal value As String) As Boolean
+    Select Case UCase$(Replace(Trim$(value), " ", ""))
+        Case "TARGET", "SAMPLETARGET", "배분목표", "목표표본", "표본목표", "표본수목표", "남계", "여계", "표본계"
+            SampleCandidate_IsAmbiguousHeader = True
+    End Select
+End Function
+
+Private Function SampleCandidate_IsNumber(ByVal value As Variant) As Boolean
+    If IsError(value) Or IsEmpty(value) Then Exit Function
+    If Len(Trim$(CStr(value))) = 0 Then Exit Function
+    SampleCandidate_IsNumber = IsNumeric(value)
+End Function
+
 ' Return one record per source cell: row axes, column axes, population, source row, source column.
 Public Function SampleCandidate_ReadTable(ByVal rowAxes As Range, ByVal columnAxes As Range, _
                                           ByVal populations As Range) As Collection
@@ -75,6 +162,98 @@ Public Function SampleCandidate_GroupRecords(ByVal records As Collection, ByVal 
     Next i
     Set SampleCandidate_GroupRecords = grouped
 End Function
+
+Public Function SampleCandidate_AllocateStages(ByVal records As Collection, ByVal targets As Object, _
+    ByVal groupAxes As Variant, ByVal stageAxis As Long, ByVal firstMethod As String, ByVal firstAlpha As Double, _
+    ByVal secondMethod As String, ByVal secondAlpha As Double, ByRef stageReview As Collection) As Collection
+    If records Is Nothing Or targets Is Nothing Then Err.Raise 5, , "표본 배분 자료가 없습니다."
+    If records.Count = 0 Then Err.Raise 5, , "표본 배분 자료가 없습니다."
+    Dim rec As Variant, axis As Variant, groupCount As Long, combinedAxes() As Long, i As Long
+    rec = records(1)
+    If stageAxis < 0 Or stageAxis > UBound(rec) - 3 Then Err.Raise 5, , "단계별 구분을 확인하세요."
+    For Each axis In groupAxes
+        If CLng(axis) = stageAxis Then Err.Raise 5, , "목표 그룹에 이미 사용한 구분은 다음 배분 단계로 다시 선택할 수 없습니다."
+        groupCount = groupCount + 1
+    Next axis
+    ReDim combinedAxes(0 To groupCount)
+    i = 0
+    For Each axis In groupAxes
+        combinedAxes(i) = CLng(axis): i = i + 1
+    Next axis
+    combinedAxes(groupCount) = stageAxis
+
+    Dim childPops As Object, childParents As Object, childKeys As New Collection, intermediate As New Collection
+    Dim parentKey As String, childKey As String, key As Variant
+    Set childPops = CreateObject("Scripting.Dictionary")
+    Set childParents = CreateObject("Scripting.Dictionary")
+    For i = 1 To records.Count
+        rec = records(i)
+        parentKey = SampleCandidate_GroupKey(rec, groupAxes)
+        childKey = SampleCandidate_GroupKey(rec, combinedAxes)
+        If Not childPops.Exists(childKey) Then
+            childPops.Add childKey, 0#
+            childParents.Add childKey, parentKey
+            childKeys.Add childKey
+        End If
+        childPops(childKey) = CDbl(childPops(childKey)) + CDbl(rec(UBound(rec) - 2))
+    Next i
+    For Each key In childKeys
+        intermediate.Add Array(CStr(childParents(key)), CDbl(childPops(key)), 0&, 0&)
+    Next key
+    Dim firstResult As Collection, entry As Object, childTargets As Object, reviewEntry As Object
+    Set firstResult = SampleCandidate_Allocate(intermediate, targets, 0, firstMethod, firstAlpha, 0, 0)
+    Set childTargets = CreateObject("Scripting.Dictionary")
+    Set stageReview = New Collection
+    For i = 1 To firstResult.Count
+        Set entry = firstResult(i): childKey = CStr(childKeys(i))
+        childTargets.Add childKey, CLng(entry("final"))
+        Set reviewEntry = CreateObject("Scripting.Dictionary")
+        reviewEntry.Add "parent", CStr(childParents(childKey))
+        reviewEntry.Add "parentTarget", CLng(targets(CStr(childParents(childKey))))
+        reviewEntry.Add "group", childKey
+        reviewEntry.Add "population", CDbl(childPops(childKey))
+        reviewEntry.Add "weight", CDbl(entry("weight"))
+        reviewEntry.Add "ideal", CDbl(entry("ideal"))
+        reviewEntry.Add "final", CLng(entry("final"))
+        stageReview.Add reviewEntry
+    Next i
+    Dim grouped As Collection
+    Set grouped = SampleCandidate_GroupRecords(records, combinedAxes)
+    Set SampleCandidate_AllocateStages = SampleCandidate_Allocate(grouped, childTargets, 0, secondMethod, secondAlpha, 0, 0)
+End Function
+
+Public Sub SampleCandidate_WriteStageSummary(ByVal ws As Worksheet, ByVal stageReview As Collection, _
+    ByVal method As String, ByVal alpha As Double)
+    If stageReview Is Nothing Then Err.Raise 5, , "단계별 배분 결과가 없습니다."
+    If stageReview.Count = 0 Then Err.Raise 5, , "단계별 배분 결과가 없습니다."
+    Dim headerRow As Long, i As Long, entry As Object, data() As Variant, formula As String
+    headerRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row + 3
+    If CDbl(headerRow) + stageReview.Count > ws.Rows.Count Then Err.Raise 5, , "단계별 검토표를 넣을 공간이 없습니다."
+    ws.Cells(headerRow - 1, 1).Value = "1단계 배분 검토 (최초 계산 기준)"
+    ws.Cells(headerRow, 1).Resize(1, 7).Value = Array("상위 목표그룹", "1단계 구분", "모집단", "배분 가중치", "이론 배분", "1단계 표본수", "상위 목표")
+    ReDim data(1 To stageReview.Count, 1 To 7)
+    For i = 1 To stageReview.Count
+        Set entry = stageReview(i)
+        data(i, 1) = SampleCandidate_GroupLabel(CStr(entry("parent")))
+        data(i, 2) = SampleCandidate_GroupLabel(CStr(entry("group")))
+        data(i, 3) = CDbl(entry("population"))
+        data(i, 5) = CDbl(entry("ideal"))
+        data(i, 6) = CLng(entry("final"))
+        data(i, 7) = CLng(entry("parentTarget"))
+    Next i
+    ws.Cells(headerRow + 1, 1).Resize(stageReview.Count, 2).NumberFormat = "@"
+    ws.Cells(headerRow + 1, 1).Resize(stageReview.Count, 7).Value2 = data
+    Select Case method
+        Case "proportional": formula = "=RC3"
+        Case "sqrt": formula = "=SQRT(RC3)"
+        Case "power": formula = "=IF(RC3=0,0,RC3^" & Trim$(Str$(alpha)) & ")"
+        Case "equal": formula = "=IF(RC3>0,1,0)"
+        Case Else: Err.Raise 5, , "단계별 배분 방식을 확인하세요."
+    End Select
+    ws.Cells(headerRow + 1, 4).Resize(stageReview.Count, 1).FormulaR1C1 = formula
+    ws.Rows(headerRow).Font.Bold = True
+    ws.Columns.AutoFit
+End Sub
 
 Public Function SampleCandidate_Allocate(ByVal records As Collection, ByVal targets As Object, _
     ByVal groupAxis As Long, ByVal method As String, ByVal alpha As Double, _

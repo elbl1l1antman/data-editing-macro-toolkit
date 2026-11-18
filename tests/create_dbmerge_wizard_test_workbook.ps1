@@ -1,9 +1,10 @@
 ﻿param(
-    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+    [string]$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
+    [string]$OutputPath = ""
 )
 
 $ErrorActionPreference = "Stop"
-$outputPath = Join-Path $ProjectRoot "dev\dbmerge_wizard_test.xlsx"
+if (-not $OutputPath) { $OutputPath = Join-Path $ProjectRoot "dev\dbmerge_wizard_test.xlsx" }
 $excel = $null
 $workbook = $null
 

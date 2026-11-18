@@ -4,7 +4,7 @@ $core = Get-Content -LiteralPath (Join-Path $ProjectRoot 'src\SampleDesignCandid
 $ui = Get-Content -LiteralPath (Join-Path $ProjectRoot 'src\SampleDesignCandidateUI.bas') -Raw -Encoding UTF8
 $core = $core -replace '(?m)^Attribute VB_Name = .*\r?\n', ''
 $ui = $ui -replace '(?m)^Attribute VB_Name = .*\r?\n', ''
-$ui = $ui.Replace('Option Explicit', "Option Explicit`r`nPrivate mRangeCall As Long, mCancel As Boolean")
+$ui = $ui.Replace('Option Explicit', "Option Explicit`r`nPrivate mRangeCall As Long, mMenuCall As Long, mCancel As Boolean, mStage As Boolean, mAuto As Boolean")
 $ui = [regex]::Replace($ui, '(?ms)^Private Function SampleCandidate_PickRange\(.*?^End Function\s*', '')
 $ui = $ui.Replace('If Not SampleCandidate_PickRange(', 'If Not Toolkit_GetRangeFromUserForm(')
 $ui = $ui.Replace('If Not SampleCandidate_Preview(records,', 'If Not TestPreview(records,')
@@ -13,6 +13,11 @@ $test = @'
 Public Function Toolkit_GetRangeFromUserForm(ByVal title As String, ByVal guide As String, ByRef target As Range) As Boolean
     If mCancel Then Exit Function
     mRangeCall = mRangeCall + 1
+    If mAuto Then
+        Set target = ThisWorkbook.Worksheets(1).Range("A1:E4")
+        Toolkit_GetRangeFromUserForm = True
+        Exit Function
+    End If
     Select Case mRangeCall
         Case 1: Set target = ThisWorkbook.Worksheets(1).Range("A3:A4")
         Case 2: Set target = ThisWorkbook.Worksheets(1).Range("B1:E2")
@@ -24,7 +29,12 @@ Public Function Toolkit_CheckListMenu(ByVal title As String, ByVal guide As Stri
     Toolkit_CheckListMenu = "0"
 End Function
 Public Function Toolkit_ButtonMenu(ByVal title As String, ByVal guide As String, ByVal options As String, ByVal defaults As String) As String
-    Toolkit_ButtonMenu = "1"
+    mMenuCall = mMenuCall + 1
+    If InStr(title, "1/5") > 0 Then Toolkit_ButtonMenu = "2" Else Toolkit_ButtonMenu = "1"
+    If mAuto And mMenuCall = 1 Then Toolkit_ButtonMenu = "1"
+    If mStage And mMenuCall = 3 Then Toolkit_ButtonMenu = "2"
+    If mStage And mMenuCall = 4 Then Toolkit_ButtonMenu = "2"
+    If mStage And mMenuCall = 5 Then Toolkit_ButtonMenu = "4"
 End Function
 Public Function TestInputBox(ByVal Prompt As String, ByVal Title As String, ByVal defaultValue As Variant, Optional ByVal argType As Variant) As Variant
     TestInputBox = 20
@@ -48,22 +58,38 @@ Public Function TestCandidateWorkflow() As String
     inputWs.Range("B3:E3").Value = Array(10, 20, 30, 40)
     inputWs.Range("B4:E4").Value = Array(0, 5, 6, 7)
     initialCount = ThisWorkbook.Worksheets.Count
-    mRangeCall = 0: mCancel = True
+    mRangeCall = 0: mMenuCall = 0: mCancel = True
     SampleCandidate_Start
     If ThisWorkbook.Worksheets.Count <> initialCount Then Err.Raise 5, , "cancel created a worksheet"
-    mCancel = False: mRangeCall = 0
+    mCancel = False: mRangeCall = 0: mMenuCall = 0
     SampleCandidate_Start
     If ThisWorkbook.Worksheets.Count <> initialCount + 1 Then Err.Raise 5, , "workflow did not create output"
     Set outputWs = ActiveSheet
     Application.CalculateFull
     If outputWs.Range("F8").Value2 <> 20 Then Err.Raise 5, , "workflow total differs from target"
     If inputWs.Range("B3").Value2 <> 10 Then Err.Raise 5, , "workflow modified source"
+    inputWs.Activate
+    mRangeCall = 0: mMenuCall = 0: mStage = True
+    SampleCandidate_Start
+    If ThisWorkbook.Worksheets.Count <> initialCount + 2 Then Err.Raise 5, , "staged workflow did not create output"
+    Set outputWs = ActiveSheet
+    Application.CalculateFull
+    If outputWs.Range("F8").Value2 <> 20 Or outputWs.Range("F24").Value2 <> 10 Then Err.Raise 5, , "staged workflow totals wrong"
+    mStage = False
+    inputWs.Activate
+    mRangeCall = 0: mMenuCall = 0: mAuto = True
+    SampleCandidate_Start
+    If ThisWorkbook.Worksheets.Count <> initialCount + 3 Then Err.Raise 5, , "automatic workflow did not create output"
+    Set outputWs = ActiveSheet
+    Application.CalculateFull
+    If outputWs.Range("F8").Value2 <> 20 Or outputWs.Range("D4").Value2 <> "Female" Then Err.Raise 5, , "automatic workflow structure wrong"
+    mAuto = False
     inputWs.Range("B3").Value2 = -1
     inputWs.Activate
-    mRangeCall = 0: Application.ScreenUpdating = False
+    mRangeCall = 0: mMenuCall = 0: Application.ScreenUpdating = False
     SampleCandidate_Start
     If Application.ScreenUpdating Then Err.Raise 5, , "error changed screen updating"
-    If ThisWorkbook.Worksheets.Count <> initialCount + 1 Then Err.Raise 5, , "error created output"
+    If ThisWorkbook.Worksheets.Count <> initialCount + 3 Then Err.Raise 5, , "error created output"
     Application.ScreenUpdating = True
     TestCandidateWorkflow = "PASS"
     Exit Function

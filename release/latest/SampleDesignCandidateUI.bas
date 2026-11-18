@@ -6,13 +6,29 @@ Public Sub SampleCandidate_Start()
     Dim outputWs As Worksheet, oldScreenUpdating As Boolean, oldDisplayAlerts As Boolean
     oldScreenUpdating = Application.ScreenUpdating
     oldDisplayAlerts = Application.DisplayAlerts
-    Dim rowAxes As Range, columnAxes As Range, populations As Range
-    If Not SampleCandidate_PickRange("표본설계 1/5", _
-        "표의 세로 구분을 선택하세요. 예: 지역 또는 산업명 데이터 셀. 헤더는 제외합니다.", rowAxes) Then Exit Sub
-    If Not SampleCandidate_PickRange("표본설계 2/5", _
-        "표의 가로 머리글을 모두 선택하세요. 성별과 연령처럼 여러 행이면 함께 선택합니다.", columnAxes) Then Exit Sub
-    If Not SampleCandidate_PickRange("표본설계 3/5", _
-        "모집단 숫자가 들어 있는 본문을 선택하세요. 행과 열은 앞에서 선택한 구분과 맞아야 합니다.", populations) Then Exit Sub
+    Dim rowAxes As Range, columnAxes As Range, populations As Range, tableRange As Range, inputMode As String
+    inputMode = Toolkit_ButtonMenu("표본설계 1/5 - 입력 방식", "모집단 집계표의 구성을 어떻게 지정할까요?", _
+        "1" & vbTab & "표 전체를 선택해 자동 인식" & vbLf & "2" & vbTab & "구분과 값 범위를 직접 지정", "1")
+    If Len(inputMode) = 0 Then Exit Sub
+    If inputMode = "1" Then
+        If Not SampleCandidate_PickRange("표본설계 - 집계표 선택", _
+            "머리글, 행 구분, 모집단 숫자를 포함한 집계표 하나를 선택하세요.", tableRange) Then Exit Sub
+        If Not SampleCandidate_DetectTable(tableRange, rowAxes, columnAxes, populations) Then
+            If MsgBox("선택한 표의 구조를 확실하게 인식하지 못했습니다." & vbCrLf & _
+                "행 구분과 머리글, 숫자 영역을 직접 선택할까요?", vbQuestion + vbYesNo + vbDefaultButton2, "표본설계") <> vbYes Then Exit Sub
+            inputMode = "2"
+        End If
+    ElseIf inputMode <> "2" Then
+        Err.Raise 5, , "입력 방식을 다시 선택하세요."
+    End If
+    If inputMode = "2" Then
+        If Not SampleCandidate_PickRange("표본설계 1/5", _
+            "표의 세로 구분을 선택하세요. 예: 지역 또는 산업명 데이터 셀. 헤더는 제외합니다.", rowAxes) Then Exit Sub
+        If Not SampleCandidate_PickRange("표본설계 2/5", _
+            "표의 가로 머리글을 모두 선택하세요. 성별과 연령처럼 여러 행이면 함께 선택합니다.", columnAxes) Then Exit Sub
+        If Not SampleCandidate_PickRange("표본설계 3/5", _
+            "모집단 숫자가 들어 있는 본문을 선택하세요. 행과 열은 앞에서 선택한 구분과 맞아야 합니다.", populations) Then Exit Sub
+    End If
     If populations.Worksheet.Parent.IsAddin Then Err.Raise 5, , "작업할 통합문서를 선택하세요."
 
     Dim records As Collection, rec As Variant, sumPopulation As Double, i As Long
@@ -89,26 +105,40 @@ Public Sub SampleCandidate_Start()
         targetCounts.Add CStr(key), CLng(answer)
     Next key
 
-    Dim method As String, methodChoice As String, alpha As Double
-    methodChoice = Toolkit_ButtonMenu("표본 배분 방식", "모집단을 기준으로 배분할 방식을 선택하세요.", _
-        "1" & vbTab & "모집단에 비례" & vbLf & "2" & vbTab & "제곱근 비례" & vbLf & _
-        "3" & vbTab & "멱배분" & vbLf & "4" & vbTab & "균등 배분", "1")
-    If Len(methodChoice) = 0 Then Exit Sub
-    alpha = 0.5
-    Select Case methodChoice
-        Case "1": method = "proportional"
-        Case "2": method = "sqrt"
-        Case "3"
-            method = "power"
-            answer = Application.InputBox("멱배분 지수를 입력하세요. 1은 비례, 0.5는 제곱근 비례입니다.", "멱배분 지수", 0.5, Type:=1)
-            If VarType(answer) = vbBoolean Then Exit Sub
-            alpha = CDbl(answer)
-        Case "4": method = "equal"
-        Case Else: Err.Raise 5, , "배분 방식을 다시 선택하세요."
-    End Select
+    Dim method As String, alpha As Double, stageMode As String, stageAxis As Long
+    Dim firstMethod As String, firstAlpha As Double, stageChoices As String, isUsed As Boolean
+    stageMode = Toolkit_ButtonMenu("배분 단계", "목표 그룹 안에서 바로 배분하거나, 구분별로 먼저 나눈 뒤 배분할 수 있습니다.", _
+        "1" & vbTab & "한 번에 배분" & vbLf & "2" & vbTab & "두 단계로 배분", "1")
+    If Len(stageMode) = 0 Then Exit Sub
+    If stageMode = "2" Then
+        If axisCount > 20 Then Err.Raise 5, , "단계별 배분은 최대 20개 구분에서 선택할 수 있습니다."
+        For j = 1 To axisCount
+            isUsed = False
+            For Each index In indexes
+                If CLng(index) = j - 1 Then isUsed = True
+            Next index
+            If Not isUsed Then
+                If Len(stageChoices) > 0 Then stageChoices = stageChoices & vbLf
+                stageChoices = stageChoices & CStr(j) & vbTab & "구분 " & j & " (예: " & CStr(records(1)(j - 1)) & ")"
+            End If
+        Next j
+        If Len(stageChoices) = 0 Then Err.Raise 5, , "1단계에서 배분할 구분이 남아 있지 않습니다."
+        selection = Toolkit_ButtonMenu("1단계 구분", "목표 그룹 안에서 먼저 배분할 구분을 선택하세요.", stageChoices, "")
+        If Len(selection) = 0 Then Exit Sub
+        If Not IsNumeric(selection) Then Err.Raise 5, , "1단계 구분을 확인하세요."
+        stageAxis = CLng(selection) - 1
+        If Not SampleCandidate_ChooseMethod("1단계 배분 방식", firstMethod, firstAlpha) Then Exit Sub
+    ElseIf stageMode <> "1" Then
+        Err.Raise 5, , "배분 단계를 확인하세요."
+    End If
+    If Not SampleCandidate_ChooseMethod(IIf(stageMode = "2", "2단계 배분 방식", "표본 배분 방식"), method, alpha) Then Exit Sub
     Dim minimum As Long, maximum As Long, constraintChoice As String
-    constraintChoice = Toolkit_ButtonMenu("표본 배분 제약", "각 셀의 최소·최대 표본수를 지정할 수 있습니다.", _
-        "1" & vbTab & "추가 제약 없이 배분" & vbLf & "2" & vbTab & "최소·최대 표본수 지정", "1")
+    If stageMode = "2" Then
+        constraintChoice = "1"
+    Else
+        constraintChoice = Toolkit_ButtonMenu("표본 배분 제약", "각 셀의 최소·최대 표본수를 지정할 수 있습니다.", _
+            "1" & vbTab & "추가 제약 없이 배분" & vbLf & "2" & vbTab & "최소·최대 표본수 지정", "1")
+    End If
     If Len(constraintChoice) = 0 Then Exit Sub
     If constraintChoice = "2" Then
         answer = Application.InputBox("각 셀의 최소 표본수를 입력하세요. 적용하지 않으려면 0을 입력합니다.", "최소 표본수", 0, Type:=1)
@@ -122,8 +152,13 @@ Public Sub SampleCandidate_Start()
     ElseIf constraintChoice <> "1" Then
         Err.Raise 5, , "표본 배분 제약을 다시 선택하세요."
     End If
-    Dim allocated As Collection
-    Set allocated = SampleCandidate_Allocate(grouped, targetCounts, 0, method, alpha, minimum, maximum)
+    Dim allocated As Collection, stageReview As Collection
+    If stageMode = "2" Then
+        Set allocated = SampleCandidate_AllocateStages(records, targetCounts, indexes, stageAxis, _
+            firstMethod, firstAlpha, method, alpha, stageReview)
+    Else
+        Set allocated = SampleCandidate_Allocate(grouped, targetCounts, 0, method, alpha, minimum, maximum)
+    End If
     Dim totalTarget As Double, zeroGroups As Long, targetSummary As String
     For Each key In targetCounts.Keys
         totalTarget = totalTarget + CDbl(targetCounts(key))
@@ -131,6 +166,7 @@ Public Sub SampleCandidate_Start()
     Next key
     targetSummary = "전체 목표: " & Format$(totalTarget, "#,##0") & "개" & vbCrLf & _
                     "그룹 " & targetCounts.Count & "개, 배분 셀 " & allocated.Count & "개"
+    If stageMode = "2" Then targetSummary = targetSummary & vbCrLf & "두 단계 배분: 추가 최소·최대 제약 없이 모집단 한도 적용"
     If zeroGroups > 0 Then targetSummary = targetSummary & vbCrLf & "목표가 0인 그룹: " & zeroGroups & "개"
     If MsgBox("결과 시트를 새로 만들까요?" & vbCrLf & targetSummary & vbCrLf & _
         "원본은 변경하지 않습니다.", vbQuestion + vbYesNo + vbDefaultButton2, "표본설계 최종 확인") <> vbYes Then Exit Sub
@@ -142,6 +178,7 @@ Public Sub SampleCandidate_Start()
     Set outputWs = wb.Worksheets.Add(After:=wb.Worksheets(wb.Worksheets.Count))
     outputWs.Name = outputName
     SampleCandidate_WriteOutput outputWs, rowAxes, columnAxes, populations, allocated, method, alpha
+    If stageMode = "2" Then SampleCandidate_WriteStageSummary outputWs, stageReview, firstMethod, firstAlpha
     Application.ScreenUpdating = oldScreenUpdating
     outputWs.Activate
     MsgBox "표본설계 결과를 만들었습니다: " & outputName & vbCrLf & _
@@ -159,6 +196,27 @@ Failed:
     On Error GoTo 0
     MsgBox "표본설계를 완료하지 못했습니다: " & errorText & vbCrLf & "원본은 변경하지 않았습니다.", vbExclamation, "표본설계"
 End Sub
+
+Private Function SampleCandidate_ChooseMethod(ByVal title As String, ByRef method As String, ByRef alpha As Double) As Boolean
+    Dim choice As String, answer As Variant
+    choice = Toolkit_ButtonMenu(title, "모집단을 기준으로 배분할 방식을 선택하세요.", _
+        "1" & vbTab & "모집단에 비례" & vbLf & "2" & vbTab & "제곱근 비례" & vbLf & _
+        "3" & vbTab & "멱배분" & vbLf & "4" & vbTab & "균등 배분", "1")
+    If Len(choice) = 0 Then Exit Function
+    alpha = 0.5
+    Select Case choice
+        Case "1": method = "proportional"
+        Case "2": method = "sqrt"
+        Case "3"
+            method = "power"
+            answer = Application.InputBox("멱배분 지수를 입력하세요. 1은 비례, 0.5는 제곱근 비례입니다.", "멱배분 지수", 0.5, Type:=1)
+            If VarType(answer) = vbBoolean Then Exit Function
+            alpha = CDbl(answer)
+        Case "4": method = "equal"
+        Case Else: Err.Raise 5, , "배분 방식을 다시 선택하세요."
+    End Select
+    SampleCandidate_ChooseMethod = True
+End Function
 
 Private Function SampleCandidate_PickRange(ByVal title As String, ByVal guidance As String, ByRef selectedRange As Range) As Boolean
     On Error Resume Next
