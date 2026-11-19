@@ -9,6 +9,12 @@ Public Function TestPhoneCombine() As String
     If Phone_CombineParts("010", "1234", "5678") <> "010-1234-5678" Then Err.Raise 5
     If Phone_CombineParts("02", "123", "4567") <> "02-123-4567" Then Err.Raise 5
     If Phone_CombineParts("0507", "1234", "5678") <> "0507-1234-5678" Then Err.Raise 5
+    If Phone_CombineParts("2", "123", "4567") <> "02-123-4567" Then Err.Raise 5
+    If Phone_CombineParts("31", "1234", "5678") <> "031-1234-5678" Then Err.Raise 5
+    If Phone_CombineParts("10", "1234", "5678") <> "010-1234-5678" Then Err.Raise 5
+    If Phone_CombineParts("507", "1234", "5678") <> "0507-1234-5678" Then Err.Raise 5
+    If Phone_CombineParts("99", "1234", "5678") <> "" Then Err.Raise 5
+    If Phone_CombineParts("31", "12", "5678") <> "" Then Err.Raise 5
     If Phone_CombineParts("010", "", "5678") <> "" Then Err.Raise 5
     If Phone_CombineParts("010", "abc", "5678") <> "" Then Err.Raise 5
     TestPhoneCombine = "PASS"

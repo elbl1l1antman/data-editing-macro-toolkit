@@ -183,7 +183,7 @@ Public Sub Phone_CombineThreeColumns()
     End With
     MsgBox count & "개 번호를 합쳤습니다." & vbCrLf & _
         "빈 부분 또는 숫자 외 문자가 있는 확인 필요 행: " & invalid & "개" & vbCrLf & _
-        "숫자로 저장하며 사라진 앞자리 0은 원본에서 확인하세요.", vbInformation, "전화번호 세 열 합치기"
+        "알려진 지역·휴대전화·050 번호의 앞자리 0은 복원했습니다. 원본을 함께 확인하세요.", vbInformation, "전화번호 세 열 합치기"
     Exit Sub
 Failed:
     failureNumber = Err.Number: failure = Err.Description
@@ -202,6 +202,16 @@ End Sub
 Public Function Phone_CombineParts(ByVal firstPart As String, ByVal middlePart As String, ByVal lastPart As String) As String
     If Len(firstPart) = 0 Or Len(middlePart) = 0 Or Len(lastPart) = 0 Then Exit Function
     If (firstPart & middlePart & lastPart) Like "*[!0-9]*" Then Exit Function
+    If Left$(firstPart, 1) <> "0" Then
+        If Len(lastPart) <> 4 Or (Len(middlePart) <> 3 And Len(middlePart) <> 4) Then Exit Function
+        Select Case firstPart
+            Case "2", "10", "11", "16", "17", "18", "19", "31", "32", "33", "41", "42", "43", "44", _
+                 "51", "52", "53", "54", "55", "61", "62", "63", "64", "70", "80"
+                firstPart = "0" & firstPart
+            Case Else
+                If firstPart Like "50#" Then firstPart = "0" & firstPart Else Exit Function
+        End Select
+    End If
     Phone_CombineParts = firstPart & "-" & middlePart & "-" & lastPart
 End Function
 
