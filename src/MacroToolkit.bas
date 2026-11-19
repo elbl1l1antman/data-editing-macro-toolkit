@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.3.6"
+Public Const TOOLKIT_VERSION As String = "1.3.7"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Public Const VERSION_SHEET As String = "_MacroToolkit"
@@ -660,7 +660,8 @@ Public Sub Toolkit_LaunchDataCleanup()
         "7. 기업/사업체명 정리" & vbCrLf & _
         "8. 문자 검진 함수 생성" & vbCrLf & _
         "9. 수식 빈값 정리" & vbCrLf & _
-        "10. 오류값/0 지우기", _
+        "10. 오류값/0 지우기" & vbCrLf & _
+        "11. 전화번호 세 열 합치기", _
         "1")
 
     Select Case choice
@@ -674,6 +675,7 @@ Public Sub Toolkit_LaunchDataCleanup()
         Case "8": DataCheck_CreateCharacterCheckFormula
         Case "9": DataCleanup_ClearResidualBlankValues
         Case "10": DataCleanup_ClearErrorAndZeroValues
+        Case "11": Phone_CombineThreeColumns
         Case Else
             If Len(choice) > 0 Then Toolkit_ShowLauncherError "값 정리", "1~10 중 하나를 선택하세요."
     End Select
@@ -997,6 +999,10 @@ End Sub
 
 Public Sub Ribbon_RemovePhoneDashes(control As IRibbonControl)
     RemovePhoneDashesToCopiedColumns
+End Sub
+
+Public Sub Ribbon_CombinePhoneColumns(control As IRibbonControl)
+    Phone_CombineThreeColumns
 End Sub
 
 Public Sub Ribbon_CompanyNameClean(control As IRibbonControl)

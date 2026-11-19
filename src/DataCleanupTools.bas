@@ -127,6 +127,84 @@ Public Sub NormalizePhonesWithForm()
     NormalizePhonesToCopiedColumns targetRange, options
 End Sub
 
+Public Sub Phone_CombineThreeColumns()
+    Dim target As Range, work As Range, ws As Worksheet, values As Variant, result() As Variant
+    Dim r As Long, c As Long, pieces(1 To 3) As String, value As Variant, shown As String
+    Dim combined As String, invalid As Long, count As Long, outputCol As Long, inserted As Boolean
+    Dim failure As String, failureNumber As Long, hasError As Boolean, oldAlerts As Boolean
+    On Error GoTo Failed
+    If Not Toolkit_GetRangeFromUserForm("전화번호 세 열 합치기", _
+        "앞자리, 중간자리, 끝자리의 연속된 세 열을 선택하세요. 머리글은 제외하세요.", target) Then Exit Sub
+    If target.Areas.Count <> 1 Or target.Columns.Count <> 3 Then
+        MsgBox "연속된 세 열을 선택하세요.", vbExclamation, "전화번호 세 열 합치기"
+        Exit Sub
+    End If
+    Set work = Intersect(target, target.Worksheet.UsedRange)
+    If work Is Nothing Then Exit Sub
+    If work.Columns.Count <> 3 Then
+        MsgBox "세 열 모두 데이터가 있는 범위를 선택하세요.", vbExclamation, "전화번호 세 열 합치기"
+        Exit Sub
+    End If
+    Set ws = work.Worksheet
+    outputCol = work.Column + 3
+    If Not Toolkit_CanInsertColumns(ws, outputCol, 1, "전화번호 세 열 합치기") Then Exit Sub
+    values = work.Value2
+    ReDim result(1 To work.Rows.Count, 1 To 1)
+    Toolkit_RowProgressStart "전화번호 세 열 합치기", work.Rows.Count, "통합할 번호 확인 중"
+    For r = 1 To work.Rows.Count
+        hasError = False
+        For c = 1 To 3
+            value = values(r, c): pieces(c) = ""
+            If IsError(value) Then hasError = True
+            If Not IsError(value) And Not IsEmpty(value) Then
+                pieces(c) = Trim$(CStr(value))
+                If IsNumeric(value) Then
+                    shown = Trim$(CStr(work.Cells(r, c).Text))
+                    If InStr(shown, "#") > 0 Then shown = ""
+                    If Len(shown) > 0 And Not shown Like "*[!0-9]*" Then pieces(c) = shown
+                End If
+            End If
+        Next c
+        combined = Phone_CombineParts(pieces(1), pieces(2), pieces(3))
+        If Len(combined) > 0 And Not hasError Then
+            result(r, 1) = combined: count = count + 1
+        ElseIf Len(pieces(1) & pieces(2) & pieces(3)) > 0 Or hasError Then
+            result(r, 1) = "확인 필요": invalid = invalid + 1
+        End If
+        If r Mod 500 = 0 Then Toolkit_RowProgressUpdate r, work.Rows.Count, "번호 확인 중"
+    Next r
+    Toolkit_RaiseIfCancelled
+    Toolkit_RowProgressClose work.Rows.Count
+    ws.Columns(outputCol).Insert Shift:=xlToRight: inserted = True
+    With ws.Cells(work.Row, outputCol).Resize(work.Rows.Count, 1)
+        .NumberFormat = "@"
+        .Value2 = result
+        .EntireColumn.AutoFit
+    End With
+    MsgBox count & "개 번호를 합쳤습니다." & vbCrLf & _
+        "빈 부분 또는 숫자 외 문자가 있는 확인 필요 행: " & invalid & "개" & vbCrLf & _
+        "숫자로 저장하며 사라진 앞자리 0은 원본에서 확인하세요.", vbInformation, "전화번호 세 열 합치기"
+    Exit Sub
+Failed:
+    failureNumber = Err.Number: failure = Err.Description
+    On Error Resume Next
+    If Not work Is Nothing Then Toolkit_RowProgressClose work.Rows.Count
+    If inserted Then
+        oldAlerts = Application.DisplayAlerts
+        Application.DisplayAlerts = False
+        ws.Columns(outputCol).Delete
+        Application.DisplayAlerts = oldAlerts
+    End If
+    On Error GoTo 0
+    If failureNumber <> TOOLKIT_CANCEL_ERROR_NUMBER Then MsgBox "전화번호를 합치지 못했습니다." & vbCrLf & failure, vbExclamation, "전화번호 세 열 합치기"
+End Sub
+
+Public Function Phone_CombineParts(ByVal firstPart As String, ByVal middlePart As String, ByVal lastPart As String) As String
+    If Len(firstPart) = 0 Or Len(middlePart) = 0 Or Len(lastPart) = 0 Then Exit Function
+    If (firstPart & middlePart & lastPart) Like "*[!0-9]*" Then Exit Function
+    Phone_CombineParts = firstPart & "-" & middlePart & "-" & lastPart
+End Function
+
 Public Sub RemovePhoneDashesToCopiedColumns()
     Dim targetRange As Range
     If Not Toolkit_GetRangeFromUserForm("전화번호 대시 제거", _
