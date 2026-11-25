@@ -7,7 +7,7 @@ VBA, PowerShell, XML, 테스트 래퍼 코드에 한글 문자열을 추가하�
 - VBA로 직접 주입되는 테스트 문자열은 가능한 한 `ChrW(&H....)` 조합으로 작성한다.
 - 배포 전 `publish_release.ps1`를 실행해 CP949 가져오기 경로에서 컴파일 가능한지 확인한다.
 - 이전에 확인된 깨짐 패턴인 `怨듭떇`, `寃`, `吏`, `�` 같은 문자열을 최신 소스, 테스트, 릴리스 `MacroToolkit.bas`에서 검색한다.
-- 사용자에게 표시되는 한글이 포함된 리본 XML, UserForm 생성 코드, 테스트용 VBA 래퍼는 소스 파일뿐 아니라 생성된 `release/v*/MacroToolkit.bas`와 `release/latest/MacroToolkit.bas`에서도 확인한다.
+- 사용자에게 표시되는 한글이 포함된 리본 XML, UserForm 생성 코드, 테스트용 VBA 래퍼는 `src/` 소스에서 확인하고, 퍼블리시 중 CP949 가져오기와 `Toolkit_CompileSmokeTest`를 통과했는지 확인한다. 릴리스 폴더에는 `.bas`를 배포하지 않는다.
 - 한글 기대값을 테스트해야 할 때는 테스트 자체가 인코딩 오류를 만들지 않도록 한글 직접 리터럴 대신 `ChrW` 헬퍼 함수를 우선 사용한다.
 
 ## 릴리스 전 확인
@@ -18,7 +18,7 @@ VBA, PowerShell, XML, 테스트 래퍼 코드에 한글 문자열을 추가하�
 - 배포 스크립트가 패치노트를 `release/v버전/PATCH_NOTES.md`와 `release/latest/PATCH_NOTES.md`에 복사했는지 확인한다.
 - 새 버튼 또는 메뉴명은 리본, 통합실행 메뉴, 사용자 메뉴얼의 표현을 일치시킨다.
 - API 키가 필요한 기능은 최신본과 버전별 릴리스 모두 키가 남지 않는지 manifest의 `latestMayContainLocalCredentials`, `versionedArtifactsSanitized` 값을 확인한다.
-- XLSM과 XLAM은 동일하게 조립된 VBA 모듈과 UserForm에서 생성하고, 퍼블리시 중 `Toolkit_CompileSmokeTest`를 통과해야 한다.
+- 릴리스 폴더(`release/v버전`, `release/latest`)에는 보호된 XLAM, `PATCH_NOTES.md`, `manifest.json`만 둔다. XLAM은 조립된 VBA 모듈과 UserForm에서 생성하고, 퍼블리시 중 `Toolkit_CompileSmokeTest`를 통과해야 한다.
 - 커밋 전 `git diff --check`와 관련 테스트 스크립트를 실행한다.
 
 ## 개발 문서 작성 원칙
