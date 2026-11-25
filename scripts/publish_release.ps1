@@ -4025,7 +4025,7 @@ function Add-RibbonCustomUi {
           <button id="btnLaunchDataCleanup" label="값 정리" size="large" imageMso="NumberFormat" onAction="Ribbon_LaunchDataCleanup" screentip="값 정리 통합 실행" supertip="숫자 변환, 전화번호 정리, 사업자등록번호 정리, 기업/사업체명 정리를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchAddressSearch" label="주소/검색" size="large" imageMso="AddressBook" onAction="Ribbon_LaunchAddressSearch" screentip="주소/검색 통합 실행" supertip="주소 유형 판별, 주소 체계 분리/통합, 행정구역 분해, 네이버 주소 검증과 신규 리스트 생성을 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchRosterQuality" label="명부 품질" size="large" imageMso="ReviewAcceptChange" onAction="Ribbon_LaunchRosterQuality" screentip="명부 품질 통합 실행" supertip="품질 진단, 중복 탐지, 업체명 매칭, 전화번호 검사, 사업자등록 상태조회를 하나의 선택 창에서 실행합니다." />
-          <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출을 하나의 선택 창에서 실행합니다." />
+          <button id="btnLaunchSpssTools" label="SPSS 표 도구" size="large" imageMso="CreateReport" onAction="Ribbon_LaunchSpssTools" screentip="SPSS 표 도구 통합 실행" supertip="목차 생성, 표/배너 재구성, 세로 배너 삭제, 표 메타 추출, 보기 열 삭제를 하나의 선택 창에서 실행합니다." />
           <button id="btnLaunchSampleDesign" label="표본설계" size="large" imageMso="PivotTableInsert" onAction="Ribbon_LaunchSampleDesign" screentip="표본설계 통합 실행" supertip="표본설계 시트 생성, 구성표 리스트화, 리스트→집계표, 복합 목표그룹 할당 계산, 진행률 관리표 생성을 하나의 선택 창에서 실행합니다." />
         </group>
         <group id="grpNumberTools" label="값 정리" imageMso="NumberFormat">
@@ -4072,6 +4072,7 @@ function Add-RibbonCustomUi {
           <button id="btnSpssCreateIndex" label="목차 생성" imageMso="TableOfContentsGallery" onAction="Ribbon_SPSSCreateIndexForActiveSheet" screentip="SPSS 표 목차 생성" supertip="목차가 없는 집계표 시트에서 [로 시작하는 표 제목 행을 찾아 새 목차 시트와 링크를 생성합니다." />
           <button id="btnSpssRebuildFromIndex" label="표/배너 재구성" size="large" imageMso="CreateReport" onAction="Ribbon_SPSSRebuildTablesFromIndex" screentip="SPSS 표/배너 재구성" supertip="표 목록을 드래그하거나 버튼으로 이동하고, 삭제할 표/배너를 선택해 새 집계표와 목차 링크를 생성합니다." />
           <button id="btnSpssDeleteVertical" label="세로 배너 삭제" imageMso="DeleteRows" onAction="Ribbon_SPSSDeleteVerticalBanners" screentip="세로 배너 삭제" supertip="원본 집계표 시트를 복사한 뒤 ▣ 세로 배너와 BOT/TOP/MID 계열 세로형 배너 행을 삭제하고 새 목차를 생성합니다." />
+          <button id="btnSpssDeleteOptionColumns" label="보기 열 삭제" imageMso="SheetColumnsDelete" onAction="Ribbon_SPSSDeleteOptionColumns" screentip="보기 열 일괄 삭제(계 등)" supertip="원본 집계표 시트를 복사한 뒤 각 표 머리글에서 '계'처럼 이름이 정확히 같은 보기 열을 표 범위 안에서만 삭제하고 새 목차를 생성합니다." />
           <button id="btnSpssMetadata" label="표 메타 추출" imageMso="TablePropertiesDialog" onAction="Ribbon_SPSSExtractTableMetadata" screentip="SPSS 표 메타 추출" supertip="집계표의 표 제목, 행 위치, 배너 목록, 이동 링크를 새 시트로 추출합니다." />
         </group>
         <group id="grpRosterQualityTools" label="명부 품질" imageMso="ReviewAcceptChange">

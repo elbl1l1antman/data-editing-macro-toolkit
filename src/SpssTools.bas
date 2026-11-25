@@ -384,42 +384,10 @@ Public Sub SPSS_DeleteVerticalBannersFromIndex()
     End If
 
     Dim wb As Workbook: Set wb = ActiveWorkbook
-    Dim indexWs As Worksheet
     Dim dataWs As Worksheet
-    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
-
     Dim tables As Collection
-    If indexWs Is Nothing Then
-        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
-    Else
-        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
-    End If
-    If tables.Count = 0 Then
-        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, "SPSS 세로 배너 삭제"
-        Exit Sub
-    End If
-
-    Dim checkItem As Variant, multipleSheets As Boolean
-    For Each checkItem In tables
-        If SPSS_TableSourceSheet(dataWs, checkItem).Name <> dataWs.Name Then multipleSheets = True
-    Next checkItem
-    If multipleSheets Then
-        If TypeName(ActiveSheet) <> "Worksheet" Then Exit Sub
-        If ActiveSheet.Name = indexWs.Name Then
-            MsgBox "목차가 여러 표 시트를 가리킵니다. 삭제할 표 시트를 먼저 선택한 뒤 다시 실행하세요.", vbExclamation, "SPSS 세로 배너 삭제"
-            Exit Sub
-        End If
-        Set dataWs = ActiveSheet
-        Dim selectedTables As New Collection
-        For Each checkItem In tables
-            If SPSS_TableSourceSheet(dataWs, checkItem).Name = dataWs.Name Then selectedTables.Add checkItem
-        Next checkItem
-        If selectedTables.Count = 0 Then
-            MsgBox "선택한 시트에 연결된 표가 없습니다.", vbExclamation, "SPSS 세로 배너 삭제"
-            Exit Sub
-        End If
-        Set tables = selectedTables
-    End If
+    If Not SPSS_ResolveSingleSheetTables(wb, "SPSS 세로 배너 삭제", dataWs, tables) Then Exit Sub
+    Dim checkItem As Variant
 
     Dim verticalBanners As Collection
     Set verticalBanners = SPSS_CollectVerticalBanners(tables, dataWs)
@@ -479,6 +447,328 @@ ErrHandler:
     MsgBox "세로 배너 삭제 중 오류가 발생했습니다." & vbCrLf & failureMessage & vbCrLf & _
            "임시 결과가 남았는지 확인하세요. 원본 시트는 변경하지 않았습니다.", vbExclamation, "SPSS 세로 배너 삭제"
 End Sub
+
+Private Function SPSS_ResolveSingleSheetTables(ByVal wb As Workbook, ByVal purpose As String, _
+                                               ByRef dataWs As Worksheet, ByRef tables As Collection) As Boolean
+    Dim indexWs As Worksheet
+    SPSS_ResolveIndexAndDataSheets wb, indexWs, dataWs
+
+    If indexWs Is Nothing Then
+        Set tables = SPSS_CollectTablesFromDataSheet(dataWs)
+    Else
+        Set tables = SPSS_CollectTablesFromIndex(indexWs, dataWs)
+    End If
+    If tables.Count = 0 Then
+        MsgBox "목차 링크 또는 집계표 제목 행에서 표를 찾지 못했습니다.", vbExclamation, purpose
+        Exit Function
+    End If
+
+    Dim checkItem As Variant, multipleSheets As Boolean
+    For Each checkItem In tables
+        If SPSS_TableSourceSheet(dataWs, checkItem).Name <> dataWs.Name Then multipleSheets = True
+    Next checkItem
+    If multipleSheets Then
+        If TypeName(ActiveSheet) <> "Worksheet" Then Exit Function
+        If ActiveSheet.Name = indexWs.Name Then
+            MsgBox "목차가 여러 표 시트를 가리킵니다. 정리할 표 시트를 먼저 선택한 뒤 다시 실행하세요.", vbExclamation, purpose
+            Exit Function
+        End If
+        Set dataWs = ActiveSheet
+        Dim selectedTables As New Collection
+        For Each checkItem In tables
+            If SPSS_TableSourceSheet(dataWs, checkItem).Name = dataWs.Name Then selectedTables.Add checkItem
+        Next checkItem
+        If selectedTables.Count = 0 Then
+            MsgBox "선택한 시트에 연결된 표가 없습니다.", vbExclamation, purpose
+            Exit Function
+        End If
+        Set tables = selectedTables
+    End If
+
+    SPSS_ResolveSingleSheetTables = True
+End Function
+
+' ============================================================
+' 보기 열 일괄 삭제
+' 설  명  : 각 표 머리글에서 '계'처럼 지정한 이름과 정확히 같은 보기 열을 찾아
+'           표 범위 안에서만 삭제하고 오른쪽 열을 당겨 붙인다.
+'           결과는 원본 시트를 복사한 새 시트와 새 목차로 만든다.
+' ============================================================
+Public Sub SPSS_DeleteOptionColumns()
+    Const OPTION_DELETE_TITLE As String = "SPSS 보기 열 삭제"
+    On Error GoTo ErrHandler
+    Dim previousAlerts As Boolean
+    previousAlerts = Application.DisplayAlerts
+
+    If ActiveWorkbook Is Nothing Or ActiveWorkbook.Worksheets.Count < 1 Then
+        MsgBox "집계표 시트가 있는 통합문서에서 실행하세요.", vbExclamation, OPTION_DELETE_TITLE
+        Exit Sub
+    End If
+
+    Dim wb As Workbook: Set wb = ActiveWorkbook
+    Dim dataWs As Worksheet
+    Dim tables As Collection
+    If Not SPSS_ResolveSingleSheetTables(wb, OPTION_DELETE_TITLE, dataWs, tables) Then Exit Sub
+
+    Dim labelInput As String
+    labelInput = InputBox("삭제할 보기 이름을 입력하세요. 여러 개는 쉼표로 구분합니다." & vbCrLf & vbCrLf & _
+                          "표 머리글에서 이름이 정확히 같은 열만 삭제합니다." & vbCrLf & _
+                          "예: 계  /  계, 합계" & vbCrLf & _
+                          "'총계', '▶합계◀' 같은 다른 이름은 삭제하지 않습니다.", OPTION_DELETE_TITLE, "계")
+    If Len(Trim$(labelInput)) = 0 Then Exit Sub
+
+    Dim labels As Object
+    Set labels = SPSS_ParseOptionLabels(labelInput)
+    If labels.Count = 0 Then Exit Sub
+
+    Dim plan As Collection
+    Set plan = SPSS_CollectOptionColumnDeletes(dataWs, tables, labels)
+    If plan.Count = 0 Then
+        MsgBox "표 머리글에서 삭제할 보기 열을 찾지 못했습니다: " & SPSS_JoinDictionaryKeys(labels), vbInformation, OPTION_DELETE_TITLE
+        Exit Sub
+    End If
+
+    Dim tableCount As Long
+    tableCount = SPSS_CountPlanTables(plan)
+    Dim msg As String
+    msg = "보기 '" & SPSS_JoinDictionaryKeys(labels) & "' 열을 삭제합니다." & vbCrLf & vbCrLf & _
+          "대상: 표 " & tableCount & "개 / 열 " & plan.Count & "개" & vbCrLf & _
+          "각 표 범위 안에서만 삭제하고 오른쪽 열은 당겨 붙입니다." & vbCrLf & _
+          "결과는 새 시트에 만들고 원본 시트는 변경하지 않습니다." & vbCrLf & vbCrLf & _
+          "계속하시겠습니까?"
+    If MsgBox(msg, vbQuestion + vbYesNo, OPTION_DELETE_TITLE) <> vbYes Then Exit Sub
+
+    Application.ScreenUpdating = False
+    Application.DisplayAlerts = False
+    Dim outData As Worksheet
+    dataWs.Copy After:=dataWs
+    Set outData = ActiveSheet
+    outData.Name = SPSS_UniqueSheetName(wb, "SPSS_보기삭제")
+
+    Dim skipped As Collection
+    Set skipped = SPSS_ApplyOptionColumnDeletes(outData, plan)
+
+    Dim outIndex As Worksheet
+    Set outIndex = wb.Worksheets.Add(Before:=outData)
+    outIndex.Name = SPSS_UniqueSheetName(wb, "SPSS_목차")
+    SPSS_RebuildIndexFromDataSheet outIndex, outData
+    If outIndex.UsedRange.Rows.Count < 3 And tables.Count = 1 Then
+        Dim onlyTable As Variant
+        onlyTable = tables(1)
+        SPSS_WriteRebuiltIndexRow outIndex, 3, CStr(onlyTable(0)), outData.Name, CLng(onlyTable(1))
+    End If
+    outIndex.Columns("A:D").AutoFit
+    Application.DisplayAlerts = previousAlerts
+    Application.ScreenUpdating = True
+
+    msg = "보기 열 삭제 결과 시트와 목차를 생성했습니다." & vbCrLf & _
+          "삭제: 표 " & tableCount & "개 / 열 " & (plan.Count - skipped.Count) & "개" & vbCrLf & _
+          "목차: " & outIndex.Name & vbCrLf & _
+          "표: " & outData.Name
+    If skipped.Count > 0 Then
+        msg = msg & vbCrLf & vbCrLf & "병합 셀 구조 때문에 건너뛴 열 " & skipped.Count & "개:" & vbCrLf & SPSS_JoinCollectionLines(skipped, 10)
+    End If
+    MsgBox msg, IIf(skipped.Count > 0, vbExclamation, vbInformation), OPTION_DELETE_TITLE & " 완료"
+    Exit Sub
+
+ErrHandler:
+    Dim failureMessage As String
+    failureMessage = Err.Description
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    If Not outIndex Is Nothing Then outIndex.Delete
+    If Not outData Is Nothing Then outData.Delete
+    Application.DisplayAlerts = previousAlerts
+    Application.ScreenUpdating = True
+    On Error GoTo 0
+    MsgBox "보기 열 삭제 중 오류가 발생했습니다." & vbCrLf & failureMessage & vbCrLf & _
+           "임시 결과가 남았는지 확인하세요. 원본 시트는 변경하지 않았습니다.", vbExclamation, OPTION_DELETE_TITLE
+End Sub
+
+Public Function SPSS_ParseOptionLabels(ByVal inputText As String) As Object
+    Dim result As Object
+    Set result = CreateObject("Scripting.Dictionary")
+    result.CompareMode = vbTextCompare
+
+    Dim parts As Variant, i As Long, label As String
+    parts = Split(Replace(inputText, vbLf, ","), ",")
+    For i = LBound(parts) To UBound(parts)
+        label = SPSS_NormalizeOptionLabel(CStr(parts(i)))
+        If Len(label) > 0 And Not result.Exists(label) Then result.Add label, True
+    Next i
+    Set SPSS_ParseOptionLabels = result
+End Function
+
+Private Function SPSS_NormalizeOptionLabel(ByVal textValue As String) As String
+    Dim result As String
+    result = Replace(Replace(Replace(textValue, vbCr, ""), vbLf, ""), vbTab, "")
+    result = Replace(Replace(result, ChrW$(160), ""), ChrW$(12288), "")
+    SPSS_NormalizeOptionLabel = Replace(Trim$(result), " ", "")
+End Function
+
+' 반환 항목: Array(제목행, 표끝행, 삭제열, 표제목) — 표 순서, 표 안에서는 오른쪽 열부터
+Private Function SPSS_CollectOptionColumnDeletes(ByVal ws As Worksheet, ByVal tables As Collection, ByVal labels As Object) As Collection
+    Dim result As New Collection
+    Dim info As Variant, startRow As Long, endRow As Long, headerEnd As Long, lastCol As Long
+    Dim r As Long, c As Long, textValue As String
+    For Each info In tables
+        startRow = CLng(info(1))
+        endRow = CLng(info(2))
+        If endRow > startRow Then
+            headerEnd = SPSS_OptionHeaderEndRow(ws, startRow, endRow)
+            lastCol = SPSS_TableLastCol(ws, startRow, endRow)
+            For c = lastCol To 2 Step -1
+                For r = startRow + 1 To headerEnd
+                    textValue = ""
+                    If Not IsError(ws.Cells(r, c).Value2) Then textValue = CStr(ws.Cells(r, c).Value2)
+                    If labels.Exists(SPSS_NormalizeOptionLabel(textValue)) Then
+                        result.Add Array(startRow, endRow, c, CStr(info(0)))
+                        Exit For
+                    End If
+                Next r
+            Next c
+        End If
+    Next info
+    Set SPSS_CollectOptionColumnDeletes = result
+End Function
+
+' 표 제목 아래 머리글 영역의 마지막 행. 첫 숫자 데이터 행이나 ■/▣ 배너 행 직전까지 본다.
+Private Function SPSS_OptionHeaderEndRow(ByVal ws As Worksheet, ByVal startRow As Long, ByVal endRow As Long) As Long
+    Dim lastHeader As Long, r As Long, c As Long, lastCol As Long, cellValue As Variant, labelText As String
+    lastHeader = startRow + 6
+    If lastHeader > endRow Then lastHeader = endRow
+    lastCol = SPSS_TableLastCol(ws, startRow, endRow)
+    For r = startRow + 1 To lastHeader
+        For c = 1 To 2
+            labelText = ""
+            If Not IsError(ws.Cells(r, c).Value2) Then labelText = Trim$(CStr(ws.Cells(r, c).Value2))
+            If Left$(labelText, 1) = "■" Or Left$(labelText, 1) = "▣" Then
+                SPSS_OptionHeaderEndRow = r - 1
+                Exit Function
+            End If
+        Next c
+        For c = 3 To lastCol
+            cellValue = ws.Cells(r, c).Value2
+            If Not IsError(cellValue) And Not IsEmpty(cellValue) Then
+                If VarType(cellValue) = vbDouble Or VarType(cellValue) = vbCurrency Then
+                    SPSS_OptionHeaderEndRow = r - 1
+                    Exit Function
+                End If
+            End If
+        Next c
+    Next r
+    SPSS_OptionHeaderEndRow = lastHeader
+End Function
+
+Private Function SPSS_CountPlanTables(ByVal plan As Collection) As Long
+    Dim seen As Object, item As Variant
+    Set seen = CreateObject("Scripting.Dictionary")
+    For Each item In plan
+        seen(CStr(item(0))) = True
+    Next item
+    SPSS_CountPlanTables = seen.Count
+End Function
+
+' 계획대로 열을 지우고, 병합 구조 때문에 건너뛴 항목 설명을 돌려준다.
+Private Function SPSS_ApplyOptionColumnDeletes(ByVal ws As Worksheet, ByVal plan As Collection) As Collection
+    Dim skipped As New Collection, item As Variant
+    For Each item In plan
+        If Not SPSS_DeleteTableColumnCells(ws, CLng(item(0)), CLng(item(1)), CLng(item(2))) Then
+            skipped.Add CStr(item(3)) & " (" & Replace(ws.Cells(1, CLng(item(2))).Address(False, False), "1", "") & "열)"
+        End If
+    Next item
+    Set SPSS_ApplyOptionColumnDeletes = skipped
+End Function
+
+' 제목행 아래부터 표 끝행까지 한 열의 셀을 지우고 왼쪽으로 당긴다.
+' 가로 병합 셀은 한 칸 줄여 다시 병합하고, 표 범위를 넘는 병합이 있으면 건드리지 않는다.
+Private Function SPSS_DeleteTableColumnCells(ByVal ws As Worksheet, ByVal titleRow As Long, ByVal endRow As Long, ByVal colNo As Long) As Boolean
+    Dim target As Range
+    Set target = ws.Range(ws.Cells(titleRow + 1, colNo), ws.Cells(endRow, colNo))
+
+    Dim spans As New Collection, seen As Object, cell As Range, area As Range
+    Set seen = CreateObject("Scripting.Dictionary")
+    For Each cell In target.Cells
+        If cell.MergeCells Then
+            Set area = cell.MergeArea
+            If Not seen.Exists(area.Address) Then
+                seen(area.Address) = True
+                If area.Row <= titleRow Or area.Row + area.Rows.Count - 1 > endRow Then Exit Function
+                If area.Columns.Count > 1 Then spans.Add Array(area.Row, area.Column, area.Rows.Count, area.Columns.Count)
+            End If
+        End If
+    Next cell
+
+    Dim span As Variant, topLeft As Range
+    For Each span In spans
+        Set area = ws.Cells(CLng(span(0)), CLng(span(1))).Resize(CLng(span(2)), CLng(span(3)))
+        Set topLeft = area.Cells(1, 1)
+        area.UnMerge
+        If CLng(span(1)) = colNo Then
+            topLeft.Offset(0, 1).Value = topLeft.Value
+            topLeft.Copy
+            topLeft.Offset(0, 1).PasteSpecial Paste:=xlPasteFormats
+            Application.CutCopyMode = False
+        End If
+    Next span
+
+    On Error GoTo Failed
+    target.Delete Shift:=xlToLeft
+    On Error GoTo 0
+
+    For Each span In spans
+        If CLng(span(2)) * (CLng(span(3)) - 1) > 1 Then
+            ws.Cells(CLng(span(0)), CLng(span(1))).Resize(CLng(span(2)), CLng(span(3)) - 1).Merge
+        End If
+    Next span
+
+    SPSS_ShrinkTitleMerge ws, titleRow, colNo
+    SPSS_DeleteTableColumnCells = True
+    Exit Function
+
+Failed:
+    For Each span In spans
+        ws.Cells(CLng(span(0)), CLng(span(1))).Resize(CLng(span(2)), CLng(span(3))).Merge
+    Next span
+End Function
+
+Private Sub SPSS_ShrinkTitleMerge(ByVal ws As Worksheet, ByVal titleRow As Long, ByVal colNo As Long)
+    Dim titleCell As Range
+    Set titleCell = ws.Cells(titleRow, colNo)
+    If Not titleCell.MergeCells Then Exit Sub
+
+    Dim area As Range
+    Set area = titleCell.MergeArea
+    If area.Rows.Count <> 1 Or area.Columns.Count < 2 Or area.Column >= colNo Then Exit Sub
+
+    Dim firstCol As Long, newCount As Long
+    firstCol = area.Column
+    newCount = area.Columns.Count - 1
+    area.UnMerge
+    If newCount > 1 Then ws.Cells(titleRow, firstCol).Resize(1, newCount).Merge
+End Sub
+
+Private Function SPSS_JoinDictionaryKeys(ByVal items As Object) As String
+    Dim key As Variant, result As String
+    For Each key In items.Keys
+        If Len(result) > 0 Then result = result & ", "
+        result = result & CStr(key)
+    Next key
+    SPSS_JoinDictionaryKeys = result
+End Function
+
+Private Function SPSS_JoinCollectionLines(ByVal items As Collection, ByVal maxItems As Long) As String
+    Dim i As Long, result As String
+    For i = 1 To items.Count
+        If i > maxItems Then
+            result = result & vbCrLf & "... 외 " & (items.Count - maxItems) & "개"
+            Exit For
+        End If
+        If Len(result) > 0 Then result = result & vbCrLf
+        result = result & "- " & CStr(items(i))
+    Next i
+    SPSS_JoinCollectionLines = result
+End Function
 
 Public Sub SPSS_CreateIndexForActiveSheet()
     On Error GoTo ErrHandler
