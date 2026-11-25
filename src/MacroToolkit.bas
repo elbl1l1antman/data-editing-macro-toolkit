@@ -8,7 +8,7 @@ Attribute VB_Name = "MacroToolkit"
 Option Explicit
 
 ' 현재 툴킷 버전 (외부 모듈에서도 참조 가능하도록 Public 선언)
-Public Const TOOLKIT_VERSION As String = "1.3.8"
+Public Const TOOLKIT_VERSION As String = "1.3.9"
 
 ' 버전 정보를 기록할 숨김 시트 이름 (언더스코어 접두어로 내부 시트임을 표시)
 Public Const VERSION_SHEET As String = "_MacroToolkit"
@@ -174,6 +174,7 @@ Public Sub Toolkit_SetupWorkbook()
     ws.Range("A55").Value = "Address_ConvertProvinceNotation"
     ws.Range("A56").Value = "DataCleanup_ClearResidualBlankValues"
     ws.Range("A57").Value = "DataCleanup_ClearErrorAndZeroValues"
+    ws.Range("A58").Value = "SPSS_DeleteOptionColumns"
 
     ' 내용에 맞게 열 너비 자동 조절
     ws.Columns("A:B").AutoFit
@@ -751,7 +752,8 @@ Public Sub Toolkit_LaunchSpssTools()
         "1. 목차 생성" & vbCrLf & _
         "2. 표/배너 재구성" & vbCrLf & _
         "3. 세로 배너 삭제" & vbCrLf & _
-        "4. 표 메타 추출", _
+        "4. 표 메타 추출" & vbCrLf & _
+        "5. 보기 열 삭제(계 등)", _
         "2")
 
     Select Case choice
@@ -759,8 +761,9 @@ Public Sub Toolkit_LaunchSpssTools()
         Case "2": SPSS_RebuildTablesFromIndex
         Case "3": SPSS_DeleteVerticalBannersFromIndex
         Case "4": SPSS_ExtractTableMetadata
+        Case "5": SPSS_DeleteOptionColumns
         Case Else
-            If Len(choice) > 0 Then Toolkit_ShowLauncherError "SPSS 표 도구", "1~4 중 하나를 입력하세요."
+            If Len(choice) > 0 Then Toolkit_ShowLauncherError "SPSS 표 도구", "1~5 중 하나를 입력하세요."
     End Select
 End Sub
 
@@ -1115,6 +1118,10 @@ End Sub
 
 Public Sub Ribbon_SPSSDeleteVerticalBanners(control As IRibbonControl)
     SPSS_DeleteVerticalBannersFromIndex
+End Sub
+
+Public Sub Ribbon_SPSSDeleteOptionColumns(control As IRibbonControl)
+    SPSS_DeleteOptionColumns
 End Sub
 
 Public Sub Ribbon_RosterDetectDuplicates(control As IRibbonControl)
