@@ -4189,31 +4189,26 @@ $PatchNotesSource = Join-Path $ProjectRoot ("docs\releases\v{0}.md" -f $Version)
 if (-not (Test-Path -LiteralPath $PatchNotesSource)) {
     throw "Release patch notes not found: $PatchNotesSource"
 }
-$ReleaseWorkbookName = "DataEditingMacroToolkit_$VersionTag.xlsm"
 $ReleaseAddinName = "DataEditingMacroToolkit_$VersionTag.xlam"
-$LatestWorkbookName = "DataEditingMacroToolkit_latest.xlsm"
 $LatestAddinName = "DataEditingMacroToolkit_latest.xlam"
 
 New-Item -ItemType Directory -Force -Path $VersionDir,$LatestDir | Out-Null
 
-$ReleaseWorkbook = Join-Path $VersionDir $ReleaseWorkbookName
 $ReleaseAddin = Join-Path $VersionDir $ReleaseAddinName
-$LatestWorkbook = Join-Path $LatestDir $LatestWorkbookName
 $LatestAddin = Join-Path $LatestDir $LatestAddinName
 $ImportModulePaths = New-Object System.Collections.Generic.List[string]
-$tempReleaseWorkbook = $null
 $tempReleaseAddin = $null
 $vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "Process")
 if (-not $vbaPassword) { $vbaPassword = [Environment]::GetEnvironmentVariable("DATA_EDITING_TOOLKIT_VBA_PASSWORD", "User") }
 if (-not $vbaPassword) { throw "Set the DATA_EDITING_TOOLKIT_VBA_PASSWORD user environment variable before publishing." }
 $env:DATA_EDITING_TOOLKIT_VBA_PASSWORD = $vbaPassword
 
-Get-ChildItem -LiteralPath $VersionDir,$LatestDir -Filter "*.bas" -File -ErrorAction SilentlyContinue | Remove-Item -Force
-foreach ($sourceModulePath in $ModulePaths) {
-    $moduleFileName = [System.IO.Path]::GetFileName($sourceModulePath)
-    Copy-Item -LiteralPath $sourceModulePath -Destination (Join-Path $VersionDir $moduleFileName) -Force
-    Copy-Item -LiteralPath $sourceModulePath -Destination (Join-Path $LatestDir $moduleFileName) -Force
-}
+# Releases ship only the protected XLAM, PATCH_NOTES.md and manifest.json.
+# Remove .bas/.xlsm files left by earlier publishes so stale sources or workbooks are never distributed.
+$StaleReleaseExtensions = @(".bas", ".xlsm")
+Get-ChildItem -LiteralPath $VersionDir,$LatestDir -File -ErrorAction SilentlyContinue |
+    Where-Object { $StaleReleaseExtensions -contains $_.Extension.ToLowerInvariant() } |
+    Remove-Item -Force
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $VersionDir "PATCH_NOTES.md") -Force
 Copy-Item -LiteralPath $PatchNotesSource -Destination (Join-Path $LatestDir "PATCH_NOTES.md") -Force
 
@@ -4300,30 +4295,22 @@ try {
     $publishStage = "sanitize all release API credentials"
     Clear-WorkbookStoredApiSecrets -Workbook $workbook
 
-    $tempReleaseWorkbook = Join-Path ([IO.Path]::GetTempPath()) ("toolkit_" + [guid]::NewGuid().ToString("N") + ".xlsm")
     $tempReleaseAddin = Join-Path ([IO.Path]::GetTempPath()) ("toolkit_" + [guid]::NewGuid().ToString("N") + ".xlam")
 
-    $publishStage = "save assembled workbook"
-    $workbook.IsAddin = $false
-    $workbook.SaveAs($tempReleaseWorkbook, 52)
     $publishStage = "save assembled add-in"
     $workbook.IsAddin = $true
     $workbook.SaveAs($tempReleaseAddin, 55)
     $workbook.Close($false)
     $workbook = $null
 
-    Add-RibbonCustomUi -PackagePath $tempReleaseWorkbook
     Add-RibbonCustomUi -PackagePath $tempReleaseAddin
 
-    foreach ($artifact in @($tempReleaseWorkbook, $tempReleaseAddin)) {
+    foreach ($artifact in @($tempReleaseAddin)) {
         & python $VbaProtector $artifact
         if ($LASTEXITCODE -ne 0) { throw "Could not protect staged VBA project: $artifact" }
     }
-    Copy-Item -Path $tempReleaseWorkbook -Destination $ReleaseWorkbook -Force
-    Copy-Item -Path $tempReleaseWorkbook -Destination $LatestWorkbook -Force
     Copy-Item -Path $tempReleaseAddin -Destination $ReleaseAddin -Force
     Copy-Item -Path $tempReleaseAddin -Destination $LatestAddin -Force
-    Remove-Item -LiteralPath $tempReleaseWorkbook -Force
     Remove-Item -LiteralPath $tempReleaseAddin -Force
 }
 finally {
@@ -4333,7 +4320,6 @@ finally {
     foreach ($importModulePath in $ImportModulePaths) {
         if (Test-Path -LiteralPath $importModulePath) { Remove-Item -LiteralPath $importModulePath -Force }
     }
-    if ($tempReleaseWorkbook -and (Test-Path -LiteralPath $tempReleaseWorkbook)) { Remove-Item -LiteralPath $tempReleaseWorkbook -Force }
     if ($tempReleaseAddin -and (Test-Path -LiteralPath $tempReleaseAddin)) { Remove-Item -LiteralPath $tempReleaseAddin -Force }
 }
 
@@ -4341,7 +4327,7 @@ $verifyExcel = New-Object -ComObject Excel.Application
 $verifyExcel.Visible = $false
 $verifyExcel.DisplayAlerts = $false
 try {
-    foreach ($artifact in @($ReleaseWorkbook, $LatestWorkbook, $ReleaseAddin, $LatestAddin)) {
+    foreach ($artifact in @($ReleaseAddin, $LatestAddin)) {
         $verifyWorkbook = $verifyExcel.Workbooks.Open($artifact, 0, $true)
         try {
             if ($verifyWorkbook.VBProject.Protection -ne 1) {
@@ -4394,8 +4380,6 @@ $baseManifest = [ordered]@{
     publishedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss K")
     gitCommit = $commit
     addin = $ReleaseAddinName
-    workbook = $ReleaseWorkbookName
-    sourceModule = "MacroToolkit.bas"
     sourceModules = @($ModulePaths | ForEach-Object { [System.IO.Path]::GetFileName($_) })
     patchNotesFile = "PATCH_NOTES.md"
     installFile = $ReleaseAddinName
@@ -4407,7 +4391,7 @@ $baseManifest = [ordered]@{
     vbaImportEncoding = "CP949"
     apiKeyStorage = "API credentials are read from the current Windows user profile via VBA SaveSetting/GetSetting."
     apiKeyReleasePolicy = "All release artifacts are sanitized. API credentials remain only in the current Windows user profile."
-    notes = "Install the .xlam file as an Excel add-in. It adds a 데이터 툴킷 ribbon tab next to View."
+    notes = "Install the protected XLAM as an Excel add-in. Other file types are not included in this release."
 }
 
 $versionManifest = Copy-OrderedDictionary $baseManifest
@@ -4417,7 +4401,6 @@ $versionManifest["latestMayContainLocalCredentials"] = $false
 
 $latestManifest = Copy-OrderedDictionary $baseManifest
 $latestManifest["addin"] = $LatestAddinName
-$latestManifest["workbook"] = $LatestWorkbookName
 $latestManifest["installFile"] = $LatestAddinName
 $latestManifest["credentialMode"] = "sanitized-latest"
 $latestManifest["versionedArtifactsSanitized"] = $true
@@ -4427,6 +4410,5 @@ $versionManifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path 
 $latestManifest | ConvertTo-Json | Set-Content -Encoding UTF8 -Path (Join-Path $LatestDir "manifest.json")
 
 Write-Output "Published add-in: $ReleaseAddin"
-Write-Output "Published workbook: $ReleaseWorkbook"
 Write-Output "Updated latest add-in: $LatestAddin"
 

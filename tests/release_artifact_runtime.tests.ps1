@@ -9,11 +9,14 @@ $version = [regex]::Match($moduleText, 'TOOLKIT_VERSION As String = "([^"]+)"').
 if (-not $version) { throw "Could not read TOOLKIT_VERSION." }
 
 $artifacts = @(
-    (Join-Path $ProjectRoot "release\v$version\DataEditingMacroToolkit_v$version.xlsm"),
     (Join-Path $ProjectRoot "release\v$version\DataEditingMacroToolkit_v$version.xlam"),
-    (Join-Path $ProjectRoot "release\latest\DataEditingMacroToolkit_latest.xlsm"),
     (Join-Path $ProjectRoot "release\latest\DataEditingMacroToolkit_latest.xlam")
 )
+
+foreach ($releaseDir in @((Join-Path $ProjectRoot "release\v$version"), (Join-Path $ProjectRoot "release\latest"))) {
+    $stale = @(Get-ChildItem -LiteralPath $releaseDir -File | Where-Object { @(".bas", ".xlsm") -contains $_.Extension.ToLowerInvariant() })
+    if ($stale.Count -gt 0) { throw "Release folder contains files outside the XLAM-only policy: $($stale.FullName -join ', ')" }
+}
 
 $excel = New-Object -ComObject Excel.Application
 $excel.Visible = $false
