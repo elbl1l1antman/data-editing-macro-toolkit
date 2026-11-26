@@ -25,6 +25,10 @@ Public Function TestKosisOutput() As String
     If sheets(1).Cells(2, 10).Value2 <> "OBS_STATUS=p" Or sheets(1).Cells(2, 11).Value2 <> "2025-12-29" Then Err.Raise 5, , "status or update lost"
     If sheets(2).Range("B6").Value2 <> 42 Then Err.Raise 5, , "numeric value lost"
     If sheets(2).Range("C6").Value2 <> "X" Then Err.Raise 5, , "suppressed symbol lost"
+    If VarType(sheets(2).Range("B6").Value2) <> vbDouble Then Err.Raise 5, , "grid value stored as text"
+    If VarType(sheets(1).Cells(2, 9).Value2) <> vbDouble Then Err.Raise 5, , "list value stored as text"
+    If VarType(sheets(1).Cells(3, 9).Value2) <> vbString Or sheets(1).Cells(3, 9).Value2 <> "X" Then Err.Raise 5, , "list symbol not kept as text"
+    If VarType(sheets(1).Range("A2").Value2) <> vbString Then Err.Raise 5, , "code column not kept as text"
     If sheets(3).Cells(2, 1).Value2 = "" Then Err.Raise 5, , "review entry missing"
     countBefore = wb.Worksheets.Count: alertsBefore = Application.DisplayAlerts
     records.Add row

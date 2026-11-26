@@ -545,8 +545,8 @@ Public Sub SPSS_DeleteOptionColumns()
     Set outData = ActiveSheet
     outData.Name = SPSS_UniqueSheetName(wb, "SPSS_보기삭제")
 
-    Dim skipped As Collection
-    Set skipped = SPSS_ApplyOptionColumnDeletes(outData, plan)
+    Dim skipped As Collection, changedTableCount As Long
+    Set skipped = SPSS_ApplyOptionColumnDeletes(outData, plan, changedTableCount)
 
     Dim outIndex As Worksheet
     Set outIndex = wb.Worksheets.Add(Before:=outData)
@@ -562,7 +562,7 @@ Public Sub SPSS_DeleteOptionColumns()
     Application.ScreenUpdating = True
 
     msg = "보기 열 삭제 결과 시트와 목차를 생성했습니다." & vbCrLf & _
-          "삭제: 표 " & tableCount & "개 / 열 " & (plan.Count - skipped.Count) & "개" & vbCrLf & _
+          "삭제: 표 " & changedTableCount & "개 / 열 " & (plan.Count - skipped.Count) & "개" & vbCrLf & _
           "목차: " & outIndex.Name & vbCrLf & _
           "표: " & outData.Name
     If skipped.Count > 0 Then
@@ -606,7 +606,7 @@ Private Function SPSS_NormalizeOptionLabel(ByVal textValue As String) As String
     SPSS_NormalizeOptionLabel = Replace(Trim$(result), " ", "")
 End Function
 
-' 반환 항목: Array(제목행, 표끝행, 삭제열, 표제목) — 표 순서, 표 안에서는 오른쪽 열부터
+' 반환 항목: Array(제목행, 표끝행, 삭제열, 표제목, 머리글가로병합여부) — 표 순서, 표 안에서는 오른쪽 열부터
 Private Function SPSS_CollectOptionColumnDeletes(ByVal ws As Worksheet, ByVal tables As Collection, ByVal labels As Object) As Collection
     Dim result As New Collection
     Dim info As Variant, startRow As Long, endRow As Long, headerEnd As Long, lastCol As Long
@@ -622,7 +622,8 @@ Private Function SPSS_CollectOptionColumnDeletes(ByVal ws As Worksheet, ByVal ta
                     textValue = ""
                     If Not IsError(ws.Cells(r, c).Value2) Then textValue = CStr(ws.Cells(r, c).Value2)
                     If labels.Exists(SPSS_NormalizeOptionLabel(textValue)) Then
-                        result.Add Array(startRow, endRow, c, CStr(info(0)))
+                        ' 보기 머리글 자체가 여러 열에 병합되어 있으면(N/% 묶음 등) 한 열만 지우게 되므로 건너뛰고 알린다.
+                        result.Add Array(startRow, endRow, c, CStr(info(0)), (ws.Cells(r, c).MergeArea.Columns.Count > 1))
                         Exit For
                     End If
                 Next r
@@ -670,13 +671,20 @@ Private Function SPSS_CountPlanTables(ByVal plan As Collection) As Long
 End Function
 
 ' 계획대로 열을 지우고, 병합 구조 때문에 건너뛴 항목 설명을 돌려준다.
-Private Function SPSS_ApplyOptionColumnDeletes(ByVal ws As Worksheet, ByVal plan As Collection) As Collection
-    Dim skipped As New Collection, item As Variant
+Private Function SPSS_ApplyOptionColumnDeletes(ByVal ws As Worksheet, ByVal plan As Collection, ByRef changedTableCount As Long) As Collection
+    Dim skipped As New Collection, item As Variant, changed As Object, colName As String
+    Set changed = CreateObject("Scripting.Dictionary")
     For Each item In plan
-        If Not SPSS_DeleteTableColumnCells(ws, CLng(item(0)), CLng(item(1)), CLng(item(2))) Then
-            skipped.Add CStr(item(3)) & " (" & Replace(ws.Cells(1, CLng(item(2))).Address(False, False), "1", "") & "열)"
+        colName = Replace(ws.Cells(1, CLng(item(2))).Address(False, False), "1", "")
+        If CBool(item(4)) Then
+            skipped.Add CStr(item(3)) & " (" & colName & "열, 보기 머리글이 여러 열에 병합됨)"
+        ElseIf SPSS_DeleteTableColumnCells(ws, CLng(item(0)), CLng(item(1)), CLng(item(2))) Then
+            changed(CStr(item(0))) = True
+        Else
+            skipped.Add CStr(item(3)) & " (" & colName & "열)"
         End If
     Next item
+    changedTableCount = changed.Count
     Set SPSS_ApplyOptionColumnDeletes = skipped
 End Function
 

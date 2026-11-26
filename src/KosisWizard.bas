@@ -104,7 +104,7 @@ SelectTable:
     If Len(previousTable) > 0 And previousTable <> tableId Then
         Set periods = Nothing: Set items = Nothing: Set regions = Nothing
         Set axis2 = Nothing: Set axis3 = Nothing: Set rowAxes = Nothing
-        Set bands = Nothing: spec = "": mode = "": defaults = False
+        Set bands = Nothing: spec = "": mode = "": uncovered = 0: defaults = False
     End If
     previousTable = tableId
     If defaults Then defaults = (GetSetting(BIZ_APP_NAME, KOSIS_LAST_SECTION, "Table", "") = tableId)
@@ -342,7 +342,11 @@ Private Function Kosis_ChooseAgeBands(ByVal topAge As Long, ByVal previous As St
         "2" & vbTab & "20" & vbTab & "이상" & vbTab & "40" & vbTab & "미만" & vbTab & "20~39세" & vbLf & _
         "3" & vbTab & "40" & vbTab & "이상" & vbTab & "60" & vbTab & "미만" & vbTab & "40~59세" & vbLf & _
         "4" & vbTab & "60" & vbTab & "이상" & vbTab & "" & vbTab & "미만" & vbTab & "60세 이상"
+    Dim message As String, parsing As Boolean
+EditBands:
+    ' 구간 해석 오류나 미지정 연령 경고에서 아니요를 고르면 입력값을 유지한 채 다시 편집한다.
     On Error GoTo Failed
+    parsing = False
     Set form = VBA.UserForms.Add("frmSampleDesignBandBuilder")
     form.Configure initial, "연령구간"
     form.Caption = "KOSIS 연령구간 설정"
@@ -352,15 +356,23 @@ Private Function Kosis_ChooseAgeBands(ByVal topAge As Long, ByVal previous As St
     form.Show
     If CBool(form.Cancelled) Then Unload form: Exit Function
     spec = CStr(form.BandSpecText): Unload form: Set form = Nothing
+    initial = spec
+    parsing = True
     Set bands = Kosis_ParseAgeBands(spec, topAge, uncovered)
+    parsing = False
     If uncovered > 0 Then
-        If MsgBox("선택하지 않은 연령 범주가 " & uncovered & "개 있습니다. 계속하시겠습니까?", vbYesNo + vbExclamation + vbDefaultButton2, "KOSIS 연령구간") <> vbYes Then Exit Function
+        If MsgBox("선택하지 않은 연령 범주가 " & uncovered & "개 있습니다. 계속하시겠습니까?" & vbCrLf & vbCrLf & _
+                  "아니요를 누르면 연령구간을 다시 수정합니다.", vbYesNo + vbExclamation + vbDefaultButton2, "KOSIS 연령구간") <> vbYes Then GoTo EditBands
     End If
     Kosis_ChooseAgeBands = True
     Exit Function
 Failed:
-    Dim message As String: message = Err.Description
-    If Not form Is Nothing Then Unload form
+    message = Err.Description
+    If Not form Is Nothing Then Unload form: Set form = Nothing
+    If parsing Then
+        MsgBox "연령구간을 확인하세요." & vbCrLf & message & vbCrLf & vbCrLf & "입력한 구간을 다시 수정할 수 있습니다.", vbExclamation, "KOSIS 연령구간"
+        Resume EditBands
+    End If
     MsgBox "연령구간을 확인하세요." & vbCrLf & message, vbExclamation, "KOSIS 연령구간"
 End Function
 

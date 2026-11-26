@@ -119,7 +119,7 @@ Public Function Kosis_WriteSheets(ByVal wb As Workbook, ByVal records As Collect
         Next j
         listData(i, allAxes * 2 + 1) = period: listData(i, allAxes * 2 + 2) = item
         value = Kosis_OutputValue(CStr(row("value")))
-        listData(i, allAxes * 2 + 3) = value
+        listData(i, allAxes * 2 + 3) = Kosis_CellValue(value)
         If row.Exists("status") Then listData(i, allAxes * 2 + 4) = CStr(row("status"))
         If row.Exists("updated") Then listData(i, allAxes * 2 + 5) = CStr(row("updated"))
         listData(i, allAxes * 2 + 6) = tableId
@@ -173,9 +173,9 @@ Public Function Kosis_WriteSheets(ByVal wb As Workbook, ByVal records As Collect
         For Each value In colMap.Keys
             cellKey = Kosis_OutputKey(CStr(axis), CStr(value))
             If cellMap.Exists(cellKey) Then
-                grid(CLng(rowMap(axis)) + 1, CLng(colMap(value)) + 1) = cellMap(cellKey)
+                grid(CLng(rowMap(axis)) + 1, CLng(colMap(value)) + 1) = Kosis_CellValue(cellMap(cellKey))
             Else
-                grid(CLng(rowMap(axis)) + 1, CLng(colMap(value)) + 1) = "자료 없음"
+                grid(CLng(rowMap(axis)) + 1, CLng(colMap(value)) + 1) = Kosis_CellValue("자료 없음")
                 reviewCount = reviewCount + 1
             End If
         Next value
@@ -188,11 +188,15 @@ Public Function Kosis_WriteSheets(ByVal wb As Workbook, ByVal records As Collect
         listWs.Cells(1, index * 2 + 2).Value2 = CStr(axisIds(j)) & " 명칭"
     Next j
     listWs.Cells(1, allAxes * 2 + 1).Resize(1, 10).Value = Array("시점", "항목코드", "값", "상태부호", "최종수정일", "통계표ID", "출처", "조회일시", "항목명", "단위")
+    ' 코드·명칭·시점은 앞자리 0을 지키도록 텍스트로 두고, 값 열만 숫자로 저장한다.
     listWs.Range(listWs.Cells(2, 1), listWs.Cells(original.Count + 1, allAxes * 2 + 10)).NumberFormat = "@"
+    listWs.Range(listWs.Cells(2, allAxes * 2 + 3), listWs.Cells(original.Count + 1, allAxes * 2 + 3)).NumberFormat = "General"
     listWs.Cells(2, 1).Resize(original.Count, allAxes * 2 + 10).Value2 = listData
     gridWs.Range("A1:A3").NumberFormat = "@"
     gridWs.Range("A1").Value2 = title: gridWs.Range("A2").Value2 = period: gridWs.Range("A3").Value2 = item
-    gridWs.Cells(5, 1).Resize(UBound(grid, 1), UBound(grid, 2)).NumberFormat = "@"
+    ' 행·열 머리글만 텍스트로 두고 본문 값은 숫자로 저장한다.
+    gridWs.Cells(5, 1).Resize(1, UBound(grid, 2)).NumberFormat = "@"
+    gridWs.Cells(5, 1).Resize(UBound(grid, 1), 1).NumberFormat = "@"
     gridWs.Cells(5, 1).Resize(UBound(grid, 1), UBound(grid, 2)).Value2 = grid
     reviewWs.Range("A1").Value2 = "검토 사항"
     ReDim reviewData(1 To IIf(reviewCount + missing.Count > 0, reviewCount + missing.Count, 1), 1 To 1)
@@ -252,6 +256,11 @@ Private Function Kosis_OutputValue(ByVal text As String) As Variant
         If Abs(number) <= 9007199254740991# Then Kosis_OutputValue = number: Exit Function
     End If
     Kosis_OutputValue = text
+End Function
+
+' 숫자는 그대로, 통계부호 등 문자열은 앞에 '를 붙여 일반 서식 셀에서도 텍스트로 저장되게 한다.
+Private Function Kosis_CellValue(ByVal value As Variant) As Variant
+    If VarType(value) = vbString Then Kosis_CellValue = "'" & value Else Kosis_CellValue = value
 End Function
 
 Private Function Kosis_OutputKey(ByVal first As String, ByVal second As String) As String

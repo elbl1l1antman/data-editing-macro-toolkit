@@ -68,11 +68,17 @@ Public Function TestSpssOptionColumns() As String
     ws.Range("D25").Value = "예"
     ws.Range("A26").Value = "■ 전체": ws.Range("D26").Value = 1
 
+    ' 표 6: 계 머리글이 N/% 두 열에 가로 병합되어 있어 한 열만 지우지 않고 건너뛰어야 함
+    ws.Range("A29:G29").Merge: ws.Range("A29").Value = "[표 6 > 묶음 머리글]"
+    ws.Range("D30:E30").Merge: ws.Range("D30").Value = "있음": ws.Range("F30:G30").Merge: ws.Range("F30").Value = "계"
+    ws.Range("D31").Value = "N": ws.Range("E31").Value = "%": ws.Range("F31").Value = "N": ws.Range("G31").Value = "%"
+    ws.Range("A32").Value = "■ 전체": ws.Range("D32").Value = 6: ws.Range("E32").Value = 60: ws.Range("F32").Value = 10: ws.Range("G32").Value = 100
+
     Dim tables As Collection, plan As Collection
     Set tables = SPSS_CollectTablesFromDataSheet(ws)
-    If tables.Count <> 5 Then Err.Raise 513, , "Expected 5 tables, got " & tables.Count
+    If tables.Count <> 6 Then Err.Raise 513, , "Expected 6 tables, got " & tables.Count
     Set plan = SPSS_CollectOptionColumnDeletes(ws, tables, SPSS_ParseOptionLabels("계"))
-    If plan.Count <> 3 Then Err.Raise 513, , "Expected 3 planned columns, got " & plan.Count
+    If plan.Count <> 4 Then Err.Raise 513, , "Expected 4 planned columns, got " & plan.Count
 
     mLabelInput = "": mConfirm = vbYes: ws.Activate
     SPSS_DeleteOptionColumns
@@ -105,10 +111,13 @@ Public Function TestSpssOptionColumns() As String
     If outWs.Range("F16").Value2 <> "20대" Or outWs.Range("G17").Value2 <> 75 Then Err.Raise 513, , "Banner options not shifted"
     ' 표 4
     If outWs.Range("F21").Value2 <> "계" Or outWs.Range("F21").MergeArea.Rows.Count <> 4 Or outWs.Range("E22").Value2 <> 70 Then Err.Raise 513, , "Unsafe merged column should be skipped"
-    If InStr(mLastMessage, "건너뛴 열 1개") = 0 Or InStr(mLastMessage, "[표 4") = 0 Then Err.Raise 513, , "Skip not reported: " & mLastMessage
+    ' 표 6
+    If outWs.Range("F30").Value2 <> "계" Or outWs.Range("F30").MergeArea.Columns.Count <> 2 Or outWs.Range("G32").Value2 <> 100 Then Err.Raise 513, , "Merged option header should be skipped"
+    If InStr(mLastMessage, "건너뛴 열 2개") = 0 Or InStr(mLastMessage, "[표 4") = 0 Or InStr(mLastMessage, "[표 6") = 0 Then Err.Raise 513, , "Skip not reported: " & mLastMessage
+    If InStr(mLastMessage, "삭제: 표 2개 / 열 2개") = 0 Then Err.Raise 513, , "Deleted table count should exclude skipped tables: " & mLastMessage
     ' 원본과 목차
     If ws.Range("F2").Value2 <> "계" Or ws.Range("G4").Value2 <> 7.5 Or ws.Range("A1").MergeArea.Columns.Count <> 7 Then Err.Raise 513, , "Original sheet changed"
-    If outIndex.Hyperlinks.Count <> 5 Then Err.Raise 513, , "Index link count: " & outIndex.Hyperlinks.Count
+    If outIndex.Hyperlinks.Count <> 6 Then Err.Raise 513, , "Index link count: " & outIndex.Hyperlinks.Count
     If InStr(outIndex.Hyperlinks(3).SubAddress, outWs.Name) = 0 Then Err.Raise 513, , "Index does not point at output sheet"
 
     Dim beforeCount As Long

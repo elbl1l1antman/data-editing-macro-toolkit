@@ -34,7 +34,7 @@ Excel 데이터 편집과 간단한 분석 작업을 위한 VBA 매크로 툴킷
 
 ## 현재 버전
 
-`1.3.9`
+`1.3.10`
 
 버전의 기준은 `src/MacroToolkit.bas`의 `TOOLKIT_VERSION`입니다.
 
@@ -146,7 +146,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\build_macro_workbook.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\publish_release.ps1
 ```
 
-`TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다. `<버전>`은 `TOOLKIT_VERSION` 값입니다(예: `1.3.9`).
+`TOOLKIT_VERSION`을 읽어 다음 파일을 생성합니다. `<버전>`은 `TOOLKIT_VERSION` 값입니다(예: `1.3.10`).
 
 - `release/v<버전>/DataEditingMacroToolkit_v<버전>.xlam`
 - `release/v<버전>/PATCH_NOTES.md`
